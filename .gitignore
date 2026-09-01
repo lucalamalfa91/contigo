@@ -31,3 +31,8 @@ local.settings.json
 .terraform/
 *.tfstate
 *.tfstate.*
+
+# Python bytecode cache — task E01/F01/US01/T02 introduces the first
+# Python scripts/tests at the repo root.
+__pycache__/
+*.pyc
