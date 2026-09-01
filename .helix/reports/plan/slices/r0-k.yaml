@@ -1,0 +1,11 @@
+waveId: wave-v1-night-r0-k
+status: planned
+# R0-k R0 integration. Prior-slice depends_on dropped (producer-completeness).
+# tokens: 1.8M / 8.0M cap (S/M/L mapped in cut_nightly_slices.py).
+# Launch: ./run.ps1 -Max -Slice r0-k -o execution-fanout
+phases:
+  - id: 1
+    name: phase-1
+    tasks:
+      - {id: E01/F09/US01/T01, prompt: reports/workitems/epic-01-platform/feature-09-r0-integration/us-01-final-integration/tasks/task-01-r0-integration.md, produces: [r0-integration], depends_on: [], effort: L, layer: backend, status: live}
+forks: []

@@ -1,0 +1,64 @@
+---
+id: E01/F01/US02/T01
+type: task
+story: us-02-hcp-terraform-workspaces
+wave: R0
+status: live
+target_repo: contigo-infra
+# requires: [github_org]
+# requires: [hcp_terraform]
+---
+
+# task-01-hcp-workspaces — Bootstrap HCP Terraform org + two workspaces
+
+## Coding objective
+
+Bootstrap the HCP Terraform organization for `contigo` and create two workspaces
+`contigo-dev` and `contigo-demo` (ADR-007: remote state per environment). Wire the
+workspaces to the `contigo` GitHub repo's VCS connection so a change under `infra/`
+triggers the right workspace plan/apply. Verify state lives only in HCP, never in
+git. Use `scripts/bootstrap_hcp_org.py` (or the HCP API) for reproducibility.
+
+## Parent story AC covered
+
+- AC-1 (HCP org exists)
+- AC-2 (`contigo-dev` + `contigo-demo` workspaces, independent state)
+- AC-3 (no state in git)
+
+## Files to create or modify
+
+| Path | Change |
+|------|--------|
+| workspace/contigo-infra/.terraformignore | exclude local state/backends |
+| scripts/bootstrap_hcp_org.py | create/assert workspaces |
+
+## Context the implementer needs
+
+- **Architecture decisions in force**: ADR-007 (two workspaces, remote state per env); ADR-006 (region `westeurope` is data-plane only, not state).
+- **Do not touch**: Terraform modules yet (feature-02).
+
+## Definition of done
+
+- [ ] `python scripts/bootstrap_hcp_org.py` exits 0 and prints both `contigo-dev` and `contigo-demo` workspaces.
+
+## Tests required
+
+| Level | What it proves | Where |
+|-------|----------------|-------|
+| script | two workspaces exist, VCS-wired, no state in git | `scripts/bootstrap_hcp_org.py` |
+
+## Open questions blocking this task
+
+- none
+
+## Wave-spec entry
+
+```yaml
+- id: E01/F01/US02/T01
+  prompt: reports/workitems/epic-01-platform/feature-01-platform-bootstrap/us-02-hcp-terraform-workspaces/tasks/task-01-hcp-workspaces.md
+  produces: [hcp-terraform-workspaces]
+  depends_on: [github-org-repos]
+  effort: S
+  layer: backend
+  status: live
+```

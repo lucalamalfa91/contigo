@@ -1,0 +1,31 @@
+waveId: wave-v1-night-r0-e
+status: planned
+# R0-e backend foundation. Prior-slice depends_on dropped (producer-completeness).
+# tokens: 6.9M / 8.0M cap (S/M/L mapped in cut_nightly_slices.py).
+# Launch: ./run.ps1 -Max -Slice r0-e -o execution-fanout
+phases:
+  - id: 1
+    name: phase-1
+    tasks:
+      - {id: E01/F04/US01/T01, prompt: reports/workitems/epic-01-platform/feature-04-backend-foundation/us-01-dotnet-solution-shape/tasks/task-01-dotnet-solution.md, produces: [dotnet-solution], depends_on: [], effort: L, layer: backend, status: live}
+  - id: 2
+    name: phase-2
+    tasks:
+      - {id: E01/F04/US01/T02, prompt: reports/workitems/epic-01-platform/feature-04-backend-foundation/us-01-dotnet-solution-shape/tasks/task-02-architecture-test.md, produces: [dotnet-architecture-test], depends_on: [dotnet-solution], effort: S, layer: backend, status: live}
+  - id: 3
+    name: phase-3
+    tasks:
+      - {id: E01/F04/US02/T01, prompt: reports/workitems/epic-01-platform/feature-04-backend-foundation/us-02-relational-store/tasks/task-01-ef-core-pgvector.md, produces: [postgres-schema], depends_on: [dotnet-solution], effort: L, layer: backend, status: live}
+  - id: 4
+    name: phase-4
+    tasks:
+      - {id: E01/F04/US02/T02, prompt: reports/workitems/epic-01-platform/feature-04-backend-foundation/us-02-relational-store/tasks/task-02-migrations-apply.md, produces: [postgres-migrations], depends_on: [postgres-schema], effort: S, layer: backend, status: live}
+  - id: 5
+    name: phase-5
+    tasks:
+      - {id: E01/F04/US03/T01, prompt: reports/workitems/epic-01-platform/feature-04-backend-foundation/us-03-tenant-rls/tasks/task-01-tenant-rls.md, produces: [tenant-rls], depends_on: [postgres-schema], effort: L, layer: backend, status: live}
+  - id: 6
+    name: phase-6
+    tasks:
+      - {id: E01/F04/US03/T02, prompt: reports/workitems/epic-01-platform/feature-04-backend-foundation/us-03-tenant-rls/tasks/task-02-rls-migration-check.md, produces: [rls-migration-check], depends_on: [tenant-rls], effort: S, layer: backend, status: live}
+forks: []

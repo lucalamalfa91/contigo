@@ -1,0 +1,47 @@
+---
+id: E03/F02/US01/T02
+type: task
+story: us-01-threshold-scheduler
+wave: R2
+status: live
+target_repo: contigo-backend
+---
+
+# task-02-alert-recompute — 02 Alert Recompute
+
+## Coding objective
+Create alerts and recompute on contract correction.
+
+## Parent story AC covered
+- See parent story `us-01-threshold-scheduler` acceptance criteria (traced by this task objective).
+
+## Files to create or modify
+| Path | Change |
+|------|--------|
+| workspace/contigo-backend/src/ | implementation for `renewal-alerts` |
+
+## Context the implementer needs
+- **Architecture decisions in force**: ADR-002.
+- **Do not touch**: unrelated wave artifacts and provider SDKs in domain code.
+
+## Definition of done
+- [ ] Applicable build (e.g. `dotnet build`) exits 0 and a named test proves the produced artifact `renewal-alerts`.
+
+## Tests required
+| Level | What it proves | Where |
+|-------|----------------|-------|
+| unit | renewal-alerts behaviour | workspace/contigo-backend/tests |
+
+## Open questions blocking this task
+- none
+
+## Wave-spec entry
+```yaml
+- id: E03/F02/US01/T02
+  prompt: reports/workitems/epic-03-renewal-intelligence/feature-02-cancellation-alerts/us-01-threshold-scheduler/tasks/task-02-alert-recompute.md
+  produces: [renewal-alerts]
+  depends_on: [threshold-scheduler, correction-history]
+  effort: M
+  layer: backend
+  status: live
+```

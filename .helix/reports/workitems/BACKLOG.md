@@ -1,0 +1,59 @@
+# Contigo V1 — Work-item backlog
+
+Source of truth: `reports/architecture/INDEX.md` (17 accepted ADRs), `reports/context/product-context.md`, `reports/context/locked-decisions.md`, `inputs/product-spec.md`.
+
+Decomposed against the **full** V1 wave ladder R0–R4 (ADR-001, spec §16), not only the R0 foundation slice. Every accepted ADR in INDEX is carried into at least one task objective.
+
+Target: `dev` + `demo` only. No production. R3/R4 use the fixture benchmark adapter, never a paid external market API for the first `demo`.
+
+## Wave overview
+
+| Wave | Epic | Capability | Definition of success (spec §16) |
+|------|------|------------|----------------------------------|
+| R0 | epic-01 platform | Auth, workspace, multi-tenancy, roles, upload, storage, DB, audit baseline + org/repo/Terraform/CI-CD/deployable API | A secure workspace can ingest documents |
+| R1 | epic-02 Contract Intelligence | Extraction including OCR in V1 (ADR-017), schema, portfolio, Contract 360, Q&A, citations, validation | Customer can upload contracts (digital and scanned) and ask reliable questions |
+| R2 | epic-03 Renewal Intelligence | Dates, cancellation deadline, alerts, dashboard, priority, recommendations (deterministic) | Procurement does not miss material renewal windows |
+| R3 | epic-04 Savings Intelligence | Benchmark service/adapters, price comparison, savings dashboard/workflow | Contigo quantifies credible savings opportunities |
+| R4 | epic-05 Quote Check | Quote extraction, benchmark, assessment, target, negotiation strategy | A new proposal can be assessed in minutes |
+
+Each wave ends with a single-task `us-XX-final-integration` story. R4's integration story is the customer Day-1 path on `demo` (spec §20).
+
+## Epics
+
+| ID | Slug | Wave | Status |
+|----|------|------|--------|
+| epic-01 | platform | R0 | active — decomposed |
+| epic-02 | contract-intelligence | R1 | active — decomposed |
+| epic-03 | renewal-intelligence | R2 | active — decomposed |
+| epic-04 | savings-intelligence | R3 | active — decomposed |
+| epic-05 | quote-check | R4 | active — decomposed |
+
+## ADR → wave coverage
+
+| ADR | Topic | Carried into |
+|-----|-------|--------------|
+| ADR-001 | V1 scope R0–R4 | epic-01..05 (wave framing, §1.2 non-goals, fixture adapter) |
+| ADR-002 | .NET solution shape | epic-01 F04, epic-02..05 backend |
+| ADR-003 | PostgreSQL + pgvector | epic-01 F02/F04 |
+| ADR-004 | Foundry model roles | epic-02 (AI Gateway) |
+| ADR-005 | Azure SKUs | epic-01 F02 |
+| ADR-006 | Region west europe | epic-01 F02 |
+| ADR-007 | Terraform layout | epic-01 F02 |
+| ADR-008 | Foundry account shape | epic-01 F02 |
+| ADR-009 | Tenancy / RLS | epic-01 F04/F05 |
+| ADR-010 | Entra ID / OIDC | epic-01 F02/F05 |
+| ADR-011 | Key Vault + RAG isolation | epic-01 F02/F05, epic-02 F04 |
+| ADR-012 | Web stack | epic-01 F07, epic-02..05 web |
+| ADR-013 | Mobile stack | epic-01 F08 (non-gating) |
+| ADR-014 | Git flow | epic-01 F01/F03 |
+| ADR-015 | CI → Azure auth | epic-01 F02/F03 |
+| ADR-016 | Promotion dev→demo | epic-01 F03 |
+| ADR-017 | OCR in V1 | epic-01 F02 (DI endpoint), epic-02 (AI Gateway `ocr` + hybrid parse) |
+
+## Non-goals (excluded, ADR-001, spec §1.2)
+
+Full CLM/authoring · e-signature · PO/invoice management · supplier onboarding · full sourcing/RFP · ERP replacement · autonomous supplier comms · complex enterprise approval orchestration · production-only platform (AKS/multi-region/dedicated DB).
+
+## Status
+
+Fully decomposed R0–R4. Master DAG: `reports/plan/wave-spec.execution.yaml`. Nightly slices: `reports/plan/slices/`.

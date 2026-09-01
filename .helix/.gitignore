@@ -1,0 +1,8 @@
+# Nested artifact git repo (PROCESS.md D1). Helix worktrees + local secrets.
+# Parent helix-artifacts still tracks the design files; it must not pick up
+# linked worktrees or this nested .git.
+/worktrees/
+/.env
+/node_modules/
+**/__pycache__/
+*.pyc

@@ -1,0 +1,548 @@
+{
+  "window_tokens": 10000000,
+  "fill_ratio": 0.8,
+  "cap_tokens": 8000000,
+  "tokens_s": 500000,
+  "tokens_m": 1000000,
+  "tokens_l": 1800000,
+  "slices": [
+    {
+      "id": "r0-a",
+      "title": "R0-a platform bootstrap",
+      "previous": null,
+      "tokens": 2500000,
+      "tasks": 4,
+      "epic": "E01",
+      "integration": false,
+      "checks": [
+        "github_auth",
+        "github_org"
+      ],
+      "stories": [
+        "E01/F01/US01",
+        "E01/F01/US02"
+      ]
+    },
+    {
+      "id": "r0-b",
+      "title": "R0-b azure infrastructure",
+      "previous": "r0-a",
+      "tokens": 7400000,
+      "tasks": 6,
+      "epic": "E01",
+      "integration": false,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E01/F02/US01",
+        "E01/F02/US02",
+        "E01/F02/US03"
+      ]
+    },
+    {
+      "id": "r0-c",
+      "title": "R0-c azure infrastructure",
+      "previous": "r0-b",
+      "tokens": 4300000,
+      "tasks": 4,
+      "epic": "E01",
+      "integration": false,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E01/F02/US04",
+        "E01/F02/US05"
+      ]
+    },
+    {
+      "id": "r0-d",
+      "title": "R0-d ci cd delivery",
+      "previous": "r0-c",
+      "tokens": 6100000,
+      "tasks": 6,
+      "epic": "E01",
+      "integration": false,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E01/F03/US01",
+        "E01/F03/US02",
+        "E01/F03/US03"
+      ]
+    },
+    {
+      "id": "r0-e",
+      "title": "R0-e backend foundation",
+      "previous": "r0-d",
+      "tokens": 6900000,
+      "tasks": 6,
+      "epic": "E01",
+      "integration": false,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E01/F04/US01",
+        "E01/F04/US02",
+        "E01/F04/US03"
+      ]
+    },
+    {
+      "id": "r0-f",
+      "title": "R0-f backend foundation",
+      "previous": "r0-e",
+      "tokens": 2000000,
+      "tasks": 2,
+      "epic": "E01",
+      "integration": false,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E01/F04/US04"
+      ]
+    },
+    {
+      "id": "r0-g",
+      "title": "R0-g identity workspace",
+      "previous": "r0-f",
+      "tokens": 2000000,
+      "tasks": 2,
+      "epic": "E01",
+      "integration": false,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E01/F05/US01"
+      ]
+    },
+    {
+      "id": "r0-h",
+      "title": "R0-h document ingestion",
+      "previous": "r0-g",
+      "tokens": 3000000,
+      "tasks": 4,
+      "epic": "E01",
+      "integration": false,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E01/F06/US01",
+        "E01/F06/US02"
+      ]
+    },
+    {
+      "id": "r0-i",
+      "title": "R0-i web client",
+      "previous": "r0-h",
+      "tokens": 1500000,
+      "tasks": 2,
+      "epic": "E01",
+      "integration": false,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E01/F07/US01"
+      ]
+    },
+    {
+      "id": "r0-j",
+      "title": "R0-j mobile scaffold",
+      "previous": "r0-i",
+      "tokens": 1500000,
+      "tasks": 2,
+      "epic": "E01",
+      "integration": false,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E01/F08/US01"
+      ]
+    },
+    {
+      "id": "r0-k",
+      "title": "R0-k R0 integration",
+      "previous": "r0-j",
+      "tokens": 1800000,
+      "tasks": 1,
+      "epic": "E01",
+      "integration": true,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E01/F09/US01"
+      ]
+    },
+    {
+      "id": "r1-a",
+      "title": "R1-a extraction pipeline",
+      "previous": "r0-k",
+      "tokens": 4300000,
+      "tasks": 4,
+      "epic": "E02",
+      "integration": false,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E02/F01/US01",
+        "E02/F01/US02"
+      ]
+    },
+    {
+      "id": "r1-b",
+      "title": "R1-b contract schema",
+      "previous": "r1-a",
+      "tokens": 4800000,
+      "tasks": 4,
+      "epic": "E02",
+      "integration": false,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E02/F02/US01",
+        "E02/F02/US02"
+      ]
+    },
+    {
+      "id": "r1-c",
+      "title": "R1-c portfolio contract 360",
+      "previous": "r1-b",
+      "tokens": 3000000,
+      "tasks": 3,
+      "epic": "E02",
+      "integration": false,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E02/F03/US01",
+        "E02/F03/US02"
+      ]
+    },
+    {
+      "id": "r1-d",
+      "title": "R1-d ask contigo citations",
+      "previous": "r1-c",
+      "tokens": 4800000,
+      "tasks": 4,
+      "epic": "E02",
+      "integration": false,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E02/F04/US01",
+        "E02/F04/US02"
+      ]
+    },
+    {
+      "id": "r1-e",
+      "title": "R1-e validation corrections",
+      "previous": "r1-d",
+      "tokens": 1500000,
+      "tasks": 2,
+      "epic": "E02",
+      "integration": false,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E02/F05/US01"
+      ]
+    },
+    {
+      "id": "r1-f",
+      "title": "R1-f R1 integration",
+      "previous": "r1-e",
+      "tokens": 1800000,
+      "tasks": 1,
+      "epic": "E02",
+      "integration": true,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E02/F06/US01"
+      ]
+    },
+    {
+      "id": "r2-a",
+      "title": "R2-a renewal engine",
+      "previous": "r1-f",
+      "tokens": 3500000,
+      "tasks": 4,
+      "epic": "E03",
+      "integration": false,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E03/F01/US01",
+        "E03/F01/US02"
+      ]
+    },
+    {
+      "id": "r2-b",
+      "title": "R2-b cancellation alerts",
+      "previous": "r2-a",
+      "tokens": 2000000,
+      "tasks": 2,
+      "epic": "E03",
+      "integration": false,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E03/F02/US01"
+      ]
+    },
+    {
+      "id": "r2-c",
+      "title": "R2-c renewal dashboard",
+      "previous": "r2-b",
+      "tokens": 2000000,
+      "tasks": 2,
+      "epic": "E03",
+      "integration": false,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E03/F03/US01"
+      ]
+    },
+    {
+      "id": "r2-d",
+      "title": "R2-d R2 integration",
+      "previous": "r2-c",
+      "tokens": 1800000,
+      "tasks": 1,
+      "epic": "E03",
+      "integration": true,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E03/F04/US01"
+      ]
+    },
+    {
+      "id": "r3-a",
+      "title": "R3-a benchmark service",
+      "previous": "r2-d",
+      "tokens": 4000000,
+      "tasks": 4,
+      "epic": "E04",
+      "integration": false,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E04/F01/US01",
+        "E04/F01/US02"
+      ]
+    },
+    {
+      "id": "r3-b",
+      "title": "R3-b savings engine",
+      "previous": "r3-a",
+      "tokens": 4300000,
+      "tasks": 4,
+      "epic": "E04",
+      "integration": false,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E04/F02/US01",
+        "E04/F02/US02"
+      ]
+    },
+    {
+      "id": "r3-c",
+      "title": "R3-c savings dashboard",
+      "previous": "r3-b",
+      "tokens": 2000000,
+      "tasks": 2,
+      "epic": "E04",
+      "integration": false,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E04/F03/US01"
+      ]
+    },
+    {
+      "id": "r3-d",
+      "title": "R3-d R3 integration",
+      "previous": "r3-c",
+      "tokens": 1800000,
+      "tasks": 1,
+      "epic": "E04",
+      "integration": true,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E04/F04/US01"
+      ]
+    },
+    {
+      "id": "r4-a",
+      "title": "R4-a quote extraction",
+      "previous": "r3-d",
+      "tokens": 4800000,
+      "tasks": 4,
+      "epic": "E05",
+      "integration": false,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E05/F01/US01",
+        "E05/F01/US02"
+      ]
+    },
+    {
+      "id": "r4-b",
+      "title": "R4-b quote assessment",
+      "previous": "r4-a",
+      "tokens": 2800000,
+      "tasks": 2,
+      "epic": "E05",
+      "integration": false,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E05/F02/US01"
+      ]
+    },
+    {
+      "id": "r4-c",
+      "title": "R4-c negotiation strategy",
+      "previous": "r4-b",
+      "tokens": 4800000,
+      "tasks": 4,
+      "epic": "E05",
+      "integration": false,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E05/F03/US01",
+        "E05/F03/US02"
+      ]
+    },
+    {
+      "id": "r4-d",
+      "title": "R4-d Day-1 path",
+      "previous": "r4-c",
+      "tokens": 1800000,
+      "tasks": 1,
+      "epic": "E05",
+      "integration": true,
+      "checks": [
+        "github_auth",
+        "github_org",
+        "github_repos",
+        "hitl_previous"
+      ],
+      "stories": [
+        "E05/F04/US01"
+      ]
+    }
+  ]
+}

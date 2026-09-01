@@ -1,0 +1,20 @@
+waveId: wave-v1-night-r4-c
+status: planned
+# R4-c negotiation strategy. Prior-slice depends_on dropped (producer-completeness).
+# tokens: 4.8M / 8.0M cap (S/M/L mapped in cut_nightly_slices.py).
+# Launch: ./run.ps1 -Max -Slice r4-c -o execution-fanout
+phases:
+  - id: 1
+    name: phase-1
+    tasks:
+      - {id: E05/F03/US01/T01, prompt: reports/workitems/epic-05-quote-check/feature-03-negotiation-strategy/us-01-negotiation-strategy/tasks/task-01-negotiation-strategy.md, produces: [negotiation-strategy], depends_on: [], effort: L, layer: backend, status: live}
+  - id: 2
+    name: phase-2
+    tasks:
+      - {id: E05/F03/US01/T02, prompt: reports/workitems/epic-05-quote-check/feature-03-negotiation-strategy/us-01-negotiation-strategy/tasks/task-02-strategy-evidence.md, produces: [strategy-evidence], depends_on: [negotiation-strategy], effort: M, layer: backend, status: live}
+      - {id: E05/F03/US02/T01, prompt: reports/workitems/epic-05-quote-check/feature-03-negotiation-strategy/us-02-outcome-capture/tasks/task-01-outcome-capture.md, produces: [negotiation-outcome], depends_on: [negotiation-strategy], effort: M, layer: backend, status: live}
+  - id: 3
+    name: phase-3
+    tasks:
+      - {id: E05/F03/US02/T02, prompt: reports/workitems/epic-05-quote-check/feature-03-negotiation-strategy/us-02-outcome-capture/tasks/task-02-realized-propagation.md, produces: [outcome-propagation], depends_on: [negotiation-outcome], effort: M, layer: backend, status: live}
+forks: []

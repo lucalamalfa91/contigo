@@ -1,0 +1,15 @@
+waveId: wave-v1-night-r4-b
+status: planned
+# R4-b quote assessment. Prior-slice depends_on dropped (producer-completeness).
+# tokens: 2.8M / 8.0M cap (S/M/L mapped in cut_nightly_slices.py).
+# Launch: ./run.ps1 -Max -Slice r4-b -o execution-fanout
+phases:
+  - id: 1
+    name: phase-1
+    tasks:
+      - {id: E05/F02/US01/T01, prompt: reports/workitems/epic-05-quote-check/feature-02-quote-assessment/us-01-market-assessment/tasks/task-01-market-assessment.md, produces: [market-assessment], depends_on: [], effort: L, layer: backend, status: live}
+  - id: 2
+    name: phase-2
+    tasks:
+      - {id: E05/F02/US01/T02, prompt: reports/workitems/epic-05-quote-check/feature-02-quote-assessment/us-01-market-assessment/tasks/task-02-target-saving.md, produces: [target-saving], depends_on: [market-assessment], effort: M, layer: backend, status: live}
+forks: []

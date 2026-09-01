@@ -1,0 +1,11 @@
+waveId: wave-v1-night-r4-d
+status: planned
+# R4-d Day-1 path. Prior-slice depends_on dropped (producer-completeness).
+# tokens: 1.8M / 8.0M cap (S/M/L mapped in cut_nightly_slices.py).
+# Launch: ./run.ps1 -Max -Slice r4-d -o execution-fanout
+phases:
+  - id: 1
+    name: phase-1
+    tasks:
+      - {id: E05/F04/US01/T01, prompt: reports/workitems/epic-05-quote-check/feature-04-r4-integration/us-01-final-integration/tasks/task-01-r4-integration.md, produces: [r4-integration], depends_on: [], effort: L, layer: backend, status: live}
+forks: []

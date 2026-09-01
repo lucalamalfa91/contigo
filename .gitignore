@@ -5,3 +5,10 @@
 .claude/skills/scan
 .claude/skills/query
 .claude/settings.local.json
+
+# Helix fan-out checkouts and process-local secrets
+worktrees/
+.helix/.env
+.helix/node_modules/
+.helix/.git/
+.helix/.git.bak

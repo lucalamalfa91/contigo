@@ -1,0 +1,272 @@
+waveId: wave-v1-demo-r0-r4
+status: planned
+phases:
+  - id: 1
+    name: phase-1
+    tasks:
+      - {id: E01/F01/US01/T01, prompt: reports/workitems/epic-01-platform/feature-01-platform-bootstrap/us-01-github-org-repo-protection/tasks/task-01-github-org-repo-protection.md, produces: [github-org-repos, github-branch-protection], depends_on: [], effort: M, layer: backend, status: live}
+  - id: 2
+    name: phase-2
+    tasks:
+      - {id: E01/F01/US01/T02, prompt: reports/workitems/epic-01-platform/feature-01-platform-bootstrap/us-01-github-org-repo-protection/tasks/task-02-monorepo-secret-scan.md, produces: [repo-secret-scan], depends_on: [github-org-repos], effort: S, layer: backend, status: live}
+      - {id: E01/F01/US02/T01, prompt: reports/workitems/epic-01-platform/feature-01-platform-bootstrap/us-02-hcp-terraform-workspaces/tasks/task-01-hcp-workspaces.md, produces: [hcp-terraform-workspaces], depends_on: [github-org-repos], effort: S, layer: backend, status: live}
+  - id: 3
+    name: phase-3
+    tasks:
+      - {id: E01/F01/US02/T02, prompt: reports/workitems/epic-01-platform/feature-01-platform-bootstrap/us-02-hcp-terraform-workspaces/tasks/task-02-hcp-vcs-wiring.md, produces: [hcp-vcs-wiring], depends_on: [hcp-terraform-workspaces], effort: S, layer: backend, status: live}
+      - {id: E01/F02/US01/T01, prompt: reports/workitems/epic-01-platform/feature-02-azure-infrastructure/us-01-terraform-module-library/tasks/task-01-terraform-module-library.md, produces: [terraform-module-library], depends_on: [github-org-repos, hcp-terraform-workspaces], effort: L, layer: backend, status: live}
+  - id: 4
+    name: phase-4
+    tasks:
+      - {id: E01/F02/US01/T02, prompt: reports/workitems/epic-01-platform/feature-02-azure-infrastructure/us-01-terraform-module-library/tasks/task-02-terraform-env-roots.md, produces: [terraform-env-roots], depends_on: [terraform-module-library], effort: M, layer: backend, status: live}
+  - id: 5
+    name: phase-5
+    tasks:
+      - {id: E01/F02/US02/T01, prompt: reports/workitems/epic-01-platform/feature-02-azure-infrastructure/us-02-dev-environment/tasks/task-01-dev-environment-provision.md, produces: [azure-dev-environment], depends_on: [terraform-env-roots], effort: L, layer: backend, status: live}
+      - {id: E01/F02/US03/T01, prompt: reports/workitems/epic-01-platform/feature-02-azure-infrastructure/us-03-demo-environment/tasks/task-01-demo-environment-provision.md, produces: [azure-demo-environment], depends_on: [terraform-env-roots], effort: L, layer: backend, status: live}
+  - id: 6
+    name: phase-6
+    tasks:
+      - {id: E01/F02/US02/T02, prompt: reports/workitems/epic-01-platform/feature-02-azure-infrastructure/us-02-dev-environment/tasks/task-02-dev-outputs-verify.md, produces: [dev-outputs-verified], depends_on: [azure-dev-environment], effort: S, layer: backend, status: live}
+      - {id: E01/F02/US03/T02, prompt: reports/workitems/epic-01-platform/feature-02-azure-infrastructure/us-03-demo-environment/tasks/task-02-demo-isolation-check.md, produces: [demo-isolation-verified], depends_on: [azure-demo-environment], effort: S, layer: backend, status: live}
+  - id: 7
+    name: phase-7
+    tasks:
+      - {id: E01/F02/US04/T01, prompt: reports/workitems/epic-01-platform/feature-02-azure-infrastructure/us-04-entra-keyvault/tasks/task-01-entra-keyvault-provision.md, produces: [entra-registrations, keyvaults], depends_on: [azure-dev-environment, azure-demo-environment], effort: L, layer: backend, status: live}
+  - id: 8
+    name: phase-8
+    tasks:
+      - {id: E01/F02/US04/T02, prompt: reports/workitems/epic-01-platform/feature-02-azure-infrastructure/us-04-entra-keyvault/tasks/task-02-keyvault-scope-grants.md, produces: [keyvault-scope-grants], depends_on: [entra-registrations, keyvaults], effort: M, layer: backend, status: live}
+      - {id: E01/F02/US05/T01, prompt: reports/workitems/epic-01-platform/feature-02-azure-infrastructure/us-05-foundry-account/tasks/task-01-foundry-account-provision.md, produces: [foundry-account], depends_on: [entra-registrations], effort: M, layer: backend, status: live}
+  - id: 9
+    name: phase-9
+    tasks:
+      - {id: E01/F02/US05/T02, prompt: reports/workitems/epic-01-platform/feature-02-azure-infrastructure/us-05-foundry-account/tasks/task-02-foundry-connection-verify.md, produces: [foundry-connection], depends_on: [foundry-account], effort: S, layer: backend, status: live}
+      - {id: E01/F03/US01/T01, prompt: reports/workitems/epic-01-platform/feature-03-ci-cd-delivery/us-01-ci-azure-oidc/tasks/task-01-ci-azure-oidc.md, produces: [ci-azure-auth], depends_on: [entra-registrations], effort: L, layer: backend, status: live}
+  - id: 10
+    name: phase-10
+    tasks:
+      - {id: E01/F03/US01/T02, prompt: reports/workitems/epic-01-platform/feature-03-ci-cd-delivery/us-01-ci-azure-oidc/tasks/task-02-workflow-auth-step.md, produces: [ci-workflow-auth], depends_on: [ci-azure-auth], effort: S, layer: backend, status: live}
+      - {id: E01/F03/US02/T01, prompt: reports/workitems/epic-01-platform/feature-03-ci-cd-delivery/us-02-per-folder-workflows/tasks/task-01-per-folder-workflows.md, produces: [ci-cd-workflows], depends_on: [ci-azure-auth], effort: L, layer: backend, status: live}
+      - {id: E01/F04/US01/T01, prompt: reports/workitems/epic-01-platform/feature-04-backend-foundation/us-01-dotnet-solution-shape/tasks/task-01-dotnet-solution.md, produces: [dotnet-solution], depends_on: [github-org-repos], effort: L, layer: backend, status: live}
+  - id: 11
+    name: phase-11
+    tasks:
+      - {id: E01/F03/US02/T02, prompt: reports/workitems/epic-01-platform/feature-03-ci-cd-delivery/us-02-per-folder-workflows/tasks/task-02-path-filter-verify.md, produces: [ci-path-filters], depends_on: [ci-cd-workflows], effort: S, layer: backend, status: live}
+      - {id: E01/F03/US03/T01, prompt: reports/workitems/epic-01-platform/feature-03-ci-cd-delivery/us-03-promotion-dev-demo/tasks/task-01-promotion-workflow.md, produces: [demo-promotion], depends_on: [ci-cd-workflows], effort: M, layer: backend, status: live}
+      - {id: E01/F04/US01/T02, prompt: reports/workitems/epic-01-platform/feature-04-backend-foundation/us-01-dotnet-solution-shape/tasks/task-02-architecture-test.md, produces: [dotnet-architecture-test], depends_on: [dotnet-solution], effort: S, layer: backend, status: live}
+  - id: 12
+    name: phase-12
+    tasks:
+      - {id: E01/F03/US03/T02, prompt: reports/workitems/epic-01-platform/feature-03-ci-cd-delivery/us-03-promotion-dev-demo/tasks/task-02-demo-environment-reviewers.md, produces: [demo-reviewers], depends_on: [demo-promotion], effort: S, layer: backend, status: live}
+      - {id: E01/F04/US02/T01, prompt: reports/workitems/epic-01-platform/feature-04-backend-foundation/us-02-relational-store/tasks/task-01-ef-core-pgvector.md, produces: [postgres-schema], depends_on: [dotnet-solution], effort: L, layer: backend, status: live}
+  - id: 13
+    name: phase-13
+    tasks:
+      - {id: E01/F04/US02/T02, prompt: reports/workitems/epic-01-platform/feature-04-backend-foundation/us-02-relational-store/tasks/task-02-migrations-apply.md, produces: [postgres-migrations], depends_on: [postgres-schema], effort: S, layer: backend, status: live}
+  - id: 14
+    name: phase-14
+    tasks:
+      - {id: E01/F04/US03/T01, prompt: reports/workitems/epic-01-platform/feature-04-backend-foundation/us-03-tenant-rls/tasks/task-01-tenant-rls.md, produces: [tenant-rls], depends_on: [postgres-schema], effort: L, layer: backend, status: live}
+  - id: 15
+    name: phase-15
+    tasks:
+      - {id: E01/F04/US03/T02, prompt: reports/workitems/epic-01-platform/feature-04-backend-foundation/us-03-tenant-rls/tasks/task-02-rls-migration-check.md, produces: [rls-migration-check], depends_on: [tenant-rls], effort: S, layer: backend, status: live}
+      - {id: E01/F04/US04/T01, prompt: reports/workitems/epic-01-platform/feature-04-backend-foundation/us-04-deployable-api/tasks/task-01-deployable-api.md, produces: [deployable-api], depends_on: [dotnet-solution, tenant-rls], effort: M, layer: backend, status: live}
+  - id: 16
+    name: phase-16
+    tasks:
+      - {id: E01/F04/US04/T02, prompt: reports/workitems/epic-01-platform/feature-04-backend-foundation/us-04-deployable-api/tasks/task-02-deployable-worker.md, produces: [deployable-worker], depends_on: [deployable-api], effort: M, layer: backend, status: live}
+  - id: 17
+    name: phase-17
+    tasks:
+      - {id: E01/F05/US01/T01, prompt: reports/workitems/epic-01-platform/feature-05-identity-workspace/us-01-workspace-roles/tasks/task-01-workspace-roles.md, produces: [workspace-roles], depends_on: [tenant-rls], effort: M, layer: backend, status: live}
+  - id: 18
+    name: phase-18
+    tasks:
+      - {id: E01/F05/US01/T02, prompt: reports/workitems/epic-01-platform/feature-05-identity-workspace/us-01-workspace-roles/tasks/task-02-membership-invite.md, produces: [workspace-membership], depends_on: [workspace-roles], effort: M, layer: backend, status: live}
+  - id: 19
+    name: phase-19
+    tasks:
+      - {id: E01/F06/US01/T01, prompt: reports/workitems/epic-01-platform/feature-06-document-ingestion/us-01-document-upload/tasks/task-01-document-upload.md, produces: [document-upload], depends_on: [workspace-roles, deployable-api], effort: M, layer: backend, status: live}
+  - id: 20
+    name: phase-20
+    tasks:
+      - {id: E01/F06/US01/T02, prompt: reports/workitems/epic-01-platform/feature-06-document-ingestion/us-01-document-upload/tasks/task-02-document-metadata.md, produces: [document-metadata], depends_on: [document-upload], effort: S, layer: backend, status: live}
+  - id: 21
+    name: phase-21
+    tasks:
+      - {id: E01/F06/US02/T01, prompt: reports/workitems/epic-01-platform/feature-06-document-ingestion/us-02-audit-baseline/tasks/task-01-audit-events.md, produces: [audit-abstraction], depends_on: [workspace-roles], effort: M, layer: backend, status: live}
+  - id: 22
+    name: phase-22
+    tasks:
+      - {id: E01/F06/US02/T02, prompt: reports/workitems/epic-01-platform/feature-06-document-ingestion/us-02-audit-baseline/tasks/task-02-audit-query.md, produces: [audit-query], depends_on: [audit-abstraction], effort: S, layer: backend, status: live}
+  - id: 23
+    name: phase-23
+    tasks:
+      - {id: E01/F07/US01/T01, prompt: reports/workitems/epic-01-platform/feature-07-web-client/us-01-web-oidc-shell/tasks/task-01-web-oidc-shell.md, produces: [web-client], depends_on: [deployable-api, workspace-roles], effort: M, layer: frontend, status: live}
+  - id: 24
+    name: phase-24
+    tasks:
+      - {id: E01/F07/US01/T02, prompt: reports/workitems/epic-01-platform/feature-07-web-client/us-01-web-oidc-shell/tasks/task-02-web-api-client.md, produces: [web-api-client], depends_on: [web-client], effort: S, layer: frontend, status: live}
+      - {id: E01/F08/US01/T01, prompt: reports/workitems/epic-01-platform/feature-08-mobile-scaffold/us-01-mobile-scaffold/tasks/task-01-mobile-scaffold.md, produces: [mobile-scaffold], depends_on: [deployable-api], effort: M, layer: frontend, status: live}
+  - id: 25
+    name: phase-25
+    tasks:
+      - {id: E01/F08/US01/T02, prompt: reports/workitems/epic-01-platform/feature-08-mobile-scaffold/us-01-mobile-scaffold/tasks/task-02-mobile-oidc.md, produces: [mobile-oidc], depends_on: [mobile-scaffold], effort: S, layer: frontend, status: live}
+  - id: 26
+    name: phase-26
+    tasks:
+      - {id: E01/F09/US01/T01, prompt: reports/workitems/epic-01-platform/feature-09-r0-integration/us-01-final-integration/tasks/task-01-r0-integration.md, produces: [r0-integration], depends_on: [document-upload, document-metadata, audit-query, web-client, web-api-client, mobile-scaffold, mobile-oidc, deployable-worker], effort: L, layer: backend, status: live}
+  - id: 27
+    name: phase-27
+    tasks:
+      - {id: E02/F01/US01/T01, prompt: reports/workitems/epic-02-contract-intelligence/feature-01-extraction-pipeline/us-01-ai-gateway-classification/tasks/task-01-ai-gateway-roles.md, produces: [ai-gateway-roles], depends_on: [deployable-worker], effort: M, layer: backend, status: live}
+  - id: 28
+    name: phase-28
+    tasks:
+      - {id: E02/F01/US01/T02, prompt: reports/workitems/epic-02-contract-intelligence/feature-01-extraction-pipeline/us-01-ai-gateway-classification/tasks/task-02-ai-gateway-logging.md, produces: [ai-gateway-logging], depends_on: [ai-gateway-roles], effort: S, layer: backend, status: live}
+      - {id: E02/F02/US01/T01, prompt: reports/workitems/epic-02-contract-intelligence/feature-02-contract-schema/us-01-contract-clause-obligation/tasks/task-01-contract-schema.md, produces: [contract-schema], depends_on: [postgres-schema], effort: L, layer: backend, status: live}
+  - id: 29
+    name: phase-29
+    tasks:
+      - {id: E02/F01/US02/T01, prompt: reports/workitems/epic-02-contract-intelligence/feature-01-extraction-pipeline/us-02-staged-extraction/tasks/task-01-staged-extraction.md, produces: [extraction-pipeline], depends_on: [ai-gateway-roles, contract-schema], effort: L, layer: backend, status: live}
+      - {id: E02/F02/US01/T02, prompt: reports/workitems/epic-02-contract-intelligence/feature-02-contract-schema/us-01-contract-clause-obligation/tasks/task-02-schema-evidence.md, produces: [contract-evidence-schema], depends_on: [contract-schema], effort: M, layer: backend, status: live}
+  - id: 30
+    name: phase-30
+    tasks:
+      - {id: E02/F01/US02/T02, prompt: reports/workitems/epic-02-contract-intelligence/feature-01-extraction-pipeline/us-02-staged-extraction/tasks/task-02-hybrid-ocr.md, produces: [hybrid-ocr], depends_on: [extraction-pipeline], effort: M, layer: backend, status: live}
+      - {id: E02/F02/US02/T01, prompt: reports/workitems/epic-02-contract-intelligence/feature-02-contract-schema/us-02-embedding-search-index/tasks/task-01-embedding-entity.md, produces: [embedding-entity], depends_on: [contract-schema], effort: M, layer: backend, status: live}
+  - id: 31
+    name: phase-31
+    tasks:
+      - {id: E02/F02/US02/T02, prompt: reports/workitems/epic-02-contract-intelligence/feature-02-contract-schema/us-02-embedding-search-index/tasks/task-02-tenant-retrieval.md, produces: [tenant-retrieval], depends_on: [embedding-entity], effort: M, layer: backend, status: live}
+  - id: 32
+    name: phase-32
+    tasks:
+      - {id: E02/F03/US01/T01, prompt: reports/workitems/epic-02-contract-intelligence/feature-03-portfolio-contract-360/us-01-portfolio-list-filters/tasks/task-01-portfolio-list.md, produces: [portfolio-list], depends_on: [contract-schema], effort: M, layer: backend, status: live}
+  - id: 33
+    name: phase-33
+    tasks:
+      - {id: E02/F03/US01/T02, prompt: reports/workitems/epic-02-contract-intelligence/feature-03-portfolio-contract-360/us-01-portfolio-list-filters/tasks/task-02-portfolio-filters.md, produces: [portfolio-filters], depends_on: [portfolio-list], effort: M, layer: backend, status: live}
+      - {id: E02/F03/US02/T01, prompt: reports/workitems/epic-02-contract-intelligence/feature-03-portfolio-contract-360/us-02-contract-360-aggregate/tasks/task-01-contract-360.md, produces: [contract-360], depends_on: [portfolio-list], effort: M, layer: backend, status: live}
+  - id: 34
+    name: phase-34
+    tasks:
+      - {id: E02/F04/US01/T01, prompt: reports/workitems/epic-02-contract-intelligence/feature-04-ask-contigo-citations/us-01-query-router/tasks/task-01-query-router.md, produces: [query-router], depends_on: [contract-schema], effort: M, layer: backend, status: live}
+  - id: 35
+    name: phase-35
+    tasks:
+      - {id: E02/F04/US01/T02, prompt: reports/workitems/epic-02-contract-intelligence/feature-04-ask-contigo-citations/us-01-query-router/tasks/task-02-deterministic-queries.md, produces: [deterministic-queries], depends_on: [query-router], effort: M, layer: backend, status: live}
+      - {id: E02/F04/US02/T01, prompt: reports/workitems/epic-02-contract-intelligence/feature-04-ask-contigo-citations/us-02-rag-citations/tasks/task-01-rag-citations.md, produces: [rag-citations], depends_on: [tenant-retrieval, ai-gateway-roles], effort: L, layer: backend, status: live}
+  - id: 36
+    name: phase-36
+    tasks:
+      - {id: E02/F04/US02/T02, prompt: reports/workitems/epic-02-contract-intelligence/feature-04-ask-contigo-citations/us-02-rag-citations/tasks/task-02-abstain-guard.md, produces: [abstain-guard], depends_on: [rag-citations], effort: M, layer: backend, status: live}
+  - id: 37
+    name: phase-37
+    tasks:
+      - {id: E02/F05/US01/T01, prompt: reports/workitems/epic-02-contract-intelligence/feature-05-validation-corrections/us-01-correction-history/tasks/task-01-correction-history.md, produces: [correction-history], depends_on: [contract-schema], effort: M, layer: backend, status: live}
+  - id: 38
+    name: phase-38
+    tasks:
+      - {id: E02/F05/US01/T02, prompt: reports/workitems/epic-02-contract-intelligence/feature-05-validation-corrections/us-01-correction-history/tasks/task-02-correction-audit.md, produces: [correction-audit], depends_on: [correction-history, audit-abstraction], effort: S, layer: backend, status: live}
+  - id: 39
+    name: phase-39
+    tasks:
+      - {id: E02/F06/US01/T01, prompt: reports/workitems/epic-02-contract-intelligence/feature-06-r1-integration/us-01-final-integration/tasks/task-01-r1-integration.md, produces: [r1-integration], depends_on: [hybrid-ocr, contract-evidence-schema, tenant-retrieval, portfolio-filters, contract-360, deterministic-queries, abstain-guard, correction-audit], effort: L, layer: backend, status: live}
+  - id: 40
+    name: phase-40
+    tasks:
+      - {id: E03/F01/US01/T01, prompt: reports/workitems/epic-03-renewal-intelligence/feature-01-renewal-engine/us-01-deterministic-dates/tasks/task-01-deterministic-dates.md, produces: [renewal-engine], depends_on: [contract-schema], effort: M, layer: backend, status: live}
+  - id: 41
+    name: phase-41
+    tasks:
+      - {id: E03/F01/US01/T02, prompt: reports/workitems/epic-03-renewal-intelligence/feature-01-renewal-engine/us-01-deterministic-dates/tasks/task-02-renewal-opportunity.md, produces: [renewal-opportunity], depends_on: [renewal-engine], effort: M, layer: backend, status: live}
+      - {id: E03/F01/US02/T01, prompt: reports/workitems/epic-03-renewal-intelligence/feature-01-renewal-engine/us-02-priority-score/tasks/task-01-priority-score.md, produces: [renewal-priority], depends_on: [renewal-engine], effort: M, layer: backend, status: live}
+  - id: 42
+    name: phase-42
+    tasks:
+      - {id: E03/F01/US02/T02, prompt: reports/workitems/epic-03-renewal-intelligence/feature-01-renewal-engine/us-02-priority-score/tasks/task-02-priority-explainability.md, produces: [renewal-priority-explain], depends_on: [renewal-priority], effort: S, layer: backend, status: live}
+      - {id: E03/F02/US01/T01, prompt: reports/workitems/epic-03-renewal-intelligence/feature-02-cancellation-alerts/us-01-threshold-scheduler/tasks/task-01-threshold-scheduler.md, produces: [threshold-scheduler], depends_on: [renewal-engine], effort: M, layer: backend, status: live}
+  - id: 43
+    name: phase-43
+    tasks:
+      - {id: E03/F02/US01/T02, prompt: reports/workitems/epic-03-renewal-intelligence/feature-02-cancellation-alerts/us-01-threshold-scheduler/tasks/task-02-alert-recompute.md, produces: [renewal-alerts], depends_on: [threshold-scheduler, correction-history], effort: M, layer: backend, status: live}
+      - {id: E03/F03/US01/T01, prompt: reports/workitems/epic-03-renewal-intelligence/feature-03-renewal-dashboard/us-01-renewal-dashboard-api/tasks/task-01-renewal-dashboard.md, produces: [renewal-dashboard], depends_on: [renewal-engine], effort: M, layer: backend, status: live}
+  - id: 44
+    name: phase-44
+    tasks:
+      - {id: E03/F03/US01/T02, prompt: reports/workitems/epic-03-renewal-intelligence/feature-03-renewal-dashboard/us-01-renewal-dashboard-api/tasks/task-02-renewal-action.md, produces: [renewal-action], depends_on: [renewal-dashboard], effort: M, layer: backend, status: live}
+  - id: 45
+    name: phase-45
+    tasks:
+      - {id: E03/F04/US01/T01, prompt: reports/workitems/epic-03-renewal-intelligence/feature-04-r2-integration/us-01-final-integration/tasks/task-01-r2-integration.md, produces: [r2-integration], depends_on: [renewal-opportunity, renewal-priority-explain, renewal-alerts, renewal-action], effort: L, layer: backend, status: live}
+  - id: 46
+    name: phase-46
+    tasks:
+      - {id: E04/F01/US01/T01, prompt: reports/workitems/epic-04-savings-intelligence/feature-01-benchmark-service/us-01-benchmark-interface/tasks/task-01-benchmark-interface.md, produces: [benchmark-interface], depends_on: [dotnet-solution], effort: M, layer: backend, status: live}
+  - id: 47
+    name: phase-47
+    tasks:
+      - {id: E04/F01/US01/T02, prompt: reports/workitems/epic-04-savings-intelligence/feature-01-benchmark-service/us-01-benchmark-interface/tasks/task-02-adapter-registry.md, produces: [benchmark-registry], depends_on: [benchmark-interface], effort: M, layer: backend, status: live}
+      - {id: E04/F01/US02/T01, prompt: reports/workitems/epic-04-savings-intelligence/feature-01-benchmark-service/us-02-fixture-adapter/tasks/task-01-fixture-adapter.md, produces: [fixture-adapter], depends_on: [benchmark-interface], effort: M, layer: backend, status: live}
+  - id: 48
+    name: phase-48
+    tasks:
+      - {id: E04/F01/US02/T02, prompt: reports/workitems/epic-04-savings-intelligence/feature-01-benchmark-service/us-02-fixture-adapter/tasks/task-02-fixture-confidence.md, produces: [fixture-confidence], depends_on: [fixture-adapter], effort: M, layer: backend, status: live}
+      - {id: E04/F02/US01/T01, prompt: reports/workitems/epic-04-savings-intelligence/feature-02-savings-engine/us-01-price-normalization/tasks/task-01-price-normalization.md, produces: [savings-normalization], depends_on: [benchmark-interface], effort: L, layer: backend, status: live}
+  - id: 49
+    name: phase-49
+    tasks:
+      - {id: E04/F02/US01/T02, prompt: reports/workitems/epic-04-savings-intelligence/feature-02-savings-engine/us-01-price-normalization/tasks/task-02-savings-provenance.md, produces: [savings-provenance], depends_on: [savings-normalization], effort: S, layer: backend, status: live}
+      - {id: E04/F02/US02/T01, prompt: reports/workitems/epic-04-savings-intelligence/feature-02-savings-engine/us-02-savings-opportunity/tasks/task-01-savings-opportunity.md, produces: [savings-opportunity], depends_on: [savings-normalization], effort: M, layer: backend, status: live}
+  - id: 50
+    name: phase-50
+    tasks:
+      - {id: E04/F02/US02/T02, prompt: reports/workitems/epic-04-savings-intelligence/feature-02-savings-engine/us-02-savings-opportunity/tasks/task-02-realized-savings.md, produces: [realized-savings], depends_on: [savings-opportunity, audit-abstraction], effort: M, layer: backend, status: live}
+      - {id: E04/F03/US01/T01, prompt: reports/workitems/epic-04-savings-intelligence/feature-03-savings-dashboard/us-01-savings-kpis/tasks/task-01-savings-kpis.md, produces: [savings-kpis], depends_on: [savings-opportunity], effort: M, layer: backend, status: live}
+  - id: 51
+    name: phase-51
+    tasks:
+      - {id: E04/F03/US01/T02, prompt: reports/workitems/epic-04-savings-intelligence/feature-03-savings-dashboard/us-01-savings-kpis/tasks/task-02-savings-list.md, produces: [savings-list], depends_on: [savings-kpis], effort: M, layer: backend, status: live}
+  - id: 52
+    name: phase-52
+    tasks:
+      - {id: E04/F04/US01/T01, prompt: reports/workitems/epic-04-savings-intelligence/feature-04-r3-integration/us-01-final-integration/tasks/task-01-r3-integration.md, produces: [r3-integration], depends_on: [benchmark-registry, fixture-confidence, savings-provenance, realized-savings, savings-list], effort: L, layer: backend, status: live}
+  - id: 53
+    name: phase-53
+    tasks:
+      - {id: E05/F01/US01/T01, prompt: reports/workitems/epic-05-quote-check/feature-01-quote-extraction/us-01-quote-line-extraction/tasks/task-01-quote-extraction.md, produces: [quote-extraction], depends_on: [extraction-pipeline], effort: L, layer: backend, status: live}
+  - id: 54
+    name: phase-54
+    tasks:
+      - {id: E05/F01/US01/T02, prompt: reports/workitems/epic-05-quote-check/feature-01-quote-extraction/us-01-quote-line-extraction/tasks/task-02-quote-normalization.md, produces: [quote-normalization], depends_on: [quote-extraction], effort: M, layer: backend, status: live}
+      - {id: E05/F01/US02/T01, prompt: reports/workitems/epic-05-quote-check/feature-01-quote-extraction/us-02-sku-normalization/tasks/task-01-sku-normalization.md, produces: [sku-normalization], depends_on: [quote-extraction], effort: M, layer: backend, status: live}
+  - id: 55
+    name: phase-55
+    tasks:
+      - {id: E05/F01/US02/T02, prompt: reports/workitems/epic-05-quote-check/feature-01-quote-extraction/us-02-sku-normalization/tasks/task-02-sku-recalculate.md, produces: [sku-recalculate], depends_on: [sku-normalization], effort: M, layer: backend, status: live}
+      - {id: E05/F02/US01/T01, prompt: reports/workitems/epic-05-quote-check/feature-02-quote-assessment/us-01-market-assessment/tasks/task-01-market-assessment.md, produces: [market-assessment], depends_on: [sku-normalization, benchmark-interface], effort: L, layer: backend, status: live}
+  - id: 56
+    name: phase-56
+    tasks:
+      - {id: E05/F02/US01/T02, prompt: reports/workitems/epic-05-quote-check/feature-02-quote-assessment/us-01-market-assessment/tasks/task-02-target-saving.md, produces: [target-saving], depends_on: [market-assessment], effort: M, layer: backend, status: live}
+  - id: 57
+    name: phase-57
+    tasks:
+      - {id: E05/F03/US01/T01, prompt: reports/workitems/epic-05-quote-check/feature-03-negotiation-strategy/us-01-negotiation-strategy/tasks/task-01-negotiation-strategy.md, produces: [negotiation-strategy], depends_on: [target-saving], effort: L, layer: backend, status: live}
+  - id: 58
+    name: phase-58
+    tasks:
+      - {id: E05/F03/US01/T02, prompt: reports/workitems/epic-05-quote-check/feature-03-negotiation-strategy/us-01-negotiation-strategy/tasks/task-02-strategy-evidence.md, produces: [strategy-evidence], depends_on: [negotiation-strategy], effort: M, layer: backend, status: live}
+      - {id: E05/F03/US02/T01, prompt: reports/workitems/epic-05-quote-check/feature-03-negotiation-strategy/us-02-outcome-capture/tasks/task-01-outcome-capture.md, produces: [negotiation-outcome], depends_on: [negotiation-strategy], effort: M, layer: backend, status: live}
+  - id: 59
+    name: phase-59
+    tasks:
+      - {id: E05/F03/US02/T02, prompt: reports/workitems/epic-05-quote-check/feature-03-negotiation-strategy/us-02-outcome-capture/tasks/task-02-realized-propagation.md, produces: [outcome-propagation], depends_on: [negotiation-outcome, realized-savings], effort: M, layer: backend, status: live}
+  - id: 60
+    name: phase-60
+    tasks:
+      - {id: E05/F04/US01/T01, prompt: reports/workitems/epic-05-quote-check/feature-04-r4-integration/us-01-final-integration/tasks/task-01-r4-integration.md, produces: [r4-integration], depends_on: [quote-normalization, sku-recalculate, target-saving, strategy-evidence, outcome-propagation], effort: L, layer: backend, status: live}
+forks: []
