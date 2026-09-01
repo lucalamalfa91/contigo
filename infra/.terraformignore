@@ -1,0 +1,42 @@
+# Task E01/F01/US02/T01 (ADR-007: remote state per environment, HCP
+# Terraform workspaces contigo-dev / contigo-demo). HCP Terraform packages
+# the contents of a configuration directory and uploads it for every
+# VCS-driven or CLI-driven ("terraform plan/apply" run via a remote
+# workspace) run. Nothing that could let local state, a local backend
+# override, or a real credential ride along in that upload belongs here --
+# state and secrets live only in HCP Terraform / Key Vault, never in a
+# file that could be packaged or committed.
+#
+# infra/environments/{dev,demo}/ do not exist yet (feature-02 owns the
+# module layout from ADR-007). Once they do, mirror this file into each of
+# them too: Terraform resolves .terraformignore relative to the actual
+# configuration directory being packaged for a given run, not just this
+# infra/ root.
+
+# Local state -- must never exist on disk here; HCP Terraform is the only
+# state store (ADR-007). A stray local statefile must never be uploaded.
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# Local backend / CLI overrides -- every backend is remote (HCP Terraform
+# workspace per environment); a local override.tf could otherwise redirect
+# state or providers out from under that guarantee.
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Variable files may carry environment-specific (sometimes sensitive)
+# values; keep them out of the uploaded package by default.
+*.tfvars
+*.tfvars.json
+!example.tfvars
+
+# Workstation noise that must never leave the workstation.
+crash.log
+crash.*.log
+.DS_Store
