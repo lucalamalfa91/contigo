@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "local-dev": {
+      "source": {
+        "source": "directory",
+        "path": "./.claude/marketplace"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "afi@local-dev": true
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "local-dev",
+  "owner": {
+    "name": "AFI Local"
+  },
+  "plugins": [
+    {
+      "name": "afi",
+      "source": "./plugins/afi",
+      "description": "Agentic File Index — local checkout of agentic-file-index"
+    }
+  ]
+}

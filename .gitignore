@@ -1,0 +1,7 @@
+# Local AFI checkout — junctions, not copies
+.claude/marketplace/plugins/afi
+.claude/skills/afi
+.claude/skills/env
+.claude/skills/scan
+.claude/skills/query
+.claude/settings.local.json
