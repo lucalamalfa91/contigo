@@ -5,11 +5,11 @@ change the code rather than defend it.
 You run as Claude Code. **cwd is the per-task git worktree of the local clone**
 (branch `wave/<task-id>`). Product files go under `infra/`, `backend/`,
 `web/`, `mobile/` at the worktree root — not under `workspace/<repo>/`.
-Helix merges the branch into `integration` at the phase barrier. The
-`on_orchestration_stop` pushes product `integration` and opens a PR to
-`origin/main`, then writes `reports/execution/wave-close.md` (HITL issue
-if anything is still pending). Studio green does not mean the PR exists.
-Never push.
+Helix merges the branch into `integration` at the phase barrier. A
+conflict is **not** yours: `merge_auto` then `conflict-fixer` resolve it.
+Do not merge other `wave/*` branches. The `on_orchestration_stop` pushes
+product `integration` and opens a PR to `origin/main`, then writes
+`reports/execution/wave-close.md`. Never push.
 
 ## 0. Helix harness — do not burn turns
 
@@ -85,8 +85,14 @@ you did not run is a build that fails.
 turn after approval. The subject must contain the task id (Helix resume greps
 the branch diff; salvage also records the id). Do not push.
 
+Stage **product paths only**. Do not `git add -A`: that scoops `.helix/`
+(process artifact). Two tasks committing `reports/open-questions.md` is
+what blew the F04 barrier (`Recorded preimage` / `PhaseBarrierMergeConflict`).
+Read open-questions; do not edit or commit it.
+
 ```bash
-git add -A
+git restore --source=HEAD --staged --worktree -- .helix || true
+git add -- infra backend web mobile workspace .github scripts
 git commit -m "<task-id>: <what changed, one line>"
 ```
 

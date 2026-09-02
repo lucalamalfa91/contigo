@@ -363,12 +363,12 @@ def slice_id_from_current() -> str:
         raise SystemExit(
             "ERROR: slice.current.yaml is unset — launch with -Slice <id>"
         )
-    tail = wave_id.rsplit("-", 2)
-    # wave-v1-night-r0-a → r0-a
-    if len(wave_id) >= 4 and re.search(r"r\d+-[a-z]$", wave_id):
-        sid = re.search(r"(r\d+-[a-z])$", wave_id)
-        if sid:
-            return sid.group(1)
+    epic = re.search(r"(e\d+)$", wave_id)
+    if epic:
+        return epic.group(1)
+    nightly = re.search(r"(r\d+-[a-z]+)$", wave_id)
+    if nightly:
+        return nightly.group(1)
     raise SystemExit(f"ERROR: cannot parse slice id from waveId {wave_id}")
 
 
