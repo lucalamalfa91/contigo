@@ -1,0 +1,15 @@
+waveId: wave-v1-night-r1-e
+status: planned
+# R1-e validation corrections. Prior-slice depends_on dropped (producer-completeness).
+# tokens: 1.5M / 8.0M cap (S/M/L mapped in cut_nightly_slices.py).
+# Launch: ./run.ps1 -Max -Slice r1-e -o execution-fanout
+phases:
+  - id: 1
+    name: phase-1
+    tasks:
+      - {id: E02/F05/US01/T01, prompt: reports/workitems/epic-02-contract-intelligence/feature-05-validation-corrections/us-01-correction-history/tasks/task-01-correction-history.md, produces: [correction-history], depends_on: [], effort: M, layer: backend, status: live}
+  - id: 2
+    name: phase-2
+    tasks:
+      - {id: E02/F05/US01/T02, prompt: reports/workitems/epic-02-contract-intelligence/feature-05-validation-corrections/us-01-correction-history/tasks/task-02-correction-audit.md, produces: [correction-audit], depends_on: [correction-history], effort: S, layer: backend, status: live}
+forks: []

@@ -1,0 +1,15 @@
+waveId: wave-v1-night-r2-b
+status: planned
+# R2-b cancellation alerts. Prior-slice depends_on dropped (producer-completeness).
+# tokens: 2.0M / 8.0M cap (S/M/L mapped in cut_nightly_slices.py).
+# Launch: ./run.ps1 -Max -Slice r2-b -o execution-fanout
+phases:
+  - id: 1
+    name: phase-1
+    tasks:
+      - {id: E03/F02/US01/T01, prompt: reports/workitems/epic-03-renewal-intelligence/feature-02-cancellation-alerts/us-01-threshold-scheduler/tasks/task-01-threshold-scheduler.md, produces: [threshold-scheduler], depends_on: [], effort: M, layer: backend, status: live}
+  - id: 2
+    name: phase-2
+    tasks:
+      - {id: E03/F02/US01/T02, prompt: reports/workitems/epic-03-renewal-intelligence/feature-02-cancellation-alerts/us-01-threshold-scheduler/tasks/task-02-alert-recompute.md, produces: [renewal-alerts], depends_on: [threshold-scheduler], effort: M, layer: backend, status: live}
+forks: []

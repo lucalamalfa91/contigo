@@ -1,0 +1,20 @@
+waveId: wave-v1-night-r3-b
+status: planned
+# R3-b savings engine. Prior-slice depends_on dropped (producer-completeness).
+# tokens: 4.3M / 8.0M cap (S/M/L mapped in cut_nightly_slices.py).
+# Launch: ./run.ps1 -Max -Slice r3-b -o execution-fanout
+phases:
+  - id: 1
+    name: phase-1
+    tasks:
+      - {id: E04/F02/US01/T01, prompt: reports/workitems/epic-04-savings-intelligence/feature-02-savings-engine/us-01-price-normalization/tasks/task-01-price-normalization.md, produces: [savings-normalization], depends_on: [], effort: L, layer: backend, status: live}
+  - id: 2
+    name: phase-2
+    tasks:
+      - {id: E04/F02/US01/T02, prompt: reports/workitems/epic-04-savings-intelligence/feature-02-savings-engine/us-01-price-normalization/tasks/task-02-savings-provenance.md, produces: [savings-provenance], depends_on: [savings-normalization], effort: S, layer: backend, status: live}
+      - {id: E04/F02/US02/T01, prompt: reports/workitems/epic-04-savings-intelligence/feature-02-savings-engine/us-02-savings-opportunity/tasks/task-01-savings-opportunity.md, produces: [savings-opportunity], depends_on: [savings-normalization], effort: M, layer: backend, status: live}
+  - id: 3
+    name: phase-3
+    tasks:
+      - {id: E04/F02/US02/T02, prompt: reports/workitems/epic-04-savings-intelligence/feature-02-savings-engine/us-02-savings-opportunity/tasks/task-02-realized-savings.md, produces: [realized-savings], depends_on: [savings-opportunity], effort: M, layer: backend, status: live}
+forks: []

@@ -1,0 +1,15 @@
+waveId: wave-v1-night-r0-j
+status: planned
+# R0-j mobile scaffold. Prior-slice depends_on dropped (producer-completeness).
+# tokens: 1.5M / 8.0M cap (S/M/L mapped in cut_nightly_slices.py).
+# Launch: ./run.ps1 -Max -Slice r0-j -o execution-fanout
+phases:
+  - id: 1
+    name: phase-1
+    tasks:
+      - {id: E01/F08/US01/T01, prompt: reports/workitems/epic-01-platform/feature-08-mobile-scaffold/us-01-mobile-scaffold/tasks/task-01-mobile-scaffold.md, produces: [mobile-scaffold], depends_on: [], effort: M, layer: frontend, status: live}
+  - id: 2
+    name: phase-2
+    tasks:
+      - {id: E01/F08/US01/T02, prompt: reports/workitems/epic-01-platform/feature-08-mobile-scaffold/us-01-mobile-scaffold/tasks/task-02-mobile-oidc.md, produces: [mobile-oidc], depends_on: [mobile-scaffold], effort: S, layer: frontend, status: live}
+forks: []

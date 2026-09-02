@@ -1,0 +1,23 @@
+waveId: wave-v1-night-r1-a
+status: planned
+# R1-a extraction pipeline. Prior-slice depends_on dropped (producer-completeness).
+# tokens: 4.3M / 8.0M cap (S/M/L mapped in cut_nightly_slices.py).
+# Launch: ./run.ps1 -Max -Slice r1-a -o execution-fanout
+phases:
+  - id: 1
+    name: phase-1
+    tasks:
+      - {id: E02/F01/US01/T01, prompt: reports/workitems/epic-02-contract-intelligence/feature-01-extraction-pipeline/us-01-ai-gateway-classification/tasks/task-01-ai-gateway-roles.md, produces: [ai-gateway-roles], depends_on: [], effort: M, layer: backend, status: live}
+  - id: 2
+    name: phase-2
+    tasks:
+      - {id: E02/F01/US01/T02, prompt: reports/workitems/epic-02-contract-intelligence/feature-01-extraction-pipeline/us-01-ai-gateway-classification/tasks/task-02-ai-gateway-logging.md, produces: [ai-gateway-logging], depends_on: [ai-gateway-roles], effort: S, layer: backend, status: live}
+  - id: 3
+    name: phase-3
+    tasks:
+      - {id: E02/F01/US02/T01, prompt: reports/workitems/epic-02-contract-intelligence/feature-01-extraction-pipeline/us-02-staged-extraction/tasks/task-01-staged-extraction.md, produces: [extraction-pipeline], depends_on: [ai-gateway-roles], effort: L, layer: backend, status: live}
+  - id: 4
+    name: phase-4
+    tasks:
+      - {id: E02/F01/US02/T02, prompt: reports/workitems/epic-02-contract-intelligence/feature-01-extraction-pipeline/us-02-staged-extraction/tasks/task-02-hybrid-ocr.md, produces: [hybrid-ocr], depends_on: [extraction-pipeline], effort: M, layer: backend, status: live}
+forks: []

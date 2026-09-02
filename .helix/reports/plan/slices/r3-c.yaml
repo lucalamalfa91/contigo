@@ -1,0 +1,15 @@
+waveId: wave-v1-night-r3-c
+status: planned
+# R3-c savings dashboard. Prior-slice depends_on dropped (producer-completeness).
+# tokens: 2.0M / 8.0M cap (S/M/L mapped in cut_nightly_slices.py).
+# Launch: ./run.ps1 -Max -Slice r3-c -o execution-fanout
+phases:
+  - id: 1
+    name: phase-1
+    tasks:
+      - {id: E04/F03/US01/T01, prompt: reports/workitems/epic-04-savings-intelligence/feature-03-savings-dashboard/us-01-savings-kpis/tasks/task-01-savings-kpis.md, produces: [savings-kpis], depends_on: [], effort: M, layer: backend, status: live}
+  - id: 2
+    name: phase-2
+    tasks:
+      - {id: E04/F03/US01/T02, prompt: reports/workitems/epic-04-savings-intelligence/feature-03-savings-dashboard/us-01-savings-kpis/tasks/task-02-savings-list.md, produces: [savings-list], depends_on: [savings-kpis], effort: M, layer: backend, status: live}
+forks: []

@@ -1,0 +1,16 @@
+waveId: wave-v1-night-r1-c
+status: planned
+# R1-c portfolio contract 360. Prior-slice depends_on dropped (producer-completeness).
+# tokens: 3.0M / 8.0M cap (S/M/L mapped in cut_nightly_slices.py).
+# Launch: ./run.ps1 -Max -Slice r1-c -o execution-fanout
+phases:
+  - id: 1
+    name: phase-1
+    tasks:
+      - {id: E02/F03/US01/T01, prompt: reports/workitems/epic-02-contract-intelligence/feature-03-portfolio-contract-360/us-01-portfolio-list-filters/tasks/task-01-portfolio-list.md, produces: [portfolio-list], depends_on: [], effort: M, layer: backend, status: live}
+  - id: 2
+    name: phase-2
+    tasks:
+      - {id: E02/F03/US01/T02, prompt: reports/workitems/epic-02-contract-intelligence/feature-03-portfolio-contract-360/us-01-portfolio-list-filters/tasks/task-02-portfolio-filters.md, produces: [portfolio-filters], depends_on: [portfolio-list], effort: M, layer: backend, status: live}
+      - {id: E02/F03/US02/T01, prompt: reports/workitems/epic-02-contract-intelligence/feature-03-portfolio-contract-360/us-02-contract-360-aggregate/tasks/task-01-contract-360.md, produces: [contract-360], depends_on: [portfolio-list], effort: M, layer: backend, status: live}
+forks: []

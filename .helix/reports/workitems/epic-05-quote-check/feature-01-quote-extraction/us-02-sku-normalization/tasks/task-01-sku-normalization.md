@@ -1,0 +1,47 @@
+---
+id: E05/F01/US02/T01
+type: task
+story: us-02-sku-normalization
+wave: R4
+status: live
+target_repo: contigo-backend
+---
+
+# task-01-sku-normalization — 01 Sku Normalization
+
+## Coding objective
+Normalize SKU/edition; flag unmatched.
+
+## Parent story AC covered
+- See parent story `us-02-sku-normalization` acceptance criteria (traced by this task objective).
+
+## Files to create or modify
+| Path | Change |
+|------|--------|
+| workspace/contigo-backend/src/ | implementation for `sku-normalization` |
+
+## Context the implementer needs
+- **Architecture decisions in force**: ADR-002.
+- **Do not touch**: unrelated wave artifacts and provider SDKs in domain code.
+
+## Definition of done
+- [ ] Applicable build (e.g. `dotnet build`) exits 0 and a named test proves the produced artifact `sku-normalization`.
+
+## Tests required
+| Level | What it proves | Where |
+|-------|----------------|-------|
+| unit | sku-normalization behaviour | workspace/contigo-backend/tests |
+
+## Open questions blocking this task
+- none
+
+## Wave-spec entry
+```yaml
+- id: E05/F01/US02/T01
+  prompt: reports/workitems/epic-05-quote-check/feature-01-quote-extraction/us-02-sku-normalization/tasks/task-01-sku-normalization.md
+  produces: [sku-normalization]
+  depends_on: [quote-extraction]
+  effort: M
+  layer: backend
+  status: live
+```

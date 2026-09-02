@@ -1,0 +1,20 @@
+waveId: wave-v1-night-r0-c
+status: planned
+# R0-c azure infrastructure. Prior-slice depends_on dropped (producer-completeness).
+# tokens: 4.3M / 8.0M cap (S/M/L mapped in cut_nightly_slices.py).
+# Launch: ./run.ps1 -Max -Slice r0-c -o execution-fanout
+phases:
+  - id: 1
+    name: phase-1
+    tasks:
+      - {id: E01/F02/US04/T01, prompt: reports/workitems/epic-01-platform/feature-02-azure-infrastructure/us-04-entra-keyvault/tasks/task-01-entra-keyvault-provision.md, produces: [entra-registrations, keyvaults], depends_on: [], effort: L, layer: backend, status: live}
+  - id: 2
+    name: phase-2
+    tasks:
+      - {id: E01/F02/US04/T02, prompt: reports/workitems/epic-01-platform/feature-02-azure-infrastructure/us-04-entra-keyvault/tasks/task-02-keyvault-scope-grants.md, produces: [keyvault-scope-grants], depends_on: [entra-registrations, keyvaults], effort: M, layer: backend, status: live}
+      - {id: E01/F02/US05/T01, prompt: reports/workitems/epic-01-platform/feature-02-azure-infrastructure/us-05-foundry-account/tasks/task-01-foundry-account-provision.md, produces: [foundry-account], depends_on: [entra-registrations], effort: M, layer: backend, status: live}
+  - id: 3
+    name: phase-3
+    tasks:
+      - {id: E01/F02/US05/T02, prompt: reports/workitems/epic-01-platform/feature-02-azure-infrastructure/us-05-foundry-account/tasks/task-02-foundry-connection-verify.md, produces: [foundry-connection], depends_on: [foundry-account], effort: S, layer: backend, status: live}
+forks: []
