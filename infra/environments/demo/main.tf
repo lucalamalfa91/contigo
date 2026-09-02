@@ -123,6 +123,10 @@ module "containerapps" {
   environment         = local.environment
   location            = var.location
   resource_group_name = azurerm_resource_group.this.name
+  # Task E01/F02/US04/T02 (ADR-011): this root's OWN identity module
+  # instance only -- never dev's -- so the API/worker Container Apps can
+  # only ever present demo's workload identity.
+  workload_identity_id = module.identity.workload_identity_id
 }
 
 # ADR-005: Key Vault Standard tier (no Premium/HSM), RBAC-authorized;

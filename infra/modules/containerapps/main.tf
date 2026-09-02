@@ -25,6 +25,17 @@ resource "azurerm_container_app" "api" {
   resource_group_name          = var.resource_group_name
   revision_mode                = "Single"
 
+  # Task E01/F02/US04/T02 (ADR-011): this environment's OWN workload
+  # identity only (var.workload_identity_id, wired from this same root's
+  # module.identity -- see infra/environments/{dev,demo}/main.tf) -- never
+  # a literal, never the other environment's. This is what lets the API
+  # actually exercise modules/keyvault's "Key Vault Secrets User" grant on
+  # this environment's own vault at runtime, with no stored secret.
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [var.workload_identity_id]
+  }
+
   template {
     min_replicas = 0
     max_replicas = 1
@@ -55,6 +66,14 @@ resource "azurerm_container_app" "worker" {
   container_app_environment_id = azurerm_container_app_environment.this.id
   resource_group_name          = var.resource_group_name
   revision_mode                = "Single"
+
+  # Task E01/F02/US04/T02 (ADR-011): same identity as the "api" app above
+  # -- this environment's own workload identity only -- so the worker can
+  # also reach only this environment's own Key Vault, never the other's.
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [var.workload_identity_id]
+  }
 
   template {
     min_replicas = 0

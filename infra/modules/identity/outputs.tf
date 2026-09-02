@@ -31,3 +31,18 @@ output "workload_principal_id" {
   description = "Principal (object) ID of this environment's user-assigned workload identity -- input to modules/keyvault's role assignment so the API/worker can read this environment's own vault only (ADR-011)."
   value       = azurerm_user_assigned_identity.workload.principal_id
 }
+
+# Task E01/F02/US04/T02 (keyvault-scope-grants): the ARM resource id of the
+# SAME workload identity `workload_principal_id` (above) identifies by
+# principal/object id. `azurerm_role_assignment.principal_id` (modules/
+# keyvault) and `azurerm_container_app.identity[0].identity_ids`
+# (modules/containerapps) take two different shapes of identifier for one
+# underlying identity -- a role assignment's principal_id is the AAD
+# object id, while attaching a user-assigned identity to a resource needs
+# its full ARM resource id. Without this output, modules/containerapps has
+# no (non-literal) way to receive the identity it must present at runtime
+# to actually exercise modules/keyvault's grant.
+output "workload_identity_id" {
+  description = "Azure resource ID of this environment's user-assigned workload identity -- input to modules/containerapps so the API/worker Container Apps are assigned this identity (never the other environment's) and can present it at runtime against this environment's own Key Vault grant (ADR-011)."
+  value       = azurerm_user_assigned_identity.workload.id
+}
