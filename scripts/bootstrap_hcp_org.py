@@ -59,6 +59,23 @@ What it does, in order:
      .gitignore from E01/F01/US01/T01 already excludes .terraform/,
      *.tfstate and *.tfstate.*, so this should always pass; it exists so a
      regression is caught here too, not only trusted to .gitignore. AC-3.
+  5. Foundry account (ADR-008, ADR-017) -- task E01/F02/US05/T01. Records,
+     as documentation plus a structural assertion
+     (FOUNDRY_HUB_NAME / AI_SERVICES_ACCOUNT_NAME / FOUNDRY_PROJECTS
+     below), the one hub + two projects (`contigo-dev`, `contigo-demo`) +
+     one pay-as-you-go Azure AI services account + a per-project Document
+     Intelligence connection shape the parent story's AC-1..AC-4 call
+     for. Like VCS wiring above, this is never a live API call from this
+     script: Azure AI Foundry hub/project/account creation is an
+     interactive Azure Portal (or `az` CLI against a live subscription)
+     step, and ADR-008 explicitly keeps it outside the Terraform module
+     surface for V1 ("Model deployment may be a one-time Azure-based or
+     portal step recorded as an implementation task, not part of the
+     Terraform module surface initially"). check_foundry_account_recorded()
+     only proves the recorded shape is complete and internally consistent
+     (one hub, exactly the two named projects, one account, a Document
+     Intelligence connection per project) -- it cannot and does not claim
+     the Portal resources themselves exist.
 
 Auth: `TFE_TOKEN` (the standard env var Terraform CLI and the `tfe`
 provider read) or `HCP_TERRAFORM_TOKEN` as a Contigo-side alias. Address
@@ -73,7 +90,9 @@ org is not the one wired to this account or token.
 
 This script never handles a GitHub token or credential: VCS wiring only
 reads whichever oauth-client HCP Terraform already has configured; it
-never creates or stores one itself.
+never creates or stores one itself. It likewise never handles an Azure
+subscription credential: the Foundry section below (point 5) is local,
+recorded config -- not a call to any Azure API.
 
 Usage:
     python scripts/bootstrap_hcp_org.py
@@ -81,13 +100,18 @@ Usage:
 
 --check-only makes no mutating API call (no organization or workspace
 create/patch) and only reports current state -- useful for CI drift
-checks.
+checks. The Foundry check (point 5) runs regardless of --check-only: it
+never makes a network call in the first place.
 
 Exit 0 only if the organization exists, both workspaces exist (created or
-already present), and no tfstate-shaped path is tracked in git.
+already present), no tfstate-shaped path is tracked in git, and the
+Foundry account's recorded shape (point 5) is complete and consistent.
 "Not-yet-VCS-wired" is reported on stdout but is deliberately not a gate:
 making it one would make this script permanently unable to succeed until a
-human completes a step no script can perform (see point 3 above).
+human completes a step no script can perform (see point 3 above). The
+Foundry Portal resources are the same kind of human-only step, so their
+*existence* is not gated either -- what this script can and does always
+assert is that the recorded shape describing them is complete.
 """
 
 from __future__ import annotations
@@ -371,6 +395,93 @@ def check_no_state_in_git() -> tuple[bool, str]:
     return True, "no tfstate-shaped path is tracked in git"
 
 
+# ---------------------------------------------------------------------------
+# Foundry account (ADR-008, ADR-017) -- portal-recorded, not HCP/Terraform
+# ---------------------------------------------------------------------------
+
+# ADR-008: one Azure AI Foundry hub, two projects (`contigo-dev`,
+# `contigo-demo`), one pay-as-you-go Azure AI services account backing
+# both -- never a second account/subscription. ADR-017 adds Document
+# Intelligence S0 (`prebuilt-read`, `prebuilt-layout`) on that *same*
+# account, with its own connection per project. Task E01/F02/US05/T01.
+#
+# None of this is created by this script, or by Terraform, in V1: Azure AI
+# Foundry hub/project creation is an interactive Azure Portal (or `az` CLI
+# against a live subscription) step -- the same reason VCS wiring above
+# cannot be completed from an API token -- and ADR-008 explicitly keeps
+# the hub/project/account control plane outside the Terraform module
+# surface for V1 ("Model deployment may be a one-time Azure-based or
+# portal step recorded as an implementation task, not part of the
+# Terraform module surface initially"). These constants are the recorded
+# shape a human confirms when performing that Portal step; the managed
+# identity that later authenticates the AI Gateway to it (ADR-011) is
+# infra/modules/identity's `workload_identity_id` / `workload_principal_id`
+# outputs (same task).
+#
+# AI_SERVICES_ACCOUNT_NAME deliberately carries no dev/demo suffix -- it
+# is the one shared account ADR-008 requires; isolation between
+# environments is by distinct Foundry project/connection, never a second
+# account.
+FOUNDRY_HUB_NAME = "hub-contigo"
+AI_SERVICES_ACCOUNT_NAME = "aisvc-contigo"
+
+FOUNDRY_PROJECTS: tuple[dict, ...] = (
+    {
+        "project": "contigo-dev",
+        "env": "dev",
+        # ADR-017 AC-4: one Document Intelligence connection per project,
+        # both pointing at the same AI_SERVICES_ACCOUNT_NAME account.
+        "document_intelligence_connection": "conn-docint-contigo-dev",
+    },
+    {
+        "project": "contigo-demo",
+        "env": "demo",
+        "document_intelligence_connection": "conn-docint-contigo-demo",
+    },
+)
+
+
+def check_foundry_account_recorded() -> tuple[bool, str]:
+    """Local, structural proof of the ADR-008/ADR-017 recorded shape.
+
+    Not a live Azure API call -- see the module docstring point 5 and the
+    comment above FOUNDRY_HUB_NAME for why this script cannot create or
+    query the actual Portal resources. This only asserts the constants
+    above still describe exactly: one hub, the two ADR-008 projects
+    (`contigo-dev`, `contigo-demo`, no more, no fewer), one shared AI
+    services account, and a non-empty Document Intelligence connection
+    name recorded for each project -- i.e. that the recorded shape has
+    not silently drifted (e.g. someone adding a second account, which
+    ADR-008 forbids).
+    """
+    if not FOUNDRY_HUB_NAME.strip():
+        return False, "no Foundry hub name recorded"
+    if not AI_SERVICES_ACCOUNT_NAME.strip():
+        return False, "no Foundry AI services account name recorded"
+
+    expected_projects = {"contigo-dev", "contigo-demo"}
+    recorded_projects = {p["project"] for p in FOUNDRY_PROJECTS}
+    if recorded_projects != expected_projects:
+        return (
+            False,
+            f"expected projects {sorted(expected_projects)}, recorded {sorted(recorded_projects)}",
+        )
+
+    missing_conn = [
+        p["project"]
+        for p in FOUNDRY_PROJECTS
+        if not p.get("document_intelligence_connection", "").strip()
+    ]
+    if missing_conn:
+        return False, f"no Document Intelligence connection recorded for: {', '.join(missing_conn)}"
+
+    connections = [p["document_intelligence_connection"] for p in FOUNDRY_PROJECTS]
+    return True, (
+        f"hub={FOUNDRY_HUB_NAME} account={AI_SERVICES_ACCOUNT_NAME} "
+        f"projects={sorted(recorded_projects)} document_intelligence_connections={connections}"
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -427,11 +538,28 @@ def main() -> int:
             "wire vcs-repo without recreating either workspace."
         )
 
-    if not (ok_org and all_ws_ok and ok_git):
+    ok_foundry, detail_foundry = check_foundry_account_recorded()
+    print(
+        f"[{'PASS' if ok_foundry else 'FAIL'}] foundry account "
+        f"(portal-recorded, ADR-008/ADR-017): {detail_foundry}"
+    )
+    print(
+        "[INFO] Foundry: hub/projects/AI services account are provisioned by hand in the Azure "
+        "Portal, never by this script or Terraform in V1 (ADR-008) -- the check above only "
+        "proves the recorded shape is complete and internally consistent, not that the Portal "
+        "resources exist live. The workload managed identity that will authenticate to it "
+        "(ADR-011) is infra/modules/identity's workload_identity_id/workload_principal_id "
+        "outputs (task E01/F02/US05/T01)."
+    )
+
+    if not (ok_org and all_ws_ok and ok_git and ok_foundry):
         print("[bootstrap_hcp_org] FAIL: see above", file=sys.stderr)
         return 1
 
-    print(f"[bootstrap_hcp_org] PASS: workspaces ready under {org}: {', '.join(ws_names)}")
+    print(
+        f"[bootstrap_hcp_org] PASS: workspaces ready under {org}: {', '.join(ws_names)}; "
+        f"foundry account recorded: {detail_foundry}"
+    )
     return 0
 
 
