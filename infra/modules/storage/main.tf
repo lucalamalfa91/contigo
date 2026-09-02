@@ -30,3 +30,10 @@ resource "azurerm_storage_container" "documents" {
   storage_account_id    = azurerm_storage_account.this.id
   container_access_type = "private"
 }
+
+# ADR-005 "Queue (simple)" row: Queue storage within this same GPv2 account
+# (not a second queue product) as inbox/dead-letter for lightweight jobs.
+resource "azurerm_storage_queue" "jobs" {
+  name               = "jobs"
+  storage_account_id = azurerm_storage_account.this.id
+}
