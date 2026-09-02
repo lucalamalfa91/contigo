@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Contigo.SharedKernel\Contigo.SharedKernel.csproj" />
+    <ProjectReference Include="..\Contigo.Identity.Workspace\Contigo.Identity.Workspace.csproj" />
+    <ProjectReference Include="..\Contigo.Documents.Contracts\Contigo.Documents.Contracts.csproj" />
+    <ProjectReference Include="..\Contigo.Suppliers.Products\Contigo.Suppliers.Products.csproj" />
+    <ProjectReference Include="..\Contigo.Renewals\Contigo.Renewals.csproj" />
+    <ProjectReference Include="..\Contigo.Savings\Contigo.Savings.csproj" />
+    <ProjectReference Include="..\Contigo.Quotes\Contigo.Quotes.csproj" />
+    <ProjectReference Include="..\Contigo.Chat\Contigo.Chat.csproj" />
+    <ProjectReference Include="..\Contigo.Benchmark\Contigo.Benchmark.csproj" />
+    <ProjectReference Include="..\Contigo.AiGateway\Contigo.AiGateway.csproj" />
+    <ProjectReference Include="..\Contigo.Audit\Contigo.Audit.csproj" />
+  </ItemGroup>
+
+
+</Project>
