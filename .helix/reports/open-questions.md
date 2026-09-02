@@ -45,3 +45,24 @@ Mark a wave-spec task `status: gated` only when **no** assumption is defensible.
 ## Software-architect / council (OCR)
 
 - **OQ-ocr-001** — OCR vs native document parse (brief §8, former CQ-008 sub-item). **Status**: `answered`. OCR is in V1: hybrid native-text + Azure AI Document Intelligence (`prebuilt-read` / `prebuilt-layout`) behind the AI Gateway; full document; no 2-page cap. Ref: ADR-017, ADR-004, ADR-005, ADR-008.
+
+## Implementer / E01/F04/US02/T01 (EF Core + pgvector wiring)
+
+- **OQ-impl-001** — ADR-004 fixes the embed-role model as "Foundry embedding model (e.g.
+  `text-embedding-3-small` or `text-embedding-3-large`)... dimension fixed at schema time; small
+  dimension preferred" but does not pin an exact integer. **Status**: `assumed-confirmed`.
+  **Assumption in force**: `Embedding.Vector` is a fixed `vector(1536)` Postgres column
+  (`Embedding.VectorDimensions` constant), matching `text-embedding-3-small`'s native output size
+  — the smaller of the two named candidates, per ADR-004's "small dimension preferred for
+  cost/size." If the council/AI Gateway later selects a different embed model with a different
+  native dimension, this column width is a migration, not a redesign. Ref: ADR-003, ADR-004,
+  `backend/src/Contigo.Documents.Contracts/Domain/Embedding.cs`.
+- **OQ-impl-002** — ADR-003/ADR-009 write every table/column name in lowercase snake_case
+  (`tenant_id`, `document`, `contract`, `embedding`, `clause`, ...), but neither ADR names an EF
+  Core naming convention mechanism. **Status**: `assumed-confirmed`. **Assumption in force**: the
+  Documents/Contracts `DbContext` calls `UseSnakeCaseNamingConvention()` (`EFCore.NamingConventions`
+  package) so the physical schema matches the ADRs' own naming verbatim — without it, Npgsql/EF
+  Core would emit quoted PascalCase identifiers instead. This convention is now load-bearing for
+  every future migration in this module; us-03's RLS policies (`CREATE POLICY ... USING
+  (tenant_id = ...)`) can rely on the lowercase column names existing as written. Ref: ADR-003,
+  ADR-009, `backend/src/Contigo.Documents.Contracts/Infrastructure/DocumentsContractsDbContextOptions.cs`.
