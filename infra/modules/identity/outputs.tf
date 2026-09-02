@@ -32,32 +32,32 @@ output "workload_principal_id" {
   value       = azurerm_user_assigned_identity.workload.principal_id
 }
 
-# Task E01/F02/US04/T02 (keyvault-scope-grants): the ARM resource id of the
-# SAME workload identity `workload_principal_id` (above) identifies by
+# Task E01/F02/US04/T02 (keyvault-scope-grants) and task E01/F02/US05/T01
+# (foundry-account-provision) both need the ARM resource id of the SAME
+# workload identity `workload_principal_id` (above) identifies by
 # principal/object id. `azurerm_role_assignment.principal_id` (modules/
-# keyvault) and `azurerm_container_app.identity[0].identity_ids`
-# (modules/containerapps) take two different shapes of identifier for one
+# keyvault) and `azurerm_container_app.identity[0].identity_ids` (modules/
+# containerapps) take two different shapes of identifier for one
 # underlying identity -- a role assignment's principal_id is the AAD
-# object id, while attaching a user-assigned identity to a resource needs
-# its full ARM resource id. Without this output, modules/containerapps has
-# no (non-literal) way to receive the identity it must present at runtime
-# to actually exercise modules/keyvault's grant.
+# object id, while attaching a user-assigned identity to a resource, or
+# recording the ADR-008 Foundry/Document Intelligence connection's RBAC
+# grant (ADR-011), needs its full ARM resource id. Task E01/F02/US05/T02
+# (foundry-connection-verify) records this same value against each
+# per-project Foundry connection id (scripts/foundry_connection_verify.py)
+# -- one workload identity per environment, never a literal, in any of
+# its three consumers.
+#
+# NOTE (E01/F02/US05/T02): this output previously existed as two
+# textually-duplicated `output "workload_identity_id" { ... }` blocks
+# (one nested, malformed, inside the other) -- a phase-barrier merge
+# collision between task E01/F02/US04/T02 and task E01/F02/US05/T01,
+# which independently added the same-named output on sibling branches cut
+# from the same parent commit. That state failed `terraform fmt
+# -recursive -check` (Unclosed configuration block) and `terraform
+# validate` (Missing required argument "value"; Unsupported block type)
+# for both environments. Collapsed back to the single block Terraform
+# requires; the value and consumers are unchanged.
 output "workload_identity_id" {
-  description = "Azure resource ID of this environment's user-assigned workload identity -- input to modules/containerapps so the API/worker Container Apps are assigned this identity (never the other environment's) and can present it at runtime against this environment's own Key Vault grant (ADR-011)."
-# Task E01/F02/US05/T01 (foundry-account-provision, ADR-008/ADR-011). The
-# same workload identity above is what the AI Gateway (running in the API
-# and worker Container Apps) will use to call the ADR-008 Foundry account
-# (chat/embed) and its Document Intelligence connections (ADR-017)
-# without a stored key. Two things are still missing before that is live,
-# both out of this task's file scope: (1) modules/containerapps does not
-# yet attach this identity to the Container Apps via `identity {
-# identity_ids = [...] }` -- this output is that identity_ids value; (2)
-# the Foundry hub/projects/AI services account are portal-recorded, not a
-# Terraform resource in V1 (ADR-008), so the RBAC role assignment granting
-# this identity access to that account (the Foundry-side counterpart of
-# modules/keyvault's workload_secrets_user assignment) is a human Portal
-# step keyed off workload_principal_id above, not a resource in this repo.
-output "workload_identity_id" {
-  description = "Full Azure resource ID of this environment's user-assigned workload identity -- input to modules/containerapps' (future) `identity { identity_ids = [...] }` block and to the portal-recorded Foundry/Document Intelligence role assignment (ADR-008, ADR-011), alongside workload_principal_id above."
+  description = "Full ARM resource ID of this environment's user-assigned workload identity -- input to modules/containerapps' `identity { identity_ids = [...] }` block (ADR-011, task E01/F02/US04/T02) and recorded against this environment's Foundry project connection id (ADR-008, ADR-017, tasks E01/F02/US05/T01-T02), alongside workload_principal_id above."
   value       = azurerm_user_assigned_identity.workload.id
 }

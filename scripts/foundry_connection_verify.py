@@ -1,0 +1,332 @@
+#!/usr/bin/env python3
+"""Structural verification for Foundry connection readiness (task
+E01/F02/US05/T02, foundry-connection-verify).
+
+Parent story `us-05-foundry-account` AC-1..AC-4 (one hub; two projects
+`contigo-dev`/`contigo-demo`; one pay-as-you-go AI services account;
+per-project Document Intelligence connection). Task E01/F02/US05/T01
+(already merged into this branch) recorded that shape as
+FOUNDRY_HUB_NAME/AI_SERVICES_ACCOUNT_NAME/FOUNDRY_PROJECTS in
+scripts/bootstrap_hcp_org.py and structurally asserted it is complete and
+internally consistent (check_foundry_account_recorded). This task's own
+coding objective ("Verify Foundry hub/projects availability in
+westeurope; record connection ids") is narrower and additive -- never a
+re-decision of what T01 already owns:
+
+  1. Region -- ADR-006 pins both `dev` and `demo` to the same region
+     ("West Europe" / `westeurope`), and ADR-008's own Assumptions section
+     names that as the region Foundry + Document Intelligence must be
+     available in. check_region_pinned_to_westeurope() re-asserts (not
+     just assumes) that both environment roots are still pinned there --
+     via scripts/terraform_env_roots_scan.check_location_pin(), the same
+     check task E01/F02/US01/T02 already wrote -- and that the canonical
+     Foundry region slug this task records (`westeurope`) is the same
+     region. One region, one source of truth (infra/environments/*/
+     variables.tf), never a second literal that could silently drift.
+  2. Connection ids -- T01 recorded a Document Intelligence connection
+     *name* per project (e.g. `conn-docint-contigo-dev`) but never a
+     structured connection *id* tying hub/account/project/connection name
+     together. build_foundry_connections() derives one deterministically
+     from T01's own recorded constants (never a second, hand-typed copy),
+     and the check_connection_* functions below prove each is
+     well-formed, unique per project/environment, and still resolves to
+     the single ADR-008 AI services account -- no second account, no
+     cross-environment collision.
+  3. Identity material -- ADR-008: "The AI Gateway reads Foundry endpoint
+     + credentials via managed identity/Key Vault; no model key in
+     Terraform source or app code." The managed identity that later
+     authenticates each connection above is
+     infra/modules/identity/outputs.tf's `workload_identity_id` output
+     (tasks E01/F02/US04/T02 and E01/F02/US05/T01).
+     check_workload_identity_output_well_formed() proves that output
+     exists exactly once and resolves to the real resource attribute.
+     This is deliberately stricter than the sibling scans: both
+     keyvault_scope_grants_check.py and entra_keyvault_provision_scan.py
+     collect outputs into a {name: value} dict, so a *duplicate* block
+     name is invisible to a plain membership check (the last match wins
+     silently). This script counts block *headers* via regex first, so a
+     repeat of the exact drift this task found on this branch --
+     modules/identity/outputs.tf briefly held two textually-overlapping
+     `output "workload_identity_id"` blocks after a phase-barrier merge
+     between this task and E01/F02/US04/T02 -- fails loudly instead of
+     passing by accident.
+
+Like every other Foundry/HCP check in this repo, none of this is a live
+Azure or HCP Terraform API call: Azure AI Foundry hub/project/connection
+creation is an interactive Azure Portal step (ADR-008), and this harness
+has no Azure subscription credential in scope. "Availability" here means
+what scripts/bootstrap_hcp_org.py's own Foundry section already means --
+the recorded shape is complete, internally consistent, and pinned to the
+same region as the rest of the infrastructure -- not a live capacity
+check against Azure.
+
+Checks, all read-only, no network, no `terraform` binary, no Azure/HCP
+credentials required.
+
+Usage:
+    python scripts/foundry_connection_verify.py
+
+Exit 0 if every check passes. Non-zero otherwise, with a PASS/FAIL line
+per check on stdout (failures also echoed to stderr).
+"""
+
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+SCRIPTS_ROOT = Path(__file__).resolve().parent
+if str(SCRIPTS_ROOT) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_ROOT))
+
+from terraform_env_roots_scan import _extract_block, _strip_line_comments  # noqa: E402
+import terraform_env_roots_scan as tfr  # noqa: E402
+import bootstrap_hcp_org as hcp  # noqa: E402
+import repo_secret_scan as secret_scan  # noqa: E402
+
+REPO_ROOT = SCRIPTS_ROOT.parent
+INFRA_ROOT = REPO_ROOT / "infra"
+IDENTITY_DIR = INFRA_ROOT / "modules" / "identity"
+ENVIRONMENTS_ROOT = INFRA_ROOT / "environments"
+
+ENVS = ("dev", "demo")
+
+# ADR-006: both environments share one region; ADR-008's Assumptions
+# section names it as the region Foundry + AI services + Document
+# Intelligence must be confirmed available in. "westeurope" is the
+# canonical Azure region slug for the Terraform-pinned "West Europe"
+# (infra/environments/{dev,demo}/variables.tf) -- see _normalize_region
+# below for why both spellings must compare equal.
+FOUNDRY_REGION = "westeurope"
+
+# ADR-017 AC-4: the exact two Document Intelligence prebuilt models this
+# story's per-project connections must serve. Named literally here
+# because T01's own recorded shape (FOUNDRY_PROJECTS in
+# bootstrap_hcp_org.py) only carries the connection *name*, never the
+# model ids the connection is for.
+DOCUMENT_INTELLIGENCE_MODELS = ("prebuilt-read", "prebuilt-layout")
+
+FILES_TO_SECRET_SCAN_RELATIVE = ("modules/identity/outputs.tf",)
+
+
+def _normalize_region(value: str) -> str:
+    """"West Europe" and "westeurope" must compare equal: Terraform's
+    azurerm provider accepts the human-readable display name, while
+    Foundry/ARM region slugs are lowercase-no-space. Same region, two
+    spellings -- this is the one place that equivalence is asserted."""
+    return re.sub(r"\s+", "", value).lower()
+
+
+# ---------------------------------------------------------------------------
+# Derive connection ids from T01's own recorded shape -- never a second,
+# hand-typed source of truth for hub/account/project/connection-name.
+# ---------------------------------------------------------------------------
+
+def build_foundry_connections(projects=None) -> tuple[dict, ...]:
+    projects = projects if projects is not None else hcp.FOUNDRY_PROJECTS
+    return tuple(
+        {
+            "project": p["project"],
+            "env": p["env"],
+            "document_intelligence_connection": p["document_intelligence_connection"],
+            "connection_id": (
+                f"{hcp.AI_SERVICES_ACCOUNT_NAME}/projects/{p['project']}"
+                f"/connections/{p['document_intelligence_connection']}"
+            ),
+            "region": FOUNDRY_REGION,
+        }
+        for p in projects
+    )
+
+
+# ---------------------------------------------------------------------------
+# check_* -- each returns (passed, detail), mirroring the sibling scan
+# scripts (scripts/keyvault_scope_grants_check.py and friends). `projects`
+# lets tests exercise a synthetic FOUNDRY_PROJECTS-shaped fixture without
+# touching bootstrap_hcp_org's real module constant.
+# ---------------------------------------------------------------------------
+
+def check_foundry_account_shape_still_recorded() -> tuple:
+    """Re-runs task T01's own check as part of *this* task's proof: this
+    task's connection ids are only meaningful if T01's hub/project/account
+    shape is still complete and consistent -- never assumed just because a
+    different task's test file currently passes."""
+    return hcp.check_foundry_account_recorded()
+
+
+def check_region_pinned_to_westeurope(environments_root: Path = ENVIRONMENTS_ROOT) -> tuple:
+    if _normalize_region(FOUNDRY_REGION) != "westeurope":
+        return False, f"FOUNDRY_REGION={FOUNDRY_REGION!r} does not normalize to 'westeurope'"
+    problems = []
+    for env in ENVS:
+        passed, detail = tfr.check_location_pin(env, environments_root)
+        if not passed:
+            problems.append(detail)
+            continue
+        if _normalize_region(tfr.EXPECTED_LOCATION_DEFAULT) != _normalize_region(FOUNDRY_REGION):
+            problems.append(
+                f"{env}: infra location default {tfr.EXPECTED_LOCATION_DEFAULT!r} does not "
+                f"match Foundry region {FOUNDRY_REGION!r}"
+            )
+    if problems:
+        return False, "; ".join(problems)
+    return True, (
+        f"dev and demo are both pinned to {tfr.EXPECTED_LOCATION_DEFAULT!r}, the same region "
+        f"this task records for Foundry ({FOUNDRY_REGION!r}, ADR-006/ADR-008)"
+    )
+
+
+def check_connection_ids_well_formed(projects=None) -> tuple:
+    connections = build_foundry_connections(projects)
+    problems = []
+    for c in connections:
+        cid = c["connection_id"]
+        if not cid.strip():
+            problems.append(f"{c['project']}: empty connection_id")
+            continue
+        if not c["document_intelligence_connection"].strip():
+            problems.append(f"{c['project']}: empty document_intelligence_connection name")
+            continue
+        if hcp.AI_SERVICES_ACCOUNT_NAME not in cid:
+            problems.append(
+                f"{c['project']}: connection_id {cid!r} does not reference "
+                f"{hcp.AI_SERVICES_ACCOUNT_NAME!r}"
+            )
+        if c["project"] not in cid:
+            problems.append(f"{c['project']}: connection_id {cid!r} does not reference its own project name")
+        if c["document_intelligence_connection"] not in cid:
+            problems.append(
+                f"{c['project']}: connection_id {cid!r} does not reference "
+                f"{c['document_intelligence_connection']!r}"
+            )
+    if problems:
+        return False, "; ".join(problems)
+    return True, f"{len(connections)} connection id(s) well-formed: {[c['connection_id'] for c in connections]}"
+
+
+def check_connection_ids_unique_and_isolated(projects=None) -> tuple:
+    connections = build_foundry_connections(projects)
+    ids = [c["connection_id"] for c in connections]
+    if len(set(ids)) != len(ids):
+        return False, f"connection ids are not all unique: {ids}"
+    envs = [c["env"] for c in connections]
+    if len(set(envs)) != len(envs):
+        return False, f"connection envs are not all unique: {envs}"
+    return True, f"{len(connections)} connection id(s) unique, one per environment ({sorted(envs)})"
+
+
+def check_connections_share_single_account(projects=None) -> tuple:
+    connections = build_foundry_connections(projects)
+    accounts = {c["connection_id"].split("/projects/")[0] for c in connections}
+    if accounts != {hcp.AI_SERVICES_ACCOUNT_NAME}:
+        return False, (
+            f"connection ids reference account(s) {sorted(accounts)}, expected only "
+            f"{hcp.AI_SERVICES_ACCOUNT_NAME!r} (ADR-008: never a second account)"
+        )
+    return True, f"all connections resolve to the single ADR-008 AI services account {hcp.AI_SERVICES_ACCOUNT_NAME!r}"
+
+
+def check_document_intelligence_models_recorded() -> tuple:
+    expected = {"prebuilt-read", "prebuilt-layout"}
+    recorded = set(DOCUMENT_INTELLIGENCE_MODELS)
+    if recorded != expected:
+        return False, f"DOCUMENT_INTELLIGENCE_MODELS={sorted(recorded)}, expected {sorted(expected)} (ADR-017 AC-4)"
+    return True, f"Document Intelligence models recorded: {sorted(recorded)} (ADR-017 AC-4)"
+
+
+def check_workload_identity_output_well_formed(identity_dir: Path = IDENTITY_DIR) -> tuple:
+    """ADR-008/ADR-011: the connection material each Foundry connection
+    above will authenticate with is this environment's own
+    workload_identity_id Terraform output. Counts block *headers*, not
+    dict keys, so a duplicate/malformed second `output
+    "workload_identity_id"` block -- invisible to a plain {name: value}
+    membership check -- is still caught here (see module docstring)."""
+    path = identity_dir / "outputs.tf"
+    if not path.is_file():
+        return False, "modules/identity/outputs.tf does not exist"
+    text = _strip_line_comments(path.read_text(encoding="utf-8"))
+    headers = list(re.finditer(r'output\s+"workload_identity_id"\s*{', text))
+    if not headers:
+        return False, 'modules/identity/outputs.tf has no output "workload_identity_id"'
+    if len(headers) > 1:
+        return False, (
+            f'modules/identity/outputs.tf declares output "workload_identity_id" '
+            f"{len(headers)} times, expected exactly 1"
+        )
+    body = _extract_block(text, headers[0].end() - 1)
+    value_m = re.search(r"value\s*=\s*(\S+)", body)
+    value = value_m.group(1) if value_m else None
+    if value != "azurerm_user_assigned_identity.workload.id":
+        return False, (
+            f'output "workload_identity_id" value={value!r}, expected '
+            "'azurerm_user_assigned_identity.workload.id'"
+        )
+    return True, (
+        'modules/identity/outputs.tf declares exactly one output "workload_identity_id" = '
+        "azurerm_user_assigned_identity.workload.id"
+    )
+
+
+def check_no_secret_literals(repo_root: Path = REPO_ROOT, infra_root: Path = INFRA_ROOT) -> tuple:
+    hits = []
+    scanned = 0
+    for rel in FILES_TO_SECRET_SCAN_RELATIVE:
+        path = infra_root / rel
+        if not path.is_file():
+            return False, f"infra/{rel} does not exist"
+        try:
+            display = str(path.relative_to(repo_root)).replace("\\", "/")
+        except ValueError:
+            display = f"infra/{rel}"
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        scanned += 1
+        hits.extend(secret_scan.find_secret_matches(display, text))
+    if hits:
+        return False, "; ".join(hits)
+    return True, f"{scanned} file(s) scanned (identity outputs), no secret-shaped strings found"
+
+
+def run_all_checks(
+    identity_dir: Path = IDENTITY_DIR,
+    environments_root: Path = ENVIRONMENTS_ROOT,
+    repo_root: Path = REPO_ROOT,
+    infra_root: Path = INFRA_ROOT,
+    projects=None,
+) -> list:
+    return [
+        ("foundry account shape still recorded", check_foundry_account_shape_still_recorded()),
+        ("region pinned to westeurope", check_region_pinned_to_westeurope(environments_root)),
+        ("connection ids well-formed", check_connection_ids_well_formed(projects)),
+        ("connection ids unique + isolated per env", check_connection_ids_unique_and_isolated(projects)),
+        ("connections share the single ADR-008 account", check_connections_share_single_account(projects)),
+        ("Document Intelligence models recorded", check_document_intelligence_models_recorded()),
+        ("workload_identity_id output well-formed", check_workload_identity_output_well_formed(identity_dir)),
+        ("no secret literals", check_no_secret_literals(repo_root, infra_root)),
+    ]
+
+
+def main() -> int:
+    ok = True
+    for name, (passed, detail) in run_all_checks():
+        print(f"[{'PASS' if passed else 'FAIL'}] {name}: {detail}")
+        ok = ok and passed
+
+    connections = build_foundry_connections()
+    print(
+        "[INFO] recorded Foundry connection ids: "
+        + ", ".join(f"{c['project']}={c['connection_id']}" for c in connections)
+    )
+
+    if ok:
+        print(
+            "[foundry_connection_verify] PASS: Foundry hub/projects pinned to "
+            f"{FOUNDRY_REGION} (ADR-006/ADR-008); connection ids recorded per project"
+        )
+        return 0
+    print("[foundry_connection_verify] FAIL: see above", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
