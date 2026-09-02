@@ -45,9 +45,31 @@ in the repo.
 
 ## Context the implementer needs
 
-- **Architecture decisions in force**: ADR-014 (trunk-based, one monorepo, protected `main`).
+- **Architecture decisions in force**: ADR-014 (trunk-based, one monorepo, protected `main`). Read `.helix/reports/architecture/ADR-014-git-flow.md` — do not Glob for it.
 - **Product remote**: `lucalamalfa91/contigo` — https://github.com/lucalamalfa91/contigo (public)
 - **Do not touch**: no application code; no Terraform state yet; do not create a GitHub org; do not make the repo private; do not create `contigo-infra` / `contigo-backend` / `contigo-web` / `contigo-mobile` remotes.
+
+## Exact sequence (run 1d0d3c3d burned turns — do not repeat)
+
+Already true. Do not rediscover:
+
+- `gh` is logged in as `lucalamalfa91`. Remote exists and is public.
+- cwd = worktree root. `.helix/` is already there. Missing at root: `README.md`, `infra/`, `backend/`, `web/`, `mobile/`, `scripts/`.
+- The two scripts **already exist**: `.helix/scripts/verify_github_repos.py` and `.helix/scripts/apply_github_branch_protection.py`.
+- `AFI: n/a — no SCIP-indexable source`. Helix Bash has no `npm`. Do not call AFI.
+
+Do, from the worktree root, in this order:
+
+1. `mkdir -p scripts infra backend web mobile` and add `.gitkeep` in the four domain folders.
+2. Copy the two scripts to repo-root `scripts/` (same filenames). Do not rewrite them.
+3. Write `README.md`: owner `lucalamalfa91`, repo `contigo`, URL, description Contigo platform, folders `infra/ backend/ web/ mobile/ .helix/`.
+4. Keep the existing root `.gitignore`; add ignores for `.env`, `*.tfstate`, secrets. Do not remove the AFI/helix lines.
+5. `python scripts/verify_github_repos.py` — must exit 0. Paste stdout + exit code.
+6. `python scripts/apply_github_branch_protection.py` — must exit 0. Paste stdout + exit code.
+7. Confirm no committed secrets (no `.env`, PAT, connection string, key, SAS in tracked files).
+8. `git add -A && git commit -m "E01/F01/US01/T01: adopt lucalamalfa91/contigo and protect main"`. Never push.
+
+Do not: create an org; create extra remotes; rewrite `.helix/scripts/*`; Glob `reports/architecture/**/*`; invoke AFI/`npm`/`node`; push/force-push/rebase.
 
 ## Definition of done
 

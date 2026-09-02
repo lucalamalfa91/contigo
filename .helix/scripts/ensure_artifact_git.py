@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
-"""Ensure `.helix` is its own git toplevel on `main` (fan-out isolation).
+"""Keep fan-out pointed at the product clone when `.helix` lives inside it.
 
-`execution-fanout` uses `isolation: git-worktree` + `base_branch: main`.
-Helix walks up from the artifact dir (`run_repo.py::require_git_repo`). If
-this folder is not a repo, that walk finds `helix-artifacts` and would
-provision worktrees of the whole artifacts monorepo.
+Historically this script `git init`'d `.helix` so Helix would not worktree
+`helix-artifacts`. After `.helix` was committed into `lucalamalfa91/contigo`,
+that nest hid `origin` from `open_fanout_pr.py` (r0-a: hook exit 1, Studio green).
 
-Dedicated-run-repo (no `base_branch`) is the wrong mode here: `output_dir`
-is `reports/`, so the session repo would not contain `workspace/<repo>/`.
-
-Usage (cwd may be anywhere):
-  python scripts/ensure_artifact_git.py
+Now: if the parent directory is already the product clone, do **not** nest.
+Only init `.helix` when the walk-up would land on a different repo
+(e.g. helix-artifacts).
 """
 
 from __future__ import annotations
@@ -38,12 +35,43 @@ def _toplevel() -> Path | None:
     proc = _git("rev-parse", "--show-toplevel", check=False)
     if proc.returncode != 0:
         return None
-    return Path(proc.stdout.strip())
+    raw = (proc.stdout or "").strip()
+    return Path(raw) if raw else None
+
+
+def _parent_is_product(parent: Path) -> bool:
+    proc = subprocess.run(
+        ["git", "remote", "get-url", "origin"],
+        cwd=parent,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    origin = (proc.stdout or "").strip().lower().replace("\\", "/")
+    if "lucalamalfa91/contigo" in origin:
+        return True
+    return all((parent / name).exists() for name in ("infra", "backend", "web", "mobile"))
 
 
 def main() -> int:
     top = _toplevel()
     here = HERE.resolve()
+    parent = here.parent
+
+    if _parent_is_product(parent):
+        print(
+            "[ensure_artifact_git] parent is the product clone "
+            f"({parent}); not nesting .helix (PR hook needs that origin)"
+        )
+        if top is not None and top.resolve() == here:
+            print(
+                "[ensure_artifact_git] leftover nested .helix/.git is still "
+                "the Helix walk-up target. Rename it to .git.nest.bak when no "
+                "wave is running so fan-out uses the product clone.",
+                file=sys.stderr,
+            )
+        return 0
+
     if top is not None and top.resolve() == here:
         branches = _git("branch", "--list", "main").stdout.strip()
         if not branches:
@@ -57,9 +85,7 @@ def main() -> int:
         return 0
 
     if top is not None:
-        print(
-            f"[ensure_artifact_git] nested init: parent toplevel is {top}",
-        )
+        print(f"[ensure_artifact_git] nested init: parent toplevel is {top}")
 
     _git("init", "-b", "main")
     _git("config", "user.email", _HELIX_GIT_EMAIL)
@@ -67,11 +93,7 @@ def main() -> int:
     _git("add", "-A")
     status = _git("status", "--porcelain").stdout.strip()
     if status:
-        _git(
-            "commit",
-            "-m",
-            "helix: initialize artifact repo for fan-out worktrees",
-        )
+        _git("commit", "-m", "helix: initialize artifact repo for fan-out worktrees")
     else:
         _git(
             "commit",

@@ -6,8 +6,35 @@ You run as Claude Code. **cwd is the per-task git worktree of the local clone**
 (branch `wave/<task-id>`). Product files go under `infra/`, `backend/`,
 `web/`, `mobile/` at the worktree root — not under `workspace/<repo>/`.
 Helix merges the branch into `integration` at the phase barrier. The
-`on_orchestration_stop` hook opens a PR `integration` → `origin/main`.
+`on_orchestration_stop` pushes product `integration` and opens a PR to
+`origin/main`, then writes `reports/execution/wave-close.md` (HITL issue
+if anything is still pending). Studio green does not mean the PR exists.
 Never push.
+
+## 0. Helix harness — do not burn turns
+
+Run 1d0d3c3d (E01/F01/US01/T01) wasted the first session on AFI bootstrap,
+`npm`/`node` PATH, and `Glob **/*`. Do not repeat that.
+
+- **cwd is the worktree root** (parent of `.helix/`). Product files live
+  here: `README.md`, `.gitignore`, `scripts/`, `infra/`, `backend/`, `web/`,
+  `mobile/`. `.helix/` is the process artifact already on `main`.
+- If the task names `scripts/<file>.py` and `.helix/scripts/<file>.py`
+  already exists, **copy it to the repo-root `scripts/`**. Do not rewrite
+  it. Do not treat `.helix/scripts/` as the deliverable.
+- Helix Bash has `python` and `gh`. It does **not** have `npm` or `node`.
+  `CLAUDE_PLUGIN_ROOT` is empty. The POSIX AFI wrapper calls `npm` and
+  exits 127. **Do not invoke it. Do not `which npm`. Do not hunt the plugin.**
+- **AFI skip (mandatory when it applies):** if this task only creates
+  folders, docs, or scripts, and `backend/` / `web/` have no application
+  source, write `AFI: n/a — no SCIP-indexable source` and implement. Do
+  not run `afi status`.
+- Read with an **absolute worktree path**. `Glob` of `reports/**/*` or
+  `ADR-014*.md` from a relative process path returns nothing — do not
+  retry. `INDEX.md` lists slugs; Read
+  `.helix/reports/architecture/ADR-NNN-<slug>.md` directly.
+- Use `python`, not `python3`. `gh` is already authenticated as
+  `lucalamalfa91` when the task needs GitHub.
 
 This node is `implementer`. After you finish, control goes to `reviewer`
 unless your last line is `HALTED:` — that ends the workflow **immediately**,
@@ -33,29 +60,14 @@ If the previous turn's last line is `HALTED:`, echo it as your last line and
 **stop**. Do not recode. Do not invent the missing input. Do not emit
 `IMPLEMENTATION_GAPS:` or `IMPLEMENTATION_APPROVED:`.
 
-## 3. AFI before you edit
+## 3. AFI before you edit (only when there is code)
 
-Follow the `afi` skill. Before the first edit:
+Follow the `afi` skill. **First** apply the skip in §0. R0 bootstrap,
+folder layout, GitHub scripts, Terraform-only, docs-only → `AFI: n/a`
+and go to §4. Do not spend a tool call on AFI in those cases.
 
-```bash
-"$AFI" status --json
-```
-
-If the graph is missing or stale and `autoScanSafe` is true, start a scan of
-the trees you will touch. Do not ask permission for `env up` / `scan`.
-
-For every function or class you will change, resolve the ref with
-`--list-functions` / `--list-classes`, then `--called-by`, `--calls-from`,
-and `--structure-of` on the file. If you change an export or signature,
-also `--imported-by` / `--impact-of`. That list is the perimetro you must
-update (call sites, tests, adapters). Do not grep a name to find its users.
-
-After a signature or export change, re-query `--called-by` / `--imported-by`.
-Update those call sites or say why a caller in the graph is out of scope.
-
-If there is no SCIP-indexable source yet, write `AFI: n/a — <why>` in the
-turn and implement. Once `backend/` or `web/` exist, a turn that skips AFI
-on a relationship question is incomplete.
+When `backend/` or `web/` already have source you will change, query
+callers/imports as the skill says. Never guess a function-ref.
 
 ## 4. Implement
 

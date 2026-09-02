@@ -15,8 +15,9 @@
 #
 #   PASSATA 2 -- execution-fanout over reports/plan/slice.current.yaml
 #     Operator copies one slice: ./run.ps1 -Max -Slice r0-a -o execution-fanout
-#     Worktrees of the local clone. on_orchestration_stop → PR to origin/main.
-#     Never fan-out the 103-task master.
+#     Worktrees of the local clone. on_orchestration_stop → PR to origin/main
+#     on the *product* clone, then wave-close.md + HITL if open points remain.
+#     Never fan-out the 103-task master. Studio green ≠ PR opened.
 #
 # Decomposer and remediator are chat+write_file, not Claude Code (PROCESS.md D9).
 #
@@ -34,8 +35,8 @@ defaults:
   harness:
     memory: { scope: session }
     governance:
-      # Opens the gate for execution-fanout's on_orchestration_stop command
-      # (scripts/open_fanout_pr.py). A command without this flag is SpecError.
+      # Opens the gate for execution-fanout's on_orchestration_stop commands
+      # (open_fanout_pr.py, close_wave_slice.py). A command without this flag is SpecError.
       hooks: { allow_external: true }
       policy:
         model_allowlist:
@@ -414,6 +415,9 @@ orchestrations:
       - event: on_orchestration_stop
         command: scripts/open_fanout_pr.py
         # Hard cap in helix.hooks.external is 60s (git push + gh).
+        timeout_s: 60
+      - event: on_orchestration_stop
+        command: scripts/close_wave_slice.py
         timeout_s: 60
     fan_out:
       # One slice wave-spec, not the 103-task master. run.ps1 -Slice copies

@@ -32,16 +32,18 @@ Review the diff, not the description of the diff.
 
 ## 3. AFI — blast radius, then the checklist
 
-Follow the `afi` skill. Run `"$AFI" status --json` before you trust the
-diff. If the graph is absent/stale and `autoScanSafe` is true, start a
-scan; you may read files meanwhile, but do not close until you have
-query output on this HEAD (or `AFI: n/a` is honest).
+Follow the `afi` skill. If the implementer wrote `AFI: n/a — no SCIP-indexable
+source` and the diff is only folders/docs/scripts, **accept that**. Do not
+invoke the POSIX AFI wrapper (Helix Bash has no `npm`; it exits 127). Do not
+block a bootstrap task for missing AFI query output.
 
 Reject the hand-off if the implementer omitted the `AFI:` block, or if
-the refs were guessed (not from `--list-functions`).
+the refs were guessed (not from `--list-functions`). When `AFI: n/a` is
+honest, skip the query loop and go to §4.
 
-For every symbol in the diff, **you** re-run `--called-by` / `--callers-of`
-and `--impact-of` (or `--dependents-of` / `--imported-by` on a file).
+For every symbol in the diff **when AFI applies**, **you** re-run
+`--called-by` / `--callers-of` and `--impact-of` (or `--dependents-of` /
+`--imported-by` on a file).
 Compare that list to the diff and to the implementer's block:
 
 - caller/importer in the graph, not updated, not justified → blocking

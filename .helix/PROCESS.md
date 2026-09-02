@@ -96,14 +96,27 @@ Dedicated-run-repo (`base_branch` absent) would root the session at
 folder is not already its own toplevel — otherwise Helix would worktree
 `helix-artifacts`. Phase barriers merge `wave/*` into `integration`.
 On the fan-out **success** path Helix fires `on_orchestration_stop`
-(`orchestration_runner.py`, after `emit_fanout_wave_finished`). That
-binding is a `command` hook: `scripts/open_fanout_pr.py` pushes
-`integration` and opens a GitHub PR to `origin/main` (`gh`). It does
-**not** merge onto local `main`. `fan_out.write_back` is **inert**
-(manual §12.6). The hook is observation-only: a failed push/PR is
-recorded and the wave still completed (manual §10.3). Child env is
-`PATH`/`HOME`/`LANG`/`TMPDIR` only — `gh auth login` must live under
-`HOME`. Deadline hard-capped at 60s.
+(`orchestration_runner.py`, after `emit_fanout_wave_finished`). Two
+`command` hooks run, in declaration order:
+
+1. `scripts/open_fanout_pr.py` — push product `integration` and open a
+   GitHub PR to `origin/main`. It resolves the *product* clone
+   (`lucalamalfa91/contigo`), never the leftover nested `.helix` git
+   (that nest has no `origin`; r0-a exited 1 there and Studio stayed
+   green).
+2. `scripts/close_wave_slice.py` — write
+   `reports/execution/wave-close.md`. If any open point remains (no PR,
+   HCP VCS pending, …) open a GitHub issue labelled `hitl` on the
+   product remote (predefined HITL channel). Optional
+   `CONTIGO_HITL_WEBHOOK_URL` when the script is run outside the
+   stripped hook env.
+
+Neither hook merges onto local `main`. `fan_out.write_back` is **inert**
+(manual §12.6). Both hooks are observation-only: a failed push/PR is
+recorded and the wave still completed (manual §10.3). **Studio green
+does not mean a PR exists or that there were zero warnings.** Child env
+is `PATH`/`HOME`/`LANG`/`TMPDIR` only — `gh auth login` must live under
+`HOME`. Deadline hard-capped at 60s each.
 
 Same-phase tasks that edit one file are a wave-spec defect (`merge_auto`
 is best-effort union, not a substitute).
@@ -145,8 +158,10 @@ call, not a hook.
 
 Not in the YAML, because they would be decoration:
 
-- `governance.hitl` — parsed, not enforced. The human checkpoint is the
-  **separate launch** of passata 2, then the GitHub PR to `main`.
+- `governance.hitl` — parsed, not enforced as a Studio question gate.
+  Wave-close HITL is `scripts/close_wave_slice.py` → GitHub issue
+  label `hitl` (and optional webhook). The other human checkpoint is
+  the **separate launch** of passata 2, then the GitHub PR to `main`.
 - `governance.policy.require_approval: true` — enforced as **always deny**.
 - `harness.workspace`, `result_contract`, `observability`, `cost`, `audit` —
   typed, no binder reads them. Tracing is env (`OTEL_ENABLED`).
@@ -249,15 +264,18 @@ PASSATA 2 -- ./run.ps1 -Max -Slice r0-a -o execution-fanout
     isolation git-worktree of the local clone, max_parallel 3, resume_completed
     HALTED: ends that task immediately (no extra implementer/reviewer laps);
     block-dependents skips only tasks that need its produces
-  on_orchestration_stop → scripts/open_fanout_pr.py
+  on_orchestration_stop → scripts/open_fanout_pr.py (product clone)
     push origin/integration → gh pr create --base main
+  on_orchestration_stop → scripts/close_wave_slice.py
+    reports/execution/wave-close.md; HITL issue if open points
 ```
 
 ### D11 — Passata 2 bills Claude Code Max, not Console API
 
 Operator rule: Helix implementer/reviewer run on a **Max** seat (`claude login`),
 not `ANTHROPIC_API_KEY`. Hub `ANTHROPIC_AUTH_TOKEN` is unset for that run
-(`./run.ps1 -Max`). There is no overnight wrapper and no morning HITL gate.
+(`./run.ps1 -Max`). There is no overnight wrapper. Morning HITL is the `hitl` GitHub issue
+opened when `close_wave_slice.py` finds open points after a green wave.
 
 **What we do:** launch **one slice** with
 `./run.ps1 -Max -Slice r0-a -o execution-fanout`. That copies

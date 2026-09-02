@@ -69,9 +69,11 @@ No ADO, no Confluence — those were bit-flow intake, deleted here.
 
 ## 4. Harness
 
-`defaults.harness.governance.hooks.allow_external: true` — admits the one
-`command` hook on `execution-fanout` (`on_orchestration_stop` →
-`scripts/open_fanout_pr.py`). See PROCESS.md D4.
+`defaults.harness.governance.hooks.allow_external: true` — admits the
+`command` hooks on `execution-fanout` (`on_orchestration_stop` →
+`scripts/open_fanout_pr.py` then `scripts/close_wave_slice.py`). See
+PROCESS.md D4. Studio green ≠ PR opened. Open points become a GitHub
+issue labelled `hitl`.
 
 Coding agents (implementer, reviewer only): `kind: external-coding-agent`,
 `provider: claude-code`, `transport: agent-sdk` (transport is ignored on the
