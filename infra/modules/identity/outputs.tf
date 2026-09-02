@@ -44,5 +44,20 @@ output "workload_principal_id" {
 # to actually exercise modules/keyvault's grant.
 output "workload_identity_id" {
   description = "Azure resource ID of this environment's user-assigned workload identity -- input to modules/containerapps so the API/worker Container Apps are assigned this identity (never the other environment's) and can present it at runtime against this environment's own Key Vault grant (ADR-011)."
+# Task E01/F02/US05/T01 (foundry-account-provision, ADR-008/ADR-011). The
+# same workload identity above is what the AI Gateway (running in the API
+# and worker Container Apps) will use to call the ADR-008 Foundry account
+# (chat/embed) and its Document Intelligence connections (ADR-017)
+# without a stored key. Two things are still missing before that is live,
+# both out of this task's file scope: (1) modules/containerapps does not
+# yet attach this identity to the Container Apps via `identity {
+# identity_ids = [...] }` -- this output is that identity_ids value; (2)
+# the Foundry hub/projects/AI services account are portal-recorded, not a
+# Terraform resource in V1 (ADR-008), so the RBAC role assignment granting
+# this identity access to that account (the Foundry-side counterpart of
+# modules/keyvault's workload_secrets_user assignment) is a human Portal
+# step keyed off workload_principal_id above, not a resource in this repo.
+output "workload_identity_id" {
+  description = "Full Azure resource ID of this environment's user-assigned workload identity -- input to modules/containerapps' (future) `identity { identity_ids = [...] }` block and to the portal-recorded Foundry/Document Intelligence role assignment (ADR-008, ADR-011), alongside workload_principal_id above."
   value       = azurerm_user_assigned_identity.workload.id
 }
