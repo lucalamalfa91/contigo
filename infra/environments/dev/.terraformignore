@@ -1,0 +1,34 @@
+# Task E01/F01/US02/T01 established this ignore list at infra/.terraformignore
+# and asked that it be mirrored into each environment root once it exists
+# (task E01/F02/US01/T01, ADR-007): Terraform resolves .terraformignore
+# relative to the actual configuration directory being packaged for a
+# given run, not just the infra/ root. Keep this file identical to
+# infra/.terraformignore.
+
+# Local state -- must never exist on disk here; HCP Terraform is the only
+# state store (ADR-007). A stray local statefile must never be uploaded.
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# Local backend / CLI overrides -- every backend is remote (HCP Terraform
+# workspace per environment); a local override.tf could otherwise redirect
+# state or providers out from under that guarantee.
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Variable files may carry environment-specific (sometimes sensitive)
+# values; keep them out of the uploaded package by default.
+*.tfvars
+*.tfvars.json
+!example.tfvars
+
+# Workstation noise that must never leave the workstation.
+crash.log
+crash.*.log
+.DS_Store
