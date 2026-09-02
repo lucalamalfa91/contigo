@@ -223,6 +223,17 @@ agents:
         allowed_tools: [Read, Grep, Glob, Bash]
         max_turns: 60
 
+  - id: conflict-fixer
+    model: coding-primary
+    skills: [kb-contract]
+    instructions_file: agents/conflict-fixer.md
+    harness:
+      backend: { kind: external-coding-agent, provider: claude-code, mode: harness, transport: agent-sdk }
+      coding_agent:
+        permission_mode: acceptEdits
+        allowed_tools: [Read, Write, Edit, Bash, Grep, Glob]
+        max_turns: 40
+
 # -----------------------------------------------------------------------------
 # Orchestrations
 # -----------------------------------------------------------------------------
@@ -397,6 +408,10 @@ orchestrations:
         marker: "IMPLEMENTATION_GAPS:"
     limits: { max_iterations: 10, max_steps: 800000, run_timeout_s: 14400 }
 
+  - id: merge-resolve
+    topology: sequential
+    participants: [conflict-fixer]
+
   - id: contigo-execution
     topology: sequential
     participants: [execution-loop]
@@ -432,6 +447,8 @@ orchestrations:
       auto_level_phases: true
       merge_between_phases: true
       merge_auto: true
+      merge_resolver: merge-resolve
+      merge_verify: python .helix/scripts/merge_verify.py
       salvage_uncommitted: true
       on_task_failure: block-dependents
       # HALTED: fails this task only (engine outcome `halted`). block-dependents

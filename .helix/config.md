@@ -11,7 +11,7 @@ Two families, two jobs.
 | Family | Helix `provider` | Used for | Why |
 |---|---|---|---|
 | DeepSeek (OpenAI-compatible chat) | `openai` | intake, council, decomposer, gates | analysis + native file tools |
-| Claude Code Max (`claude login`) | `claude-code` (lineage) | implementer, reviewer | application code |
+| Claude Code Max (`claude login`) | `claude-code` (lineage) | implementer, reviewer, conflict-fixer | application code + barrier merges |
 
 `provider: claude-code` is **not** a chat client. YAML `model: sonnet` is a
 slot-tier remapped by `ANTHROPIC_DEFAULT_SONNET_MODEL`.
@@ -41,7 +41,7 @@ and is **fail-closed**.
 |---|---|
 | six council producers, backlog-decomposer, decomposition-remediator, decomposition-checker | `deepseek-reasoning` |
 | docs-ingester, council-gate | `deepseek-fast` |
-| implementer, reviewer | `coding-primary` |
+| implementer, reviewer, conflict-fixer | `coding-primary` |
 
 ---
 
@@ -75,9 +75,10 @@ No ADO, no Confluence — those were bit-flow intake, deleted here.
 PROCESS.md D4. Studio green ≠ PR opened. Open points become a GitHub
 issue labelled `hitl`.
 
-Coding agents (implementer, reviewer only): `kind: external-coding-agent`,
+Coding agents (implementer, reviewer, conflict-fixer): `kind: external-coding-agent`,
 `provider: claude-code`, `transport: agent-sdk` (transport is ignored on the
 local path; documented). Reviewer `allowed_tools`: `[Read, Grep, Glob, Bash]`
-— never Write/Edit. Decomposer and remediator are chat agents (PROCESS.md D9),
-not a coding harness.
+— never Write/Edit. Conflict-fixer has Write/Edit/Bash and runs only at a
+phase-barrier conflict (cwd = integration). Decomposer and remediator are
+chat agents (PROCESS.md D9), not a coding harness.
 

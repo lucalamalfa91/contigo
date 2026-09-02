@@ -1,19 +1,16 @@
 #!/usr/bin/env python3
-"""Cut wave-spec.execution.yaml into one Helix wave-spec per overnight slice.
+"""Cut wave-spec.execution.yaml into one Helix wave-spec per epic.
 
-Packing is a **token budget** against the Claude Code Max rolling window
-(not wall-clock). Effort S/M/L stays on the wave-spec (Helix TaskNodeDef
-forbids extra keys). This script maps effort → tokens.
-
-Default: Max 20x window = 10_000_000 tokens, fill 80% → 8.0 M cap.
-For Max 5x (operator: 2–3 M/window):  python scripts/cut_nightly_slices.py --budget 2500000
+One wave per epic (e01…e05). Effort S/M/L is mapped to tokens for an
+estimate only — not a packing cap. Default omits E01/F01 and E01/F02
+(already closed on integration). Pass --all to include them.
 
 depends_on edges that leave the slice are dropped so producer-completeness
-holds; prior nights are assumed already on disk (workspace/).
+holds.
 
 Usage (cwd = .helix):
   python scripts/cut_nightly_slices.py
-  python scripts/cut_nightly_slices.py --budget 2500000
+  python scripts/cut_nightly_slices.py --all
 """
 
 from __future__ import annotations
@@ -32,13 +29,15 @@ OUT_DIR = HERE / "reports" / "plan" / "slices"
 CURRENT = HERE / "reports" / "plan" / "slice.current.yaml"
 MANIFEST = OUT_DIR / "MANIFEST.yaml"
 
-# Operator-ratified (OQ-004). 5x window is 2–3 M; 20x ≈ 4× → 10 M.
-WINDOW_TOKENS_20X = 10_000_000
-FILL_RATIO = 0.80
 TOKENS_BY_EFFORT = {"S": 500_000, "M": 1_000_000, "L": 1_800_000}
-
-EPIC_WAVE = {"E01": "r0", "E02": "r1", "E03": "r2", "E04": "r3", "E05": "r4"}
-EPIC_LABEL = {"E01": "R0", "E02": "R1", "E03": "R2", "E04": "R3", "E05": "R4"}
+OMIT_CLOSED_FEATURES = ("E01/F01", "E01/F02")
+EPIC_TITLE = {
+    "E01": "platform",
+    "E02": "extraction / contract 360",
+    "E03": "renewal",
+    "E04": "savings",
+    "E05": "quotes / Day-1",
+}
 
 LAYER_MAP = {
     "infra": "backend",
@@ -229,7 +228,7 @@ def dump_task(t: dict) -> str:
     )
 
 
-def emit_yaml(slice_id: str, title: str, selected: list[tuple[str, dict]], tokens: int, cap: int) -> str:
+def emit_yaml(slice_id: str, title: str, selected: list[tuple[str, dict]], tokens: int) -> str:
     phases: dict[str, list[dict]] = defaultdict(list)
     order: list[str] = []
     for ph, t in selected:
@@ -237,10 +236,10 @@ def emit_yaml(slice_id: str, title: str, selected: list[tuple[str, dict]], token
             order.append(ph)
         phases[ph].append(t)
     lines = [
-        f"waveId: wave-v1-night-{slice_id}",
+        f"waveId: wave-v1-epic-{slice_id}",
         "status: planned",
-        f"# {title}. Prior-slice depends_on dropped (producer-completeness).",
-        f"# tokens: {fmt_millions(tokens)} / {fmt_millions(cap)} cap (S/M/L mapped in cut_nightly_slices.py).",
+        f"# {title}. Prior-wave depends_on dropped (producer-completeness).",
+        f"# estimated tokens: {fmt_millions(tokens)} (S/M/L mapped; not a packing cap).",
         f"# Launch: ./run.ps1 -Max -Slice {slice_id} -o execution-fanout",
         "phases:",
     ]
@@ -266,61 +265,23 @@ def slice_checks(*, is_first: bool, is_integration: bool, tasks: list[dict]) -> 
     return checks
 
 
-def title_for(wave_label: str, letter: str, stories: list[Story]) -> str:
-    prefix = f"{wave_label}-{letter}"
-    if stories and all(s.integration for s in stories):
-        if stories[0].epic == "E05":
-            return f"{prefix} Day-1 path"
-        return f"{prefix} {wave_label} integration"
-    slugs: list[str] = []
-    seen: set[str] = set()
-    for story in stories:
-        slug = feature_slug(story.tasks[0][1])
-        if slug not in seen:
-            seen.add(slug)
-            slugs.append(slug)
-    return f"{prefix} {' + '.join(slugs)}"
+def title_for_epic(epic: str, stories: list[Story], *, omitted_closed: bool) -> str:
+    label = EPIC_TITLE.get(epic, epic)
+    if omitted_closed and epic == "E01":
+        return f"{epic} {label} remainder (F03–F09; F01–F02 already closed)"
+    return f"{epic} {label}"
 
 
-def pack_epic(stories: list[Story], cap: int, warnings: list[str]) -> list[list[Story]]:
-    """Pack complete stories of one epic. Feature boundary closes a slice (no slack-fill)."""
-    regular = [s for s in stories if not s.integration]
-    integration = [s for s in stories if s.integration]
-    groups: list[list[Story]] = []
-    current: list[Story] = []
-    current_feature: str | None = None
-    current_tokens = 0
-
-    def flush() -> None:
-        nonlocal current, current_tokens, current_feature
-        if current:
-            groups.append(current)
-        current = []
-        current_tokens = 0
-        current_feature = None
-
-    for story in regular:
-        if story.tokens > cap:
-            warnings.append(
-                f"story {story.id} is {fmt_millions(story.tokens)} > cap "
-                f"{fmt_millions(cap)}; emitting as its own slice (stories are never split)"
-            )
-            flush()
-            groups.append([story])
-            continue
-        if current and (story.feature != current_feature or current_tokens + story.tokens > cap):
-            flush()
-        current.append(story)
-        current_tokens += story.tokens
-        current_feature = story.feature
-    flush()
-    if integration:
-        groups.append(integration)
-    return groups
-
-
-def pack_all(rows: list[tuple[str, dict]], cap: int) -> tuple[list[PackedSlice], list[str]]:
-    live_rows = [(ph, t) for ph, t in rows if t["status"] == "live"]
+def pack_all(
+    rows: list[tuple[str, dict]],
+    *,
+    omit_features: frozenset[str],
+) -> tuple[list[PackedSlice], list[str]]:
+    live_rows = [
+        (ph, t)
+        for ph, t in rows
+        if t["status"] == "live" and feature_id_of(t["id"]) not in omit_features
+    ]
     stories_by_id: dict[str, Story] = {}
     story_order: list[str] = []
     for ph, t in live_rows:
@@ -338,46 +299,38 @@ def pack_all(rows: list[tuple[str, dict]], cap: int) -> tuple[list[PackedSlice],
             epic_order.append(story.epic)
         by_epic[story.epic].append(story)
 
-    warnings: list[str] = []
     packed: list[PackedSlice] = []
     previous: str | None = None
-    is_first = True
-    for epic in epic_order:
-        wave = EPIC_WAVE.get(epic, epic.lower())
-        label = EPIC_LABEL.get(epic, epic)
-        groups = pack_epic(by_epic[epic], cap, warnings)
-        for i, group in enumerate(groups):
-            letter = letter_suffix(i)
-            slice_id = f"{wave}-{letter}"
-            tasks = [t for s in group for _, t in s.tasks]
-            integration = all(s.integration for s in group)
-            title = title_for(label, letter, group)
-            checks = slice_checks(is_first=is_first, is_integration=integration, tasks=tasks)
-            packed.append(
-                PackedSlice(
-                    slice_id=slice_id,
-                    title=title,
-                    stories=group,
-                    previous=previous,
-                    checks=checks,
-                )
+    omitted_closed = bool(omit_features)
+    for i, epic in enumerate(epic_order):
+        group = by_epic[epic]
+        slice_id = epic.lower()
+        title = title_for_epic(epic, group, omitted_closed=omitted_closed)
+        # F01 already landed: e01 is not the bootstrap slice.
+        is_first = i == 0 and not omitted_closed
+        checks = slice_checks(is_first=is_first, is_integration=False, tasks=[])
+        packed.append(
+            PackedSlice(
+                slice_id=slice_id,
+                title=title,
+                stories=group,
+                previous=previous,
+                checks=checks,
             )
-            previous = slice_id
-            is_first = False
-    return packed, warnings
+        )
+        previous = slice_id
+    return packed, []
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Cut nightly slices by Max token budget")
+    ap = argparse.ArgumentParser(description="Cut one Helix wave-spec per epic")
     ap.add_argument(
-        "--budget",
-        type=int,
-        default=WINDOW_TOKENS_20X,
-        help="Max window tokens (default 10_000_000 for 20x). 5x: 2500000. Fill ratio still applies.",
+        "--all",
+        action="store_true",
+        help="include E01/F01 and E01/F02 (default: omit; already closed)",
     )
     args = ap.parse_args(argv)
-    window = args.budget
-    cap = int(window * FILL_RATIO)
+    omit = frozenset() if args.all else frozenset(OMIT_CLOSED_FEATURES)
 
     if not MASTER.exists():
         print(f"missing {MASTER}", file=sys.stderr)
@@ -388,8 +341,12 @@ def main(argv: list[str] | None = None) -> int:
         print("master wave-spec is still a placeholder; skip slice cut", file=sys.stderr)
         return 1
     rows = parse_master(text)
-    live = [t for _, t in rows if t["status"] == "live"]
-    packed, warnings = pack_all(rows, cap)
+    scoped_live = [
+        t
+        for _, t in rows
+        if t["status"] == "live" and feature_id_of(t["id"]) not in omit
+    ]
+    packed, warnings = pack_all(rows, omit_features=omit)
     for w in warnings:
         print(f"WARNING: {w}", file=sys.stderr)
 
@@ -397,13 +354,16 @@ def main(argv: list[str] | None = None) -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     keep: set[str] = set()
     index_rows = [
-        "# Nightly slices",
+        "# Epic waves",
         "",
-        "Launch: `./run.ps1 -Max -Slice <id> -o execution-fanout`",
+        "Launch: `./run.ps1 -Max -Slice e01 -o execution-fanout`",
         "",
-        f"Packing: Max window {fmt_millions(window)} × fill {FILL_RATIO:.0%} = **{fmt_millions(cap)} cap** "
-        f"(S={fmt_millions(TOKENS_BY_EFFORT['S'])} M={fmt_millions(TOKENS_BY_EFFORT['M'])} "
-        f"L={fmt_millions(TOKENS_BY_EFFORT['L'])}). Not wall-clock.",
+        "One Helix wave per epic. Default omits E01/F01 and E01/F02 "
+        "(already closed). Re-include with `--all`.",
+        "",
+        f"Estimated tokens (S={fmt_millions(TOKENS_BY_EFFORT['S'])} "
+        f"M={fmt_millions(TOKENS_BY_EFFORT['M'])} "
+        f"L={fmt_millions(TOKENS_BY_EFFORT['L'])}); not a packing cap.",
         "",
         "| Slice | Tasks | Tokens | Title |",
         "|-------|-------|--------|-------|",
@@ -414,12 +374,6 @@ def main(argv: list[str] | None = None) -> int:
         if not selected:
             print(f"slice {sl.slice_id} matched 0 tasks", file=sys.stderr)
             return 1
-        if sl.tokens > cap:
-            print(
-                f"WARNING: slice {sl.slice_id} is {fmt_millions(sl.tokens)} > cap "
-                f"{fmt_millions(cap)} (unsplittable story or integration)",
-                file=sys.stderr,
-            )
         for _, t in selected:
             if t["id"] in assigned:
                 print(f"task {t['id']} in {assigned[t['id']]} and {sl.slice_id}", file=sys.stderr)
@@ -427,7 +381,7 @@ def main(argv: list[str] | None = None) -> int:
             assigned[t["id"]] = sl.slice_id
         path = OUT_DIR / f"{sl.slice_id}.yaml"
         path.write_text(
-            emit_yaml(sl.slice_id, sl.title, selected, sl.tokens, cap),
+            emit_yaml(sl.slice_id, sl.title, selected, sl.tokens),
             encoding="utf-8",
         )
         keep.add(path.name)
@@ -448,35 +402,34 @@ def main(argv: list[str] | None = None) -> int:
             }
         )
 
-    missing = [t["id"] for t in live if t["id"] not in assigned]
-    extra = [tid for tid in assigned if tid not in {t["id"] for t in live}]
+    missing = [t["id"] for t in scoped_live if t["id"] not in assigned]
+    extra = [tid for tid in assigned if tid not in {t["id"] for t in scoped_live}]
     if missing or extra:
         print(f"coverage error missing={missing} extra={extra}", file=sys.stderr)
         return 1
 
-    for stale in OUT_DIR.glob("r*.yaml"):
+    for stale in list(OUT_DIR.glob("r*.yaml")) + list(OUT_DIR.glob("e*.yaml")):
         if stale.name not in keep:
             stale.unlink()
 
     (OUT_DIR / "INDEX.md").write_text("\n".join(index_rows) + "\n", encoding="utf-8")
     manifest = {
-        "window_tokens": window,
-        "fill_ratio": FILL_RATIO,
-        "cap_tokens": cap,
+        "mode": "epic",
+        "omit_features": sorted(omit),
         "tokens_s": TOKENS_BY_EFFORT["S"],
         "tokens_m": TOKENS_BY_EFFORT["M"],
         "tokens_l": TOKENS_BY_EFFORT["L"],
         "slices": manifest_slices,
     }
     MANIFEST.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    if not CURRENT.exists():
+    if packed:
         CURRENT.write_text(
-            "waveId: nightly-slice-unset\nstatus: planned\nphases: []\nforks: []\n",
+            (OUT_DIR / f"{packed[0].slice_id}.yaml").read_text(encoding="utf-8"),
             encoding="utf-8",
         )
     print(
-        f"wrote {len(packed)} slices covering {len(assigned)} live tasks "
-        f"(cap {fmt_millions(cap)}) -> {OUT_DIR}"
+        f"wrote {len(packed)} epic waves covering {len(assigned)} live tasks "
+        f"(omitted {sorted(omit) or 'none'}) -> {OUT_DIR}"
     )
     return 0
 

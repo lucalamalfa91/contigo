@@ -1,0 +1,42 @@
+waveId: wave-v1-epic-e05
+status: planned
+# E05 quotes / Day-1. Prior-wave depends_on dropped (producer-completeness).
+# estimated tokens: 14.2M (S/M/L mapped; not a packing cap).
+# Launch: ./run.ps1 -Max -Slice e05 -o execution-fanout
+phases:
+  - id: 1
+    name: phase-1
+    tasks:
+      - {id: E05/F01/US01/T01, prompt: reports/workitems/epic-05-quote-check/feature-01-quote-extraction/us-01-quote-line-extraction/tasks/task-01-quote-extraction.md, produces: [quote-extraction], depends_on: [], effort: L, layer: backend, status: live}
+  - id: 2
+    name: phase-2
+    tasks:
+      - {id: E05/F01/US01/T02, prompt: reports/workitems/epic-05-quote-check/feature-01-quote-extraction/us-01-quote-line-extraction/tasks/task-02-quote-normalization.md, produces: [quote-normalization], depends_on: [quote-extraction], effort: M, layer: backend, status: live}
+      - {id: E05/F01/US02/T01, prompt: reports/workitems/epic-05-quote-check/feature-01-quote-extraction/us-02-sku-normalization/tasks/task-01-sku-normalization.md, produces: [sku-normalization], depends_on: [quote-extraction], effort: M, layer: backend, status: live}
+  - id: 3
+    name: phase-3
+    tasks:
+      - {id: E05/F01/US02/T02, prompt: reports/workitems/epic-05-quote-check/feature-01-quote-extraction/us-02-sku-normalization/tasks/task-02-sku-recalculate.md, produces: [sku-recalculate], depends_on: [sku-normalization], effort: M, layer: backend, status: live}
+      - {id: E05/F02/US01/T01, prompt: reports/workitems/epic-05-quote-check/feature-02-quote-assessment/us-01-market-assessment/tasks/task-01-market-assessment.md, produces: [market-assessment], depends_on: [sku-normalization], effort: L, layer: backend, status: live}
+  - id: 4
+    name: phase-4
+    tasks:
+      - {id: E05/F02/US01/T02, prompt: reports/workitems/epic-05-quote-check/feature-02-quote-assessment/us-01-market-assessment/tasks/task-02-target-saving.md, produces: [target-saving], depends_on: [market-assessment], effort: M, layer: backend, status: live}
+  - id: 5
+    name: phase-5
+    tasks:
+      - {id: E05/F03/US01/T01, prompt: reports/workitems/epic-05-quote-check/feature-03-negotiation-strategy/us-01-negotiation-strategy/tasks/task-01-negotiation-strategy.md, produces: [negotiation-strategy], depends_on: [target-saving], effort: L, layer: backend, status: live}
+  - id: 6
+    name: phase-6
+    tasks:
+      - {id: E05/F03/US01/T02, prompt: reports/workitems/epic-05-quote-check/feature-03-negotiation-strategy/us-01-negotiation-strategy/tasks/task-02-strategy-evidence.md, produces: [strategy-evidence], depends_on: [negotiation-strategy], effort: M, layer: backend, status: live}
+      - {id: E05/F03/US02/T01, prompt: reports/workitems/epic-05-quote-check/feature-03-negotiation-strategy/us-02-outcome-capture/tasks/task-01-outcome-capture.md, produces: [negotiation-outcome], depends_on: [negotiation-strategy], effort: M, layer: backend, status: live}
+  - id: 7
+    name: phase-7
+    tasks:
+      - {id: E05/F03/US02/T02, prompt: reports/workitems/epic-05-quote-check/feature-03-negotiation-strategy/us-02-outcome-capture/tasks/task-02-realized-propagation.md, produces: [outcome-propagation], depends_on: [negotiation-outcome], effort: M, layer: backend, status: live}
+  - id: 8
+    name: phase-8
+    tasks:
+      - {id: E05/F04/US01/T01, prompt: reports/workitems/epic-05-quote-check/feature-04-r4-integration/us-01-final-integration/tasks/task-01-r4-integration.md, produces: [r4-integration], depends_on: [quote-normalization, sku-recalculate, target-saving, strategy-evidence, outcome-propagation], effort: L, layer: backend, status: live}
+forks: []

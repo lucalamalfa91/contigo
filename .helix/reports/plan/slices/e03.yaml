@@ -1,0 +1,34 @@
+waveId: wave-v1-epic-e03
+status: planned
+# E03 renewal. Prior-wave depends_on dropped (producer-completeness).
+# estimated tokens: 9.3M (S/M/L mapped; not a packing cap).
+# Launch: ./run.ps1 -Max -Slice e03 -o execution-fanout
+phases:
+  - id: 1
+    name: phase-1
+    tasks:
+      - {id: E03/F01/US01/T01, prompt: reports/workitems/epic-03-renewal-intelligence/feature-01-renewal-engine/us-01-deterministic-dates/tasks/task-01-deterministic-dates.md, produces: [renewal-engine], depends_on: [], effort: M, layer: backend, status: live}
+  - id: 2
+    name: phase-2
+    tasks:
+      - {id: E03/F01/US01/T02, prompt: reports/workitems/epic-03-renewal-intelligence/feature-01-renewal-engine/us-01-deterministic-dates/tasks/task-02-renewal-opportunity.md, produces: [renewal-opportunity], depends_on: [renewal-engine], effort: M, layer: backend, status: live}
+      - {id: E03/F01/US02/T01, prompt: reports/workitems/epic-03-renewal-intelligence/feature-01-renewal-engine/us-02-priority-score/tasks/task-01-priority-score.md, produces: [renewal-priority], depends_on: [renewal-engine], effort: M, layer: backend, status: live}
+  - id: 3
+    name: phase-3
+    tasks:
+      - {id: E03/F01/US02/T02, prompt: reports/workitems/epic-03-renewal-intelligence/feature-01-renewal-engine/us-02-priority-score/tasks/task-02-priority-explainability.md, produces: [renewal-priority-explain], depends_on: [renewal-priority], effort: S, layer: backend, status: live}
+      - {id: E03/F02/US01/T01, prompt: reports/workitems/epic-03-renewal-intelligence/feature-02-cancellation-alerts/us-01-threshold-scheduler/tasks/task-01-threshold-scheduler.md, produces: [threshold-scheduler], depends_on: [renewal-engine], effort: M, layer: backend, status: live}
+  - id: 4
+    name: phase-4
+    tasks:
+      - {id: E03/F02/US01/T02, prompt: reports/workitems/epic-03-renewal-intelligence/feature-02-cancellation-alerts/us-01-threshold-scheduler/tasks/task-02-alert-recompute.md, produces: [renewal-alerts], depends_on: [threshold-scheduler], effort: M, layer: backend, status: live}
+      - {id: E03/F03/US01/T01, prompt: reports/workitems/epic-03-renewal-intelligence/feature-03-renewal-dashboard/us-01-renewal-dashboard-api/tasks/task-01-renewal-dashboard.md, produces: [renewal-dashboard], depends_on: [renewal-engine], effort: M, layer: backend, status: live}
+  - id: 5
+    name: phase-5
+    tasks:
+      - {id: E03/F03/US01/T02, prompt: reports/workitems/epic-03-renewal-intelligence/feature-03-renewal-dashboard/us-01-renewal-dashboard-api/tasks/task-02-renewal-action.md, produces: [renewal-action], depends_on: [renewal-dashboard], effort: M, layer: backend, status: live}
+  - id: 6
+    name: phase-6
+    tasks:
+      - {id: E03/F04/US01/T01, prompt: reports/workitems/epic-03-renewal-intelligence/feature-04-r2-integration/us-01-final-integration/tasks/task-01-r2-integration.md, produces: [r2-integration], depends_on: [renewal-opportunity, renewal-priority-explain, renewal-alerts, renewal-action], effort: L, layer: backend, status: live}
+forks: []

@@ -70,6 +70,7 @@ YAML constants. They are ADR output of the council.
 | Fan_out over **one slice wave-spec** | `execution-fanout` `over: slice.current.yaml` | **RIPRODOTTA** — D1 |
 | `isolation: git-worktree` + `base_branch: main` + `max_parallel: 3` | worktrees of the local clone | **RIPRODOTTA** (D1) |
 | After a green slice, PR to GitHub `main` | `execution-fanout.hooks` `on_orchestration_stop` → `command: scripts/open_fanout_pr.py` (`gh pr create` `integration` → `origin/main`) | **RIPRODOTTA** (`fan_out.write_back` is inert; this is the write-back) |
+| Phase-barrier conflicts resolved in-process | `merge_auto` → `merge_resolver: merge-resolve` (agent `conflict-fixer`) → abort; `merge_verify` | **RIPRODOTTA** — operator does not merge by hand |
 
 No three-pass test pipeline (bit-flow passata 3). Contigo stops at a green
 decomposition; code is a separate pass the operator launches. Testing, if added
@@ -91,7 +92,8 @@ Dedicated-run-repo (`base_branch` absent) would root the session at
 `output_dir` (`reports/`) and hide those folders. That mode is **not** used.
 
 **What we do:** `isolation: git-worktree` + `base_branch: main` +
-`max_parallel: 3` + `salvage_uncommitted: true` + `resume_completed: true`.
+`max_parallel: 3` + `salvage_uncommitted: true` + `resume_completed: true` +
+`merge_auto: true` + `merge_resolver: merge-resolve` + `merge_verify`.
 `./run.ps1` / `./run.sh` call `scripts/ensure_artifact_git.py` when this
 folder is not already its own toplevel — otherwise Helix would worktree
 `helix-artifacts`. Phase barriers merge `wave/*` into `integration`.
@@ -118,8 +120,12 @@ does not mean a PR exists or that there were zero warnings.** Child env
 is `PATH`/`HOME`/`LANG`/`TMPDIR` only — `gh auth login` must live under
 `HOME`. Deadline hard-capped at 60s each.
 
-Same-phase tasks that edit one file are a wave-spec defect (`merge_auto`
-is best-effort union, not a substitute).
+Same-phase tasks that edit one file are still a wave-spec defect. Recovery
+is **in-process**: `merge_auto` (rerere + union) then orchestration
+`merge-resolve` (`conflict-fixer` in the integration checkout). Each rung
+is gated by `merge_verify`. Implementers must not commit `.helix/` (especially
+`reports/open-questions.md`). Uncommitted process edits are wiped when Helix
+checks out `integration`/`main` — this wiring lives on `main`.
 
 ### D2 — `HALTED:` closes the execution loop immediately
 
@@ -262,6 +268,7 @@ PASSATA 2 -- ./run.ps1 -Max -Slice r0-a -o execution-fanout
   scripts/ensure_artifact_git.py  (local clone is a git toplevel on main)
   execution-fanout walks THAT file only (not the 103-task master)
     isolation git-worktree of the local clone, max_parallel 3, resume_completed
+    barrier: merge_auto → merge-resolve (conflict-fixer) → abort (no hand merge)
     HALTED: ends that task immediately (no extra implementer/reviewer laps);
     block-dependents skips only tasks that need its produces
   on_orchestration_stop → scripts/open_fanout_pr.py (product clone)
@@ -272,7 +279,7 @@ PASSATA 2 -- ./run.ps1 -Max -Slice r0-a -o execution-fanout
 
 ### D11 — Passata 2 bills Claude Code Max, not Console API
 
-Operator rule: Helix implementer/reviewer run on a **Max** seat (`claude login`),
+Operator rule: Helix implementer/reviewer/conflict-fixer run on a **Max** seat (`claude login`),
 not `ANTHROPIC_API_KEY`. Hub `ANTHROPIC_AUTH_TOKEN` is unset for that run
 (`./run.ps1 -Max`). There is no overnight wrapper. Morning HITL is the `hitl` GitHub issue
 opened when `close_wave_slice.py` finds open points after a green wave.
