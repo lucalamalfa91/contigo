@@ -64,12 +64,21 @@ SECRET_PATTERNS = (
 # a deliberate, documented pass instead of a false FAIL:
 #   - this script defines the patterns themselves as regex source;
 #   - its test file plants fake-but-pattern-shaped values as fixtures to
-#     prove detection works (see tests/test_repo_secret_scan.py).
+#     prove detection works (see tests/test_repo_secret_scan.py);
+#   - task E01/F02/US04/T01's test file does the same thing to prove its
+#     own scripts/entra_keyvault_provision_scan.py's no-secret-literal
+#     check (which reuses find_secret_matches from this module) actually
+#     detects a planted secret (see tests/test_entra_keyvault_provision_scan.py);
+#   - task E01/F02/US04/T02's test file does the same thing for its own
+#     scripts/keyvault_scope_grants_check.py no-secret-literal check (see
+#     tests/test_keyvault_scope_grants_check.py).
 # Nothing else is excluded by name: the whole point of AC-4 is that no
 # other tracked file gets a free pass.
 SECRET_SCAN_SELF_EXCLUDE = {
     "scripts/repo_secret_scan.py",
     "tests/test_repo_secret_scan.py",
+    "tests/test_entra_keyvault_provision_scan.py",
+    "tests/test_keyvault_scope_grants_check.py",
 }
 SECRET_SCAN_EXCLUDE_SUFFIXES = {
     ".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf", ".zip",
