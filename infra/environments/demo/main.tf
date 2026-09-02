@@ -133,6 +133,9 @@ module "keyvault" {
   environment         = local.environment
   location            = var.location
   resource_group_name = azurerm_resource_group.this.name
+  # Task E01/F02/US04/T01 (ADR-011): this root's OWN identity module
+  # instance only -- never dev's -- so the grant never crosses envs.
+  workload_principal_id = module.identity.workload_principal_id
 }
 
 # ADR-005: Container Registry Basic tier, one per environment (isolation

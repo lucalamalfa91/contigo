@@ -1,13 +1,36 @@
-# modules/identity -- Entra app registration + user-assigned managed
+# modules/identity -- Entra app registrations + user-assigned managed
 # identity (ADR-007 module layout). The managed identity is what
 # containerapps' API/worker apps use to read Key Vault, Storage, and
 # Service Bus at runtime without a stored secret (ADR-007: no secrets in
 # Terraform source).
+#
+# Task E01/F02/US04/T01 (ADR-010) adds the second of the two
+# per-environment app registrations -- a PKCE-only public client, pre-
+# authorized for the API's Contigo.Read/Contigo.Write scopes -- so each
+# environment carries its own isolated pair (api + public client; four
+# registrations total across dev+demo). Neither application ever declares
+# a `password {}` block: the public client authenticates with
+# Authorization Code + PKCE (web SPA and native mobile), and the API
+# validates tokens by signature/issuer/audience only (ADR-010; ADR-011 "no
+# secrets in ... Terraform source").
+data "azuread_client_config" "current" {}
+
 locals {
   tags = {
     project = "contigo"
     env     = var.environment
   }
+
+  # ADR-012: the web client is a React SPA hosted on Azure Static Web Apps
+  # (free tier); that hosting module does not exist yet under
+  # infra/modules/, so the real per-environment hostname cannot be known
+  # here. This is a deliberate placeholder redirect URI so the public
+  # client registration -- and this task's "pre-authorized for ... the web
+  # redirect URI" requirement -- is structurally complete now. Whoever
+  # provisions the Static Web App module must reconcile this value (or
+  # wire it from that module's output) with the real hostname/custom
+  # domain before the web client can complete a login round trip.
+  web_redirect_uri = "https://contigo-${var.environment}.azurestaticapps.net/auth/callback"
 }
 
 resource "azurerm_user_assigned_identity" "workload" {
@@ -18,8 +41,57 @@ resource "azurerm_user_assigned_identity" "workload" {
   tags = local.tags
 }
 
+# Stable scope ids: azuread requires `oauth2_permission_scope.id` up front
+# (it is not provider-computed), so each scope gets its own random_uuid
+# resource instead of a hand-picked literal -- generated once and then
+# held fixed in state across applies.
+resource "random_uuid" "scope_read" {}
+resource "random_uuid" "scope_write" {}
+
+# ADR-010 option 1: one API registration per environment, exposing the two
+# delegated scopes both the web SPA and the native mobile client request.
 resource "azuread_application" "api" {
   display_name = "contigo-${var.environment}-api"
+
+  # Single-tenant: dev/demo isolation is by distinct registration, not by
+  # separate Entra tenants (ADR-009's tenant_id is a product/DB-row
+  # concept, not an Azure AD directory boundary) -- see outputs.tf `issuer`.
+  sign_in_audience = "AzureADMyOrg"
+
+  # `api://contigo-<env>-api` rather than `api://<client_id>`: the
+  # client_id is not known yet when this resource's own arguments are
+  # evaluated (that would be a self-reference). Azure AD accepts any
+  # tenant-unique string after `api://` for a single-tenant app, so this
+  # stays fixed and human-readable across applies.
+  identifier_uris = ["api://contigo-${var.environment}-api"]
+
+  api {
+    # v2 access tokens carry `aud` = this application's client_id,
+    # matching ADR-010's "each environment's API validates iss + aud".
+    requested_access_token_version = 2
+
+    oauth2_permission_scope {
+      id                         = random_uuid.scope_read.result
+      value                      = "Contigo.Read"
+      type                       = "User"
+      enabled                    = true
+      admin_consent_description  = "Allow the app to read the signed-in user's Contigo procurement data."
+      admin_consent_display_name = "Read Contigo data"
+      user_consent_description   = "Allow this app to read your Contigo procurement data."
+      user_consent_display_name  = "Read your Contigo data"
+    }
+
+    oauth2_permission_scope {
+      id                         = random_uuid.scope_write.result
+      value                      = "Contigo.Write"
+      type                       = "User"
+      enabled                    = true
+      admin_consent_description  = "Allow the app to create and update the signed-in user's Contigo procurement data."
+      admin_consent_display_name = "Write Contigo data"
+      user_consent_description   = "Allow this app to create and update your Contigo procurement data."
+      user_consent_display_name  = "Write your Contigo data"
+    }
+  }
 
   # azuread_application tags are a flat list of category strings (Entra's
   # own tag model), not the key/value azurerm resource tags used
@@ -30,4 +102,58 @@ resource "azuread_application" "api" {
 
 resource "azuread_service_principal" "api" {
   client_id = azuread_application.api.client_id
+}
+
+# ADR-010 option 1: the public client shared by web and mobile -- one
+# Authorization Code + PKCE registration per environment, no client
+# secret. `single_page_application` carries the browser redirect (PKCE via
+# fetch/CORS, ADR-012's React SPA); `public_client` carries the native
+# reply used by the Expo/React Native app (ADR-013's `contigo://callback`).
+resource "azuread_application" "public_client" {
+  display_name     = "contigo-${var.environment}-public-client"
+  sign_in_audience = "AzureADMyOrg"
+
+  single_page_application {
+    redirect_uris = [local.web_redirect_uri]
+  }
+
+  public_client {
+    redirect_uris = ["contigo://callback"]
+  }
+
+  # Declares the scopes this client intends to request so they show up as
+  # this app's registered API permissions; azuread_application_pre_authorized
+  # below is what actually skips the admin-consent prompt for them.
+  required_resource_access {
+    resource_app_id = azuread_application.api.client_id
+
+    resource_access {
+      id   = azuread_application.api.oauth2_permission_scope_ids["Contigo.Read"]
+      type = "Scope"
+    }
+
+    resource_access {
+      id   = azuread_application.api.oauth2_permission_scope_ids["Contigo.Write"]
+      type = "Scope"
+    }
+  }
+
+  tags = ["project:contigo", "env:${var.environment}"]
+}
+
+resource "azuread_service_principal" "public_client" {
+  client_id = azuread_application.public_client.client_id
+}
+
+# The API pre-authorizes its own public client for both scopes so the
+# Authorization Code + PKCE flow never prompts for admin consent (ADR-010:
+# "the public client is pre-authorized" for Contigo.Read/Contigo.Write).
+resource "azuread_application_pre_authorized" "public_client" {
+  application_id       = azuread_application.api.id
+  authorized_client_id = azuread_application.public_client.client_id
+
+  permission_ids = [
+    azuread_application.api.oauth2_permission_scope_ids["Contigo.Read"],
+    azuread_application.api.oauth2_permission_scope_ids["Contigo.Write"],
+  ]
 }
