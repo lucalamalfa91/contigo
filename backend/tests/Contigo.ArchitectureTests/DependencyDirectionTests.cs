@@ -28,7 +28,7 @@ public class DependencyDirectionTests
     ];
 
     /// <summary>All Contigo project names (used to filter Contigo-internal references).</summary>
-    private static readonly HashSet<string> AllContigoProjects =
+    internal static readonly HashSet<string> AllContigoProjects =
     [
         "Contigo.SharedKernel",
         "Contigo.Identity.Workspace",
@@ -50,7 +50,7 @@ public class DependencyDirectionTests
     /// SharedKernel is universal; AI Gateway allowed for Documents/Contracts + Chat;
     /// Benchmark allowed for Renewals + Savings + Quotes.
     /// </summary>
-    private static readonly Dictionary<string, HashSet<string>> AllowedReferences = new()
+    internal static readonly Dictionary<string, HashSet<string>> AllowedReferences = new()
     {
         ["Contigo.Identity.Workspace"]   = ["Contigo.SharedKernel"],
         ["Contigo.Documents.Contracts"]  = ["Contigo.SharedKernel", "Contigo.AiGateway"],
@@ -63,7 +63,7 @@ public class DependencyDirectionTests
     };
 
     /// <summary>Provider SDK prefixes that domain modules must never reference directly.</summary>
-    private static readonly string[] ForbiddenSdkPrefixes =
+    internal static readonly string[] ForbiddenSdkPrefixes =
     [
         "Azure.",
         "Microsoft.Azure.",
@@ -177,7 +177,7 @@ public class DependencyDirectionTests
         return data;
     }
 
-    private static List<string> GetProjectReferenceNames(string csprojPath)
+    internal static List<string> GetProjectReferenceNames(string csprojPath)
     {
         var doc = XDocument.Load(csprojPath);
         return doc.Descendants("ProjectReference")
@@ -187,7 +187,7 @@ public class DependencyDirectionTests
             .ToList();
     }
 
-    private static List<string> GetPackageReferenceNames(string csprojPath)
+    internal static List<string> GetPackageReferenceNames(string csprojPath)
     {
         var doc = XDocument.Load(csprojPath);
         return doc.Descendants("PackageReference")
