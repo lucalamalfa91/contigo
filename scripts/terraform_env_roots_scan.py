@@ -28,8 +28,11 @@ Checks, all read-only, no network, no `terraform` binary required:
      the two environments never share state).
   4. each main.tf wires all nine required modules (AC-1's list), each from
      its `../../modules/<name>` source path (ADR-007 module layout).
-  5. each main.tf's `locals.environment` matches its own directory name, and
-     the root's `azurerm_resource_group.this` is tagged
+  5. each main.tf's `locals.environment` resolves to its own directory name
+     -- either a literal (`environment = "demo"`) or a variable reference
+     (`environment = var.environment`, resolved via that root's own
+     variables.tf default; dev uses this form as of task E01/F02/US02/T01)
+     -- and the root's `azurerm_resource_group.this` is tagged
      `project = "contigo"` / `env = local.environment` (AC-3's tagging rule,
      applied at the root level).
   6. each variables.tf pins `location` to "West Europe" (ADR-006).
@@ -158,6 +161,39 @@ def find_locals_environment(main_tf_text: str) -> str | None:
     return m.group(1) if m else None
 
 
+def find_locals_environment_expr(main_tf_text: str) -> str | None:
+    """Return the raw, unparsed `environment = <expr>` right-hand side inside `locals { ... }`."""
+    body = _find_block(_strip_line_comments(main_tf_text), r"locals")
+    if body is None:
+        return None
+    m = re.search(r'environment\s*=\s*(\S+)', body)
+    return m.group(1) if m else None
+
+
+def resolve_environment_value(main_tf_text: str, variables_tf_text: str) -> str | None:
+    """Resolve `locals.environment` to its literal string value.
+
+    Handles both shapes seen across the two env roots: a literal
+    (`environment = "demo"` in demo/main.tf) and a variable reference
+    (`environment = var.environment` in dev/main.tf -- promoted from a
+    literal by task E01/F02/US02/T01 so the value comes from
+    variables.tf's declared+validated default rather than a hardcoded
+    local; see that task's commit message). A bare `var.<name>`
+    reference resolves via this same root's
+    `find_variable_default(variables_tf_text, "<name>")`.
+    """
+    expr = find_locals_environment_expr(main_tf_text)
+    if expr is None:
+        return None
+    literal_m = re.match(r'^"([^"]+)"$', expr)
+    if literal_m:
+        return literal_m.group(1)
+    var_m = re.match(r'^var\.(\w+)$', expr)
+    if var_m:
+        return find_variable_default(variables_tf_text, var_m.group(1))
+    return None
+
+
 def find_resource_group_tags(main_tf_text: str) -> dict:
     """Return the raw {key: value_source_text} tags on resource "azurerm_resource_group" "this"."""
     body = _find_block(_strip_line_comments(main_tf_text), r'resource\s+"azurerm_resource_group"\s+"this"\s*')
@@ -266,12 +302,14 @@ def check_module_wiring(env: str, environments_root: Path = ENVIRONMENTS_ROOT) -
 
 def check_environment_and_tags(env: str, environments_root: Path = ENVIRONMENTS_ROOT) -> tuple:
     main_path = environments_root / env / "main.tf"
+    variables_path = environments_root / env / "variables.tf"
     if not main_path.is_file():
         return False, f"{env}/main.tf does not exist"
     text = main_path.read_text(encoding="utf-8")
-    local_env = find_locals_environment(text)
+    variables_text = variables_path.read_text(encoding="utf-8") if variables_path.is_file() else ""
+    local_env = resolve_environment_value(text, variables_text)
     if local_env != env:
-        return False, f"{env}/main.tf locals.environment={local_env!r}, expected {env!r}"
+        return False, f"{env}/main.tf locals.environment resolves to {local_env!r}, expected {env!r}"
     tags = find_resource_group_tags(text)
     if tags.get("project") != "contigo" or tags.get("env") != "local.environment":
         return False, (
@@ -279,7 +317,7 @@ def check_environment_and_tags(env: str, environments_root: Path = ENVIRONMENTS_
             'expected project="contigo" and env=local.environment'
         )
     return True, (
-        f"{env}/main.tf locals.environment == {env!r}; "
+        f"{env}/main.tf locals.environment resolves to {env!r}; "
         "resource group tagged project=contigo, env=local.environment"
     )
 

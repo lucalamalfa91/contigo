@@ -189,6 +189,36 @@ class FindLocalsEnvironmentTests(unittest.TestCase):
         self.assertIsNone(tfr.find_locals_environment("# no locals here\n"))
 
 
+class ResolveEnvironmentValueTests(unittest.TestCase):
+    """Regression coverage for task E01/F02/US02/T02 (dev-outputs-verify).
+
+    Task E01/F02/US02/T01 promoted dev/main.tf's `locals.environment` from
+    a literal `"dev"` to `var.environment` (commit 822fe70, after this
+    script -- commit 78a940c -- already existed), which silently broke
+    `check_environment_and_tags("dev")` against the real repo: the old
+    `find_locals_environment` only ever matched a quoted literal. These
+    tests cover the fix (`resolve_environment_value`), which additionally
+    resolves a bare `var.<name>` reference via that root's own
+    variables.tf default.
+    """
+
+    def test_resolves_literal(self) -> None:
+        main_tf = 'locals {\n  environment = "demo"\n}\n'
+        self.assertEqual(tfr.resolve_environment_value(main_tf, ""), "demo")
+
+    def test_resolves_matching_variable_reference(self) -> None:
+        main_tf = "locals {\n  environment = var.environment\n}\n"
+        variables_tf = GOOD_VARIABLES_TF.replace("location", "environment").replace("West Europe", "dev")
+        self.assertEqual(tfr.resolve_environment_value(main_tf, variables_tf), "dev")
+
+    def test_variable_reference_with_no_matching_default_returns_none(self) -> None:
+        main_tf = "locals {\n  environment = var.environment\n}\n"
+        self.assertIsNone(tfr.resolve_environment_value(main_tf, "# no variables here\n"))
+
+    def test_no_locals_block_returns_none(self) -> None:
+        self.assertIsNone(tfr.resolve_environment_value("# nothing here\n", ""))
+
+
 class FindResourceGroupTagsTests(unittest.TestCase):
     def test_finds_project_and_env_tags(self) -> None:
         text = _good_main_tf("demo")

@@ -18,18 +18,76 @@ output "environment" {
   value       = local.environment
 }
 
-# Per-service resource ids and endpoints (Postgres FQDN, Container Apps API
-# ingress FQDN, ACR login server, Key Vault URI, Storage account name,
-# Service Bus namespace FQDN, Log Analytics workspace id) are intentionally
-# NOT output here yet: none of the nine modules under infra/modules/
-# (scaffolded in E01/F02/US01/T01) declare an `output` block, so this root
-# has no module attribute to re-export -- e.g. `module.postgres.fqdn` does
-# not exist because modules/postgres/ has no outputs.tf. Adding
-# infra/modules/<name>/outputs.tf would reach outside this task's "Files to
-# create or modify" (task-01-dev-environment-provision.md) and risks
-# colliding with sibling in-flight tasks (US-04 entra-keyvault, US-05
-# foundry-account, F03 ci-azure-oidc) that also edit infra/modules/ in this
-# same wave. Recorded here rather than silently worked around; the
-# per-service outputs this task's own row calls for ("resource ids,
-# endpoints") are limited to what the root directly owns until a module
-# task adds them.
+output "tags" {
+  description = "project/env tags applied to every dev resource (AC-2); every module below tags its own resources with this same project=contigo, env=dev pair (see infra/modules/*/main.tf locals.tags)."
+  value       = azurerm_resource_group.this.tags
+}
+
+# Task E01/F02/US02/T02 (dev-outputs-verify). Task T01 (E01/F02/US02/T01)
+# left this file with only the four outputs above, because none of the
+# nine modules under infra/modules/ declared an `output` block yet -- see
+# git history on this file. This task closes that gap by adding
+# infra/modules/{postgres,containerapps,storage,servicebus,keyvault,acr,
+# monitor}/outputs.tf (network and identity are not named in ADR-005's
+# per-service resource id/endpoint list and are left alone) and re-exports
+# them here so `terraform output` on this root surfaces every resource id
+#/endpoint the parent story's AC-1 requires evidence for.
+output "postgres_id" {
+  description = "Azure resource ID of the dev PostgreSQL Flexible Server."
+  value       = module.postgres.id
+}
+
+output "postgres_fqdn" {
+  description = "Fully qualified domain name of the dev PostgreSQL Flexible Server."
+  value       = module.postgres.fqdn
+}
+
+output "container_app_environment_id" {
+  description = "Azure resource ID of the dev Container Apps Environment."
+  value       = module.containerapps.container_app_environment_id
+}
+
+output "api_fqdn" {
+  description = "Ingress FQDN of the dev API Container App (external HTTPS endpoint)."
+  value       = module.containerapps.api_fqdn
+}
+
+output "worker_id" {
+  description = "Azure resource ID of the dev worker Container App (no ingress -- not externally reachable)."
+  value       = module.containerapps.worker_id
+}
+
+output "storage_account_name" {
+  description = "Name of the dev Storage Account."
+  value       = module.storage.name
+}
+
+output "storage_primary_blob_endpoint" {
+  description = "Primary Blob service endpoint of the dev Storage Account (contract documents)."
+  value       = module.storage.primary_blob_endpoint
+}
+
+output "storage_primary_queue_endpoint" {
+  description = "Primary Queue service endpoint of the dev Storage Account (lightweight inbox/dead-letter)."
+  value       = module.storage.primary_queue_endpoint
+}
+
+output "servicebus_namespace_fqdn" {
+  description = "Fully qualified domain name of the dev Service Bus namespace."
+  value       = module.servicebus.fqdn
+}
+
+output "key_vault_uri" {
+  description = "URI of the dev Key Vault, used by apps to read secrets/keys at runtime."
+  value       = module.keyvault.vault_uri
+}
+
+output "acr_login_server" {
+  description = "Login server URL of the dev Container Registry (docker login / az acr login target)."
+  value       = module.acr.login_server
+}
+
+output "log_analytics_workspace_id" {
+  description = "Workspace (Customer) ID of the dev Log Analytics workspace, used by diagnostic settings/agents."
+  value       = module.monitor.workspace_id
+}
