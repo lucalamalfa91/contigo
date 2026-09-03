@@ -6,4 +6,11 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Needed only for DbConnectionInterceptor (Tenancy/TenantRlsConnectionInterceptor.cs,
+         ADR-009). Provider-agnostic: no Npgsql/Design/pgvector reference here, so SharedKernel
+         stays usable by any future EF Core provider, not just Postgres. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.4" />
+  </ItemGroup>
+
 </Project>
