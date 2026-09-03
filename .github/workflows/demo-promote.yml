@@ -1,0 +1,156 @@
+name: demo-promote
+
+# ADR-016 (promotion of a release from dev to demo) and ADR-014 (git flow:
+# "demo deployment: trigger on a tag `demo-v*` on `main` ... gated by a
+# `demo` GitHub Environment with required reviewers"). Parent story
+# us-03-promotion-dev-demo, AC-1 / AC-2 / AC-3.
+#
+# Promotion is the single act ADR-016 describes: tag a `main` commit
+# `demo-v<seq>` and approve the resulting `demo` deploy. No tag, no `demo`
+# deploy. There is deliberately no `workflow_dispatch` trigger here --
+# ADR-016 considered and rejected a manual-dispatch trigger (its Option 2)
+# specifically because it has "no immutable reference to *what* was
+# promoted." The tag is that reference; do not add one back.
+#
+# This file authors no deploy logic of its own. It reuses the same
+# per-folder jobs that already auto-deploy `dev` on merge to `main`
+# (.github/workflows/{infra,backend,web}.yml), calling each with
+# `target_environment: demo` -- the `workflow_call` input those three
+# files already expose for exactly this purpose (see each file's own
+# header comment and reports/open-questions.md#OQ-impl-006). Those reused
+# jobs are the ones that set `environment: ${{ inputs.target_environment
+# }}` on their `apply` / `deploy` job -- resolved to `demo` here -- which
+# is the real AC-2 gate: once the `demo` GitHub Environment has required
+# reviewers configured (task E01/F03/US03/T02; OQ-DM-002: product-owner +
+# security-architect), each of those inner jobs pauses for human approval
+# before it touches Azure. This file cannot configure that reviewer list
+# itself -- GitHub only exposes required reviewers via repo Settings, the
+# Environments REST API, or Terraform, never via workflow YAML -- so
+# `demo-promotion` below is a second, deliberately unblocked sibling job
+# that also runs under `environment: demo`, purely so this run surfaces
+# one clear top-level "promoting to demo" entry alongside the per-folder
+# ones for reviewers to read before they approve. It has nothing `needs:`
+# it and nothing needs it, so it becomes pending at the same time as
+# `promote-infra` and reviewers can approve both in the same "Review
+# pending deployments" action.
+#
+# mobile/ is deliberately not called here: mobile.yml has no
+# `workflow_call` trigger and no per-environment deploy job to reuse --
+# ADR-013 fixes V1 as web-first with no mobile store release in R0-R4, so
+# there is nothing for a demo promotion to gate for mobile (see
+# mobile.yml's own header comment).
+#
+# Promotion moves code/artifacts only (ADR-016, ADR-001): this workflow,
+# and everything it calls, only ever build/push container images, run a
+# Terraform apply of the *stateless* infra module definitions, and deploy
+# a static web bundle. `dev` and `demo` own separate Terraform state and
+# separate data stores from the day each was provisioned (ADR-007,
+# ADR-016); no step here or in infra.yml/backend.yml/web.yml copies a
+# database, storage account, or secret *value* between environments. Keep
+# it that way -- do not add such a step to this file.
+on:
+  push:
+    tags:
+      - "demo-v*"
+
+# Least privilege by default. promote-backend / promote-web escalate
+# `id-token: write` explicitly at the job level below: permissions granted
+# to a called reusable workflow's jobs can never exceed what the calling
+# job itself is granted, so that scope has to be requested here too, not
+# only inside backend.yml / web.yml (ADR-015).
+permissions:
+  contents: read
+
+concurrency:
+  group: demo-promote-${{ github.ref }}
+  cancel-in-progress: false # never cancel a run mid-promotion/apply
+
+jobs:
+  # Fails fast, before anyone is asked to approve anything, if the tag
+  # does not point at a commit that is actually on `main`. ADR-016 /
+  # ADR-014 both specify "a tag ... on `main`"; GitHub's `push.tags`
+  # trigger has no way to express that filter by itself (unlike
+  # `push.branches`, tags are not scoped to a branch), so it is enforced
+  # here instead.
+  verify-tag-on-main:
+    name: verify tag is on main
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: tag commit must be an ancestor of main
+        env:
+          TAG_SHA: ${{ github.sha }}
+          TAG_REF: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git fetch origin main --quiet
+          if ! git merge-base --is-ancestor "$TAG_SHA" origin/main; then
+            echo "::error::$TAG_REF ($TAG_SHA) is not on main -- demo promotion tags must be cut from main (ADR-016, ADR-014)."
+            exit 1
+          fi
+          echo "$TAG_REF ($TAG_SHA) confirmed on main."
+
+  # environment: demo gate + audit record -- see the file header for why
+  # this job exists alongside (not in front of) promote-infra.
+  demo-promotion:
+    name: demo promotion approval
+    needs: verify-tag-on-main
+    runs-on: ubuntu-latest
+    environment: demo
+    # Required reviewers for the `demo` environment (ADR-016, OQ-DM-002):
+    # product-owner + security-architect. Configuring that reviewer list
+    # on the GitHub Environment itself is task E01/F03/US03/T02's job, not
+    # this file's.
+    steps:
+      - name: record promotion
+        env:
+          TAG_REF: ${{ github.ref_name }}
+          TAG_SHA: ${{ github.sha }}
+          REQUESTED_BY: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### Promoting to \`demo\`"
+            echo ""
+            echo "- tag: \`$TAG_REF\`"
+            echo "- commit: \`$TAG_SHA\`"
+            echo "- requested by: \`$REQUESTED_BY\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # infra first: backend/web deploy *into* resources (resource group, ACR,
+  # Container Apps, Static Web App) that infra's apply job owns, so they
+  # depend on promote-infra rather than only on verify-tag-on-main.
+  promote-infra:
+    name: promote infra
+    needs: verify-tag-on-main
+    permissions:
+      contents: read
+    uses: ./.github/workflows/infra.yml
+    with:
+      target_environment: demo
+    secrets: inherit
+
+  promote-backend:
+    name: promote backend
+    needs: [verify-tag-on-main, promote-infra]
+    permissions:
+      contents: read
+      id-token: write # backend.yml's deploy job requests an OIDC token (ADR-015)
+    uses: ./.github/workflows/backend.yml
+    with:
+      target_environment: demo
+    secrets: inherit
+
+  promote-web:
+    name: promote web
+    needs: [verify-tag-on-main, promote-infra]
+    permissions:
+      contents: read
+      id-token: write # web.yml's deploy job requests an OIDC token (ADR-015)
+    uses: ./.github/workflows/web.yml
+    with:
+      target_environment: demo
+    secrets: inherit
