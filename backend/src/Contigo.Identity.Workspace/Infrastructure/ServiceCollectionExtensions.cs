@@ -1,3 +1,4 @@
+using Contigo.SharedKernel;
 using Contigo.SharedKernel.Tenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,11 +10,13 @@ namespace Contigo.Identity.Workspace.Infrastructure;
 /// Composition-root wiring for the Identity/Workspace module. ADR-002: "each module exposes an
 /// AddXxx(IServiceCollection) extension method"; domain modules never wire themselves into a host
 /// directly. The Api/Worker hosts will call this once they take a dependency on this module — not
-/// wired up yet (no endpoint/queue handler exists to attach a tenant claim to). This task wires
-/// the ambient tenant claim (<see cref="ITenantContext"/>) and the RLS connection interceptor
+/// wired up yet (no endpoint/queue handler exists to attach a tenant claim to). Task E01/F05/US01/T01
+/// wired the ambient tenant claim (<see cref="ITenantContext"/>) and the RLS connection interceptor
 /// into the DbContext pipeline itself, so whichever future task adds the first endpoint/handler
 /// only has to call <see cref="ITenantContext.BeginScope"/> around it — the RLS backstop is
-/// already live.
+/// already live. Task E01/F05/US01/T02 adds <see cref="WorkspaceMembershipService"/> (the invite
+/// + OIDC sign-in linking flow) and the production <see cref="IClock"/> it needs, for the same
+/// forward-looking reason.
 /// </summary>
 public static class ServiceCollectionExtensions
 {
@@ -23,10 +26,13 @@ public static class ServiceCollectionExtensions
         // TryAdd: any module (or the host) may call this defensively; only the first
         // registration wins, and every module shares the same ambient tenant claim (ADR-009).
         services.TryAddSingleton<ITenantContext, TenantContext>();
+        services.TryAddSingleton<IClock>(SystemClock.Instance);
 
         services.AddDbContext<IdentityWorkspaceDbContext>(
             (sp, options) => IdentityWorkspaceDbContextOptions.Configure(
                 options, connectionString, sp.GetRequiredService<ITenantContext>()));
+
+        services.TryAddScoped<WorkspaceMembershipService>();
 
         return services;
     }

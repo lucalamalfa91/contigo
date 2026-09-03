@@ -1,3 +1,5 @@
+using Contigo.SharedKernel;
+
 namespace Contigo.Identity.Workspace.Domain;
 
 /// <summary>
@@ -14,7 +16,10 @@ namespace Contigo.Identity.Workspace.Domain;
 /// <see cref="ExternalSubjectId"/> is nullable: a row exists once a workspace admin invites
 /// someone by email, before that person has ever signed in. Resolving it from the OIDC
 /// `sub`/`oid` claim on first sign-in, and the invite flow itself, are task E01/F05/US01/T02's
-/// job (ADR-010) — this task only carries the column and its lookup index.
+/// job (ADR-010) — now <see cref="LinkExternalSubject"/> (first-sign-in linking, called by
+/// <c>Infrastructure.WorkspaceMembershipService.LinkSignInAsync</c> via
+/// <see cref="WorkspaceSignIn.ResolveSignedInUser"/>) and
+/// <see cref="WorkspaceMembershipFactory.CreateInvitedUser"/> (the invite itself).
 /// </summary>
 public sealed class WorkspaceUser : TenantScopedEntity
 {
@@ -25,4 +30,29 @@ public sealed class WorkspaceUser : TenantScopedEntity
     public string? ExternalSubjectId { get; set; }
 
     public required DateTimeOffset CreatedAt { get; set; }
+
+    /// <summary>
+    /// Links this row to the OIDC <c>sub</c>/<c>oid</c> claim of the identity that just signed in
+    /// (ADR-010; story us-01-workspace-roles AC-3). Idempotent when it is the same subject that is
+    /// already linked (a repeat sign-in is a no-op success); fails instead of overwriting when
+    /// this row is already linked to a <em>different</em> subject, so one invited email can never
+    /// be silently reassigned to another Entra identity.
+    /// </summary>
+    public Result<WorkspaceUser> LinkExternalSubject(string externalSubjectId)
+    {
+        if (string.IsNullOrWhiteSpace(externalSubjectId))
+        {
+            return Result<WorkspaceUser>.Failure("external subject id is required to link a sign-in.");
+        }
+
+        if (ExternalSubjectId is not null &&
+            !string.Equals(ExternalSubjectId, externalSubjectId, StringComparison.Ordinal))
+        {
+            return Result<WorkspaceUser>.Failure(
+                $"workspace user {Id} is already linked to a different external subject.");
+        }
+
+        ExternalSubjectId = externalSubjectId;
+        return this;
+    }
 }
