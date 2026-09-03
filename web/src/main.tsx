@@ -5,6 +5,7 @@ import { MsalProvider } from "@azure/msal-react";
 import App from "./App";
 import { AppConfigError, loadAppConfig } from "./config/appConfig";
 import { buildMsalConfig } from "./auth/msalConfig";
+import { createApiClient } from "./api/client";
 import "./index.css";
 
 const rootElement = document.getElementById("root");
@@ -42,11 +43,15 @@ async function bootstrap() {
   }
 
   const msalInstance = new PublicClientApplication(buildMsalConfig(appConfig));
+  // Task E01/F07/US01/T02: the generated-type-backed API client (src/api/client.ts),
+  // built from the same runtime config as MSAL (ADR-012 "config, not code") --
+  // never a hard-coded origin.
+  const apiClient = createApiClient(appConfig.apiBaseUrl);
 
   root.render(
     <StrictMode>
       <MsalProvider instance={msalInstance}>
-        <App appConfig={appConfig} />
+        <App appConfig={appConfig} apiClient={apiClient} />
       </MsalProvider>
     </StrictMode>,
   );
