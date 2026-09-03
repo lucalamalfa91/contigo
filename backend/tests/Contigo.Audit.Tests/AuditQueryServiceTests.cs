@@ -67,7 +67,7 @@ public sealed class AuditQueryServiceTests : IAsyncLifetime
         await WriteEventAsync(tenantA, "user-a", "document.upload", "Document", "doc-a", DateTimeOffset.UtcNow);
         await WriteEventAsync(tenantB, "user-b", "document.upload", "Document", "doc-b", DateTimeOffset.UtcNow);
 
-        IAuditQueryService queryService = new AuditQueryService(CreateContext());
+        IAuditQueryService queryService = new AuditQueryService(CreateContext(), _tenantContext);
         var events = await queryService.GetEventsAsync(tenantA);
 
         var onlyEvent = Assert.Single(events);
@@ -84,7 +84,7 @@ public sealed class AuditQueryServiceTests : IAsyncLifetime
             tenantId, "user-123@acme.example", "document.upload", "Document", "doc-1", occurredAt,
             "uploaded via web");
 
-        IAuditQueryService queryService = new AuditQueryService(CreateContext());
+        IAuditQueryService queryService = new AuditQueryService(CreateContext(), _tenantContext);
         var events = await queryService.GetEventsAsync(tenantId);
 
         var stored = Assert.Single(events);
@@ -107,7 +107,7 @@ public sealed class AuditQueryServiceTests : IAsyncLifetime
         await WriteEventAsync(tenantId, "user-1", "document.upload", "Document", "newest", now);
         await WriteEventAsync(tenantId, "user-1", "document.upload", "Document", "middle", now.AddMinutes(-5));
 
-        IAuditQueryService queryService = new AuditQueryService(CreateContext());
+        IAuditQueryService queryService = new AuditQueryService(CreateContext(), _tenantContext);
         var events = await queryService.GetEventsAsync(tenantId);
 
         Assert.Equal("newest,middle,oldest", string.Join(",", events.Select(e => e.ResourceId)));
@@ -120,7 +120,7 @@ public sealed class AuditQueryServiceTests : IAsyncLifetime
             TenantId.New(), "user-1", "document.upload", "Document", "belongs-to-someone-else",
             DateTimeOffset.UtcNow);
 
-        IAuditQueryService queryService = new AuditQueryService(CreateContext());
+        IAuditQueryService queryService = new AuditQueryService(CreateContext(), _tenantContext);
         var events = await queryService.GetEventsAsync(TenantId.New());
 
         Assert.Empty(events);
