@@ -9,15 +9,14 @@ namespace Contigo.Audit.Infrastructure;
 /// <summary>
 /// Composition-root wiring for the Audit module. ADR-002: "each module exposes an
 /// AddXxx(IServiceCollection) extension method"; domain modules never wire themselves into a host
-/// directly. Registers both the DbContext (with the RLS backstop already live, same as every
-/// other module) and this module's <see cref="IAuditWriter"/> implementation, so any future host
-/// wiring — or any other module's own `AddXxx` — only needs to call
-/// <see cref="AddAuditModule"/> once to get a working, tenant-scoped, append-only
-/// <see cref="IAuditWriter"/> from DI. No endpoint/queue handler calls this yet (that is task
-/// E01/F06/US02/T02's job for the query side; write-side callers arrive as later tasks retrofit
-/// their own modules to call <see cref="IAuditWriter"/>), so whichever future task adds the first
-/// caller only has to take a dependency on <see cref="IAuditWriter"/> — everything else is
-/// already wired.
+/// directly. Registers the DbContext (with the RLS backstop already live, same as every other
+/// module), this module's <see cref="IAuditWriter"/> implementation, and its
+/// <see cref="IAuditQueryService"/> read side (task E01/F06/US02/T02), so any future host wiring —
+/// or any other module's own `AddXxx` — only needs to call <see cref="AddAuditModule"/> once to get
+/// a working, tenant-scoped, append-only <see cref="IAuditWriter"/> and a tenant-scoped
+/// <see cref="IAuditQueryService"/> from DI. Write-side callers still arrive as later tasks
+/// retrofit their own modules to call <see cref="IAuditWriter"/>; <c>Contigo.Api</c>'s
+/// `GET /api/audit` endpoint is this module's first <see cref="IAuditQueryService"/> caller.
 /// </summary>
 public static class ServiceCollectionExtensions
 {
@@ -33,6 +32,7 @@ public static class ServiceCollectionExtensions
                 options, connectionString, sp.GetRequiredService<ITenantContext>()));
 
         services.AddScoped<IAuditWriter, AuditWriter>();
+        services.AddScoped<IAuditQueryService, AuditQueryService>();
 
         return services;
     }

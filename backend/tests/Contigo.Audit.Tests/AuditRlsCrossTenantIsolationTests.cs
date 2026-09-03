@@ -22,6 +22,11 @@ namespace Contigo.Audit.Tests;
 /// security regardless of policy or `FORCE` — asserting isolation over that connection would pass
 /// vacuously. This role stands in for "the application's own database role", so a passing test
 /// here is a real proof, not a tautology.
+///
+/// Also covers task E01/F06/US02/T02 (story us-02-audit-baseline AC-2, the `audit-query`
+/// artifact): <see cref="Tenant_cannot_read_another_tenants_audit_events_through_AuditQueryService"/>
+/// proves the same guarantee holds through <see cref="AuditQueryService"/> — the exact type
+/// `GET /api/audit` calls — not only through <see cref="AuditDbContext"/> directly.
 /// </summary>
 public sealed class AuditRlsCrossTenantIsolationTests : IAsyncLifetime
 {
@@ -92,6 +97,32 @@ public sealed class AuditRlsCrossTenantIsolationTests : IAsyncLifetime
             var visibleRow = Assert.Single(visible);
             Assert.Equal("owned-by-tenant-a", visibleRow.ResourceId);
             Assert.Equal(tenantA, visibleRow.TenantId);
+        }
+    }
+
+    [Fact]
+    public async Task Tenant_cannot_read_another_tenants_audit_events_through_AuditQueryService()
+    {
+        // Same guarantee as Tenant_cannot_read_another_tenants_audit_events, but through
+        // AuditQueryService (task E01/F06/US02/T02's `audit-query` artifact) — the exact type
+        // `GET /api/audit` calls — under the same unprivileged, NOBYPASSRLS application role, so
+        // the proof covers the real query path end to end, not only AuditDbContext directly.
+        var tenantA = TenantId.New();
+        var tenantB = TenantId.New();
+
+        await WriteEventAsync(tenantA, resourceId: "owned-by-tenant-a");
+        await WriteEventAsync(tenantB, resourceId: "owned-by-tenant-b");
+
+        var tenantContext = new TenantContext();
+        using (tenantContext.BeginScope(tenantA))
+        {
+            await using var db = CreateAppContext(tenantContext);
+            IAuditQueryService queryService = new AuditQueryService(db);
+
+            var visible = await queryService.GetEventsAsync(tenantA);
+
+            var visibleRow = Assert.Single(visible);
+            Assert.Equal("owned-by-tenant-a", visibleRow.ResourceId);
         }
     }
 
