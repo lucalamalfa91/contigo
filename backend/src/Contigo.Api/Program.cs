@@ -42,8 +42,13 @@ app.MapHealthChecks("/health");
 //
 // ADR-010 (Entra ID/OIDC) is not in the "architecture decisions in force" list for this task,
 // so there is no validated caller identity/JWT yet. The tenant is taken from an explicit
-// X-Tenant-Id header instead of a token claim — a deliberate, recorded interim placeholder.
-// Replace with claim-based tenant resolution once the auth-middleware task lands.
+// X-Tenant-Id header instead of a token claim — a deliberate interim placeholder (paired with
+// DocumentUploadService.UnattributedActor). Deliberately NOT promoted to
+// reports/open-questions.md by this task: that file is appended to by every wave/* implementer
+// branch in this fan-out, and concurrent appends to it have previously broken a phase-barrier
+// merge, so a mid-wave append here would risk repeating that. Fold one consolidated entry for
+// both placeholders into the ledger at a safe point (e.g. when the auth-middleware task is
+// authored), then replace both with claim-based tenant/actor resolution.
 app.MapPost("/api/documents", async Task<IResult> (
     HttpRequest request,
     DocumentUploadService uploadService,
