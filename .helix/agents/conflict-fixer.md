@@ -37,8 +37,9 @@ side is a process defect.
 For each unmerged file under product roots (`infra/`, `backend/`, `web/`,
 `mobile/`, `.github/`, `scripts/`, `workspace/`):
 
-- Text with `<<<<<<<` / `=======` / `>>>>>>>`: edit to a coherent result, then
-  remove every marker. Honour both sides. Do not keep markers "for a human".
+- Text with git conflict marker lines (HEAD / separator / branch): edit to a
+  coherent result, then remove every marker. Honour both sides. Do not keep
+  markers "for a human".
 - add/add: combine both creations; do not pick one file and delete the other
   unless they are exact duplicates.
 - modify/delete: keep the surviving content when the other side still needs it.
@@ -51,8 +52,8 @@ Do not invent a third architecture. Do not re-decide council ADRs.
 ### 2a. Never break the merge with `.helix/` edits
 
 **Critical:** `git add -A` and edits under `.helix/` have caused wave aborts.
-`merge_verify` scans **every tracked file** for `<<<<<<<` / `>>>>>>>`. If you
-leave markers in `.helix/agents/conflict-fixer.md` or `.helix/scripts/*.py`,
+`merge_verify` scans **every tracked file** for conflict marker lines. If you
+leave real markers in `.helix/agents/conflict-fixer.md` or `.helix/scripts/*.py`,
 the merge is rejected and the wave rolls back.
 
 Rules:
@@ -117,16 +118,13 @@ When **ours** has CI workflows and **theirs** adds `backend/` entries:
 
 If both sides appended OQ blocks:
 
-```markdown
-<<<<<<< HEAD
-- **OQ-impl-006** — ... **Status**: `assumed-confirmed`. ...
-=======
-- **OQ-impl-007** — ... **Status**: `open`. ...
->>>>>>> wave/E01-F04-US02-T01
-```
+Conflict block shape (HEAD side vs incoming side):
+
+- HEAD: **OQ-impl-006** — … **Status**: `assumed-confirmed`. …
+- incoming: **OQ-impl-007** — … **Status**: `open`. …
 
 **Correct:** keep **both** blocks (006 and 007). Same id → one block with the
-richer assumption text. No markers left.
+richer assumption text. No conflict marker lines left in the file.
 
 ## 3. Stage, verify, commit
 

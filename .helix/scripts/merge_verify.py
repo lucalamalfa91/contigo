@@ -5,7 +5,7 @@ Runs in the integration worktree (product clone root). Must not require
 MERGE_HEAD to be absent (the auto pass verifies before it commits).
 
 Exit 0: no leftover conflict markers in tracked text files.
-Exit 1: at least one tracked file still contains <<<<<<< or >>>>>>>.
+Exit 1: at least one tracked file still contains git conflict marker lines.
 """
 
 from __future__ import annotations
@@ -14,7 +14,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-MARKERS = ("<<<<<<<", ">>>>>>>")
+# Built at runtime so this script does not trip its own scan.
+MARKERS = (chr(60) * 7, chr(62) * 7)
 
 
 def tracked_files(repo_root: Path) -> list[str]:
