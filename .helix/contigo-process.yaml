@@ -428,8 +428,10 @@ orchestrations:
   - id: execution-fanout
     hooks:
       - event: on_orchestration_start
-        command: python scripts/check_seed_freshness.py
+        command: scripts/check_seed_freshness.py
         # Observation-only: warns if integration is ahead of main (stale seed trap).
+        # Path only — Helix validates command as an artifact-relative file
+        # (Windows runner wraps .py with python).
         timeout_s: 15
       - event: on_orchestration_stop
         command: scripts/open_fanout_pr.py
