@@ -129,19 +129,27 @@ richer assumption text. No conflict marker lines left in the file.
 ## 3. Stage, verify, commit
 
 ```bash
-# 1) product paths only — mirror implementer staging
+# 1) RESTORE .helix/ to HEAD — undo any accidental edits to process files
 git restore --source=HEAD --staged --worktree -- .helix || true
+
+# 2) stage ONLY product paths — this is the EXACT allowlist, do not add other paths
 git add -- infra backend web mobile workspace .github scripts
 
-# 2) if open-questions was unmerged and you unioned it:
+# 3) if open-questions was unmerged and you unioned it (§2d):
 # git add -- .helix/reports/open-questions.md
 
-# 3) must be empty
+# 4) MUST print nothing — any remaining unmerged path is a failed resolution
 git diff --name-only --diff-filter=U
 
-# 4) local gate (same command Helix runs)
+# 5) MUST exit 0 — scans product files for leftover conflict markers
 python .helix/scripts/merge_verify.py
 ```
+
+**Hard rule:** your `git add` command MUST use the exact allowlist above.
+Do NOT use `git add -A`, `git add .`, or `git add --all`. Do NOT stage
+`.helix/agents/`, `.helix/scripts/`, `.helix/contigo-process.yaml`, or any
+other `.helix/` path except `.helix/reports/open-questions.md` (and only
+when §2d applies).
 
 Both checks must pass. Then **commit the merge**:
 

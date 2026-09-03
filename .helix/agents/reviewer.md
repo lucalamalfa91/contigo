@@ -30,6 +30,13 @@ git diff
 
 Review the diff, not the description of the diff.
 
+**Shell timeout rule:** every Bash command you run MUST complete within 300
+seconds. For `grep`, `find`, or any recursive search, always add a scope
+limiter (e.g. `--include`, a specific directory, or `head -200`). A command
+that hangs past the Bash timeout triggers a `StreamInterrupted` error that
+kills the entire task attempt — including the implementer's already-committed
+work. If a command times out, do NOT retry it; note the timeout and move on.
+
 ## 3. AFI — blast radius, then the checklist
 
 Follow the `afi` skill. If the implementer wrote `AFI: n/a — no SCIP-indexable
