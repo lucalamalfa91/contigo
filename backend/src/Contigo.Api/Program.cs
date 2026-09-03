@@ -5,6 +5,7 @@ using Contigo.Api.Infrastructure;
 using Contigo.Audit.Infrastructure;
 using Contigo.Documents.Contracts.Application;
 using Contigo.Documents.Contracts.Infrastructure;
+using Contigo.Identity.Workspace.Infrastructure;
 using Contigo.SharedKernel;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -14,6 +15,18 @@ var builder = WebApplication.CreateBuilder(args);
 // is the first module with real infrastructure to wire in (us-03's RLS backstop rides along
 // automatically via AddDocumentsContractsModule). Further modules register here the same way
 // as their own tasks land — this call list is the "composition" ADR-002 asks the host to do.
+//
+// Task E01/F09/US01/T01 (r0-integration, AC-1 "create workspace"): Identity/Workspace's own
+// AddIdentityWorkspaceModule already existed (task E01/F05/US01/T01/T02) but had never been
+// called by a host — no endpoint used to attach a tenant claim to. WorkspaceEndpointExtensions
+// below is that first endpoint.
+var identityWorkspaceConnectionString = builder.Configuration.GetConnectionString("IdentityWorkspace")
+    ?? throw new InvalidOperationException(
+        "Missing required configuration 'ConnectionStrings:IdentityWorkspace' " +
+        "(set env var ConnectionStrings__IdentityWorkspace in deployed environments).");
+
+builder.Services.AddIdentityWorkspaceModule(identityWorkspaceConnectionString);
+
 var documentsContractsConnectionString = builder.Configuration.GetConnectionString("DocumentsContracts")
     ?? throw new InvalidOperationException(
         "Missing required configuration 'ConnectionStrings:DocumentsContracts' " +
@@ -46,6 +59,10 @@ builder.Services.AddHealthChecks();
 var app = builder.Build();
 
 app.MapHealthChecks("/health");
+
+// Task E01/F09/US01/T01 (r0-integration, AC-1 "create workspace -> invite"): see
+// WorkspaceEndpointExtensions for the endpoints themselves.
+app.MapWorkspaceEndpoints();
 
 // Task E01/F06/US01/T01 (us-01-document-upload, AC-1): stores the uploaded bytes in
 // tenant-scoped blob storage and creates the queued classification job

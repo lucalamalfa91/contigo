@@ -84,6 +84,18 @@ public sealed class DocumentQueryServiceTests : IAsyncLifetime
         public DateTimeOffset UtcNow => now;
     }
 
+    /// <summary>
+    /// This test class only proves the read side (<see cref="DocumentQueryService"/>); the audit
+    /// write task E01/F09/US01/T01 added to <see cref="DocumentUploadService"/> is proven by
+    /// <c>Contigo.Documents.Contracts.Tests.DocumentUploadServiceTests</c>'s own
+    /// <c>RecordingAuditWriter</c> instead — this one just needs the seed upload to succeed.
+    /// </summary>
+    private sealed class NoOpAuditWriter : IAuditWriter
+    {
+        public Task WriteAsync(AuditEntry entry, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+    }
+
     /// <summary>Seeds a document via the real upload path (task T01) so this test proves a read
     /// back of genuinely persisted data, not a hand-inserted fixture row.</summary>
     private async Task<EntityId> SeedDocumentAsync(
@@ -91,7 +103,7 @@ public sealed class DocumentQueryServiceTests : IAsyncLifetime
     {
         await using var db = CreateAppContext(tenantContext);
         var uploadService = new DocumentUploadService(
-            db, new RecordingDocumentStorage(), tenantContext, new FixedClock(now));
+            db, new RecordingDocumentStorage(), tenantContext, new FixedClock(now), new NoOpAuditWriter());
 
         using var content = new MemoryStream(Encoding.UTF8.GetBytes($"%PDF-1.4 {fileName}"));
         var result = await uploadService.UploadAsync(tenantId, fileName, "application/pdf", content);

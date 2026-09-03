@@ -16,7 +16,9 @@ namespace Contigo.Identity.Workspace.Infrastructure;
 /// only has to call <see cref="ITenantContext.BeginScope"/> around it — the RLS backstop is
 /// already live. Task E01/F05/US01/T02 adds <see cref="WorkspaceMembershipService"/> (the invite
 /// + OIDC sign-in linking flow) and the production <see cref="IClock"/> it needs, for the same
-/// forward-looking reason.
+/// forward-looking reason. Task E01/F09/US01/T01 (r0-integration) adds
+/// <see cref="WorkspaceProvisioningService"/> (the "create workspace" half) and is the first task
+/// to actually call this method from a host (<c>Contigo.Api.Program</c>).
 /// </summary>
 public static class ServiceCollectionExtensions
 {
@@ -33,6 +35,7 @@ public static class ServiceCollectionExtensions
                 options, connectionString, sp.GetRequiredService<ITenantContext>()));
 
         services.TryAddScoped<WorkspaceMembershipService>();
+        services.TryAddScoped<WorkspaceProvisioningService>();
 
         return services;
     }

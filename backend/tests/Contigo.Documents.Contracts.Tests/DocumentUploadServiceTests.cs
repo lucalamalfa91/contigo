@@ -78,6 +78,17 @@ public sealed class DocumentUploadServiceTests : IAsyncLifetime
         return new DocumentsContractsDbContext(optionsBuilder.Options);
     }
 
+    private sealed class RecordingAuditWriter : IAuditWriter
+    {
+        public List<AuditEntry> Written { get; } = [];
+
+        public Task WriteAsync(AuditEntry entry, CancellationToken cancellationToken = default)
+        {
+            Written.Add(entry);
+            return Task.CompletedTask;
+        }
+    }
+
     private sealed class RecordingDocumentStorage : IDocumentStorage
     {
         public List<(string Path, byte[] Content)> Saved { get; } = [];
@@ -113,10 +124,11 @@ public sealed class DocumentUploadServiceTests : IAsyncLifetime
         var bytes = Encoding.UTF8.GetBytes("%PDF-1.4 sample contract bytes");
         var expectedChecksum = Convert.ToHexString(SHA256.HashData(bytes));
         var storage = new RecordingDocumentStorage();
+        var auditWriter = new RecordingAuditWriter();
 
         var tenantContext = new TenantContext();
         await using var db = CreateAppContext(tenantContext);
-        var service = new DocumentUploadService(db, storage, tenantContext, new FixedClock(now));
+        var service = new DocumentUploadService(db, storage, tenantContext, new FixedClock(now), auditWriter);
 
         using var content = new MemoryStream(bytes);
         var result = await service.UploadAsync(tenantId, "contract.pdf", "application/pdf", content);
@@ -132,6 +144,15 @@ public sealed class DocumentUploadServiceTests : IAsyncLifetime
         var saved = Assert.Single(storage.Saved);
         Assert.StartsWith($"{tenantId.Value:D}/", saved.Path, StringComparison.Ordinal);
         Assert.Equal(bytes, saved.Content);
+
+        // Task E01/F09/US01/T01 (r0-integration) AC-1 "upload document -> audit event": exactly
+        // one audit entry, for this tenant, this document, this action.
+        var auditEntry = Assert.Single(auditWriter.Written);
+        Assert.Equal(tenantId, auditEntry.TenantId);
+        Assert.Equal("document.uploaded", auditEntry.Action);
+        Assert.Equal("document", auditEntry.ResourceType);
+        Assert.Equal(uploaded.DocumentId.Value.ToString(), auditEntry.ResourceId);
+        Assert.Equal(now, auditEntry.Timestamp);
 
         // AC-2: metadata + processing status + job, read back under the same tenant's scope.
         using (tenantContext.BeginScope(tenantId))
@@ -161,15 +182,17 @@ public sealed class DocumentUploadServiceTests : IAsyncLifetime
     {
         var tenantId = TenantId.New();
         var storage = new RecordingDocumentStorage();
+        var auditWriter = new RecordingAuditWriter();
         var tenantContext = new TenantContext();
         await using var db = CreateAppContext(tenantContext);
-        var service = new DocumentUploadService(db, storage, tenantContext, new FixedClock(DateTimeOffset.UtcNow));
+        var service = new DocumentUploadService(db, storage, tenantContext, new FixedClock(DateTimeOffset.UtcNow), auditWriter);
 
         using var emptyContent = new MemoryStream();
         var result = await service.UploadAsync(tenantId, "empty.pdf", "application/pdf", emptyContent);
 
         Assert.True(result.IsFailure);
         Assert.Empty(storage.Saved);
+        Assert.Empty(auditWriter.Written);
 
         using (tenantContext.BeginScope(tenantId))
         {
@@ -188,7 +211,8 @@ public sealed class DocumentUploadServiceTests : IAsyncLifetime
 
         await using (var db = CreateAppContext(tenantContext))
         {
-            var service = new DocumentUploadService(db, storage, tenantContext, new FixedClock(DateTimeOffset.UtcNow));
+            var service = new DocumentUploadService(
+                db, storage, tenantContext, new FixedClock(DateTimeOffset.UtcNow), new RecordingAuditWriter());
             using var content = new MemoryStream("owned-by-tenant-a"u8.ToArray());
             var result = await service.UploadAsync(tenantA, "contract.pdf", "application/pdf", content);
             Assert.True(result.IsSuccess);

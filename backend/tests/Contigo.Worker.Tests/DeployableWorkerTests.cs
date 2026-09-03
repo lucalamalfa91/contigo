@@ -23,9 +23,12 @@ public sealed class DeployableWorkerTests
         // A syntactically valid Npgsql connection string satisfies AddDocumentsContractsModule's
         // eager UseNpgsql() parsing. Nothing below opens a real connection, so no running
         // Postgres instance is required for this test (same approach as
-        // Contigo.Api.Tests.DeployableApiTests).
-        builder.Services.AddWorkerHost(
-            "Host=localhost;Port=5432;Database=contigo_dev;Username=contigo;Password=contigo;Include Error Detail=true");
+        // Contigo.Api.Tests.DeployableApiTests). Same connection string reused for both
+        // parameters, mirroring appsettings.Development.json's own single shared `contigo_dev`
+        // database (ADR-003 "single system of record").
+        const string connectionString =
+            "Host=localhost;Port=5432;Database=contigo_dev;Username=contigo;Password=contigo;Include Error Detail=true";
+        builder.Services.AddWorkerHost(connectionString, connectionString);
 
         return builder.Build();
     }

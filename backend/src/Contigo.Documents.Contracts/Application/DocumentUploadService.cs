@@ -19,12 +19,23 @@ namespace Contigo.Documents.Contracts.Application;
 /// today, a queue handler later) gets the ADR-009 RLS backstop automatically, and a caller that
 /// also wraps this in its own scope is unaffected (nested scopes restore the previous value on
 /// dispose).
+///
+/// Task E01/F09/US01/T01 (r0-integration, AC-1 "upload document -> audit event"): writes one
+/// <see cref="IAuditWriter"/> entry per successful upload. <see cref="IAuditWriter"/> lives in
+/// <c>Contigo.SharedKernel</c> (not <c>Contigo.Audit</c>), so taking this dependency does not
+/// cross the ADR-002 module boundary
+/// (<c>Contigo.ArchitectureTests.DependencyDirectionTests</c>'s allow-list for this module is
+/// exactly <c>[SharedKernel, AiGateway]</c>) — the same gateway-abstraction shape already used for
+/// <see cref="IDocumentStorage"/>. The write happens inside the same tenant scope the upload
+/// itself opened, so the audit row's RLS `WITH CHECK` is satisfied by the identical ambient
+/// tenant claim (see <see cref="Contigo.Audit.Infrastructure.AuditWriter"/>'s own doc comment).
 /// </summary>
 public sealed class DocumentUploadService(
     DocumentsContractsDbContext dbContext,
     IDocumentStorage storage,
     ITenantContext tenantContext,
-    IClock clock)
+    IClock clock,
+    IAuditWriter auditWriter)
 {
     private const int InitialVersionNumber = 1;
 
@@ -114,6 +125,20 @@ public sealed class DocumentUploadService(
         dbContext.ExtractionJobs.Add(classificationJob);
 
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        // AC-1 "upload document -> audit event": recorded only once the upload itself is
+        // durable, still inside this call's own tenant scope (see the type doc comment). A
+        // failure here throws and fails the whole upload rather than silently dropping the audit
+        // record — ADR-011 treats audit as a compliance control, not a best-effort side-channel.
+        await auditWriter.WriteAsync(
+            new AuditEntry(
+                tenantId,
+                UnattributedActor,
+                "document.uploaded",
+                "document",
+                documentId.Value.ToString(),
+                now),
+            cancellationToken).ConfigureAwait(false);
 
         return Result<DocumentUploadResult>.Success(new DocumentUploadResult(
             document.Id, document.FileName, document.MimeType, document.ProcessingStatus, document.CreatedAt));
