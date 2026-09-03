@@ -1,0 +1,147 @@
+name: web
+
+# ADR-014 (per-folder deploy jobs, path filters, main -> dev auto-deploy)
+# and ADR-012 (React + TypeScript + Vite SPA, static bundle on Azure
+# Static Web Apps free tier): "CI/CD must add a web/ path-filtered job
+# that runs npm ci, npm run build, and deploys the static output to the
+# per-environment Static Web App." Path-filtered to web/ only (parent
+# story us-02 AC-1).
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "web/**"
+      - ".github/workflows/web.yml"
+      - ".github/actions/azure-login/**"
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - ".github/workflows/web.yml"
+      - ".github/actions/azure-login/**"
+  # us-03's demo promotion workflow (ADR-016) reuses this deploy job by
+  # calling it with target_environment: demo, under the demo CI identity
+  # and demo Static Web App (ADR-015). dev and demo never share a resource
+  # group or service principal -- only the job definition is shared.
+  workflow_call:
+    inputs:
+      target_environment:
+        description: >-
+          GitHub Environment (and Azure resource-group / CI-identity
+          suffix) to deploy to: "dev" or "demo". Defaults to "dev", which
+          is all this task (us-02) wires up.
+        required: false
+        type: string
+        default: dev
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-${{ inputs.target_environment || 'dev' }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TARGET_ENVIRONMENT: ${{ inputs.target_environment || 'dev' }}
+
+jobs:
+  # Required status check for the protected `main` branch (ADR-014).
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # No cache-dependency-path: web/ has no package-lock.json until the
+      # client-scaffold task lands (only .gitkeep today). setup-node's
+      # cache hashes that lockfile and hard-errors if it can't find one --
+      # pointing it at a path that doesn't exist yet would break this
+      # workflow before that scaffold exists. Re-add `cache: npm` once
+      # web/package-lock.json is committed.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+
+      # web/ is scaffolded by a separate client-scaffold task (ADR-012 is
+      # decided; the React+Vite app itself is not this task's file scope).
+      # --if-present keeps this workflow valid before that scaffold lands,
+      # and a no-op once web/ exists but a given script isn't defined yet.
+      - name: npm ci
+        working-directory: web
+        run: npm ci --if-present
+
+      - name: npm run build
+        working-directory: web
+        run: npm run build --if-present
+
+      - name: npm test
+        working-directory: web
+        run: npm test --if-present
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Deploys on merge to main (AC-2) or when reused by the demo promotion
+  # workflow.
+  deploy:
+    name: deploy (${{ inputs.target_environment || 'dev' }})
+    needs: build
+    if: github.event_name == 'workflow_call' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_environment || 'dev' }}
+    permissions:
+      id-token: write # required so GitHub issues the OIDC token azure/login exchanges
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+
+      # OIDC auth step (ADR-015): azure/login with only the non-secret
+      # client-id/tenant-id/subscription-id of this environment's
+      # least-privilege deploy service principal. vars.* resolve from
+      # this job's `environment:`, so dev and demo each read their own
+      # service principal's identity.
+      - name: Azure login (OIDC)
+        uses: ./.github/actions/azure-login
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # Static Web Apps' classic deploy action wants a stored deployment
+      # token (a long-lived secret) -- ADR-015 ("no secrets in code, client
+      # bundles ... no stored secret; the only credential material is the
+      # OIDC trust relationship") rules that out. Instead this fetches a
+      # deployment token live, via the OIDC-authenticated `az` session, and
+      # never persists it: masked in logs, used once, not written to disk,
+      # not a GitHub secret.
+      #
+      # vars.AZURE_STATIC_WEB_APP_NAME is set once infra provisions the
+      # per-environment Static Web App. No infra/modules/staticwebapp
+      # exists yet as of this task (us-02/task-01 is CI/CD workflow
+      # authoring, not infra provisioning) -- that is a gap for the
+      # web-hosting infra task to close, tracked in open-questions.md
+      # rather than assumed away here.
+      - name: Deploy to Azure Static Web Apps
+        run: |
+          set -euo pipefail
+          RG="rg-contigo-${TARGET_ENVIRONMENT}"
+          SWA_NAME="${{ vars.AZURE_STATIC_WEB_APP_NAME }}"
+          if [ -z "$SWA_NAME" ]; then
+            echo "::error::vars.AZURE_STATIC_WEB_APP_NAME is not set for environment $TARGET_ENVIRONMENT"
+            exit 1
+          fi
+          DEPLOY_TOKEN=$(az staticwebapp secrets list \
+            --name "$SWA_NAME" \
+            --resource-group "$RG" \
+            --query "properties.apiKey" -o tsv)
+          echo "::add-mask::$DEPLOY_TOKEN"
+          npx --yes @azure/static-web-apps-cli deploy web/dist \
+            --deployment-token "$DEPLOY_TOKEN" \
+            --env production
