@@ -183,7 +183,9 @@ public class DependencyDirectionTests
         return doc.Descendants("ProjectReference")
             .Select(e => e.Attribute("Include")?.Value)
             .Where(v => v is not null)
-            .Select(v => Path.GetFileNameWithoutExtension(v!))
+            // csproj files are authored with Windows separators; Linux CI
+            // Path.GetFileName* does not treat '\' as a directory separator.
+            .Select(v => Path.GetFileNameWithoutExtension(v!.Replace('\\', '/')))
             .ToList();
     }
 
