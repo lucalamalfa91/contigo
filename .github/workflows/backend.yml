@@ -1,0 +1,155 @@
+name: backend
+
+# ADR-014 (per-folder deploy jobs, path filters, main -> dev auto-deploy),
+# ADR-002 (.NET modular monolith: thin Api + Worker hosts), ADR-005
+# (Container Apps Environment + api/worker Container Apps + ACR).
+# Path-filtered to backend/ only (parent story us-02 AC-1).
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+      - ".github/actions/azure-login/**"
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+      - ".github/actions/azure-login/**"
+  # us-03's demo promotion workflow (ADR-016) reuses this deploy job by
+  # calling it with target_environment: demo, under the demo CI identity
+  # and demo resource group (ADR-015). dev and demo never share a resource
+  # group or service principal -- only the job definition is shared.
+  workflow_call:
+    inputs:
+      target_environment:
+        description: >-
+          GitHub Environment (and Azure resource-group / CI-identity
+          suffix) to deploy to: "dev" or "demo". Defaults to "dev", which
+          is all this task (us-02) wires up.
+        required: false
+        type: string
+        default: dev
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-${{ inputs.target_environment || 'dev' }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_VERSION: "10.0.x"
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  TARGET_ENVIRONMENT: ${{ inputs.target_environment || 'dev' }}
+
+jobs:
+  # Required status check for the protected `main` branch (ADR-014).
+  build:
+    name: build + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: dotnet restore
+        working-directory: backend
+        run: dotnet restore Contigo.slnx
+
+      - name: dotnet build
+        working-directory: backend
+        run: dotnet build Contigo.slnx --configuration Release --no-restore
+
+      - name: dotnet test
+        working-directory: backend
+        run: dotnet test Contigo.slnx --configuration Release --no-build
+
+  # Deploys on merge to main (AC-2) or when reused by the demo promotion
+  # workflow. Rebuilds+pushes both container images then rolls each
+  # Container App to the new tag; a future promotion redesign could instead
+  # re-tag dev's already-verified image straight to demo -- left as a note
+  # for us-03, not decided here.
+  deploy:
+    name: deploy (${{ inputs.target_environment || 'dev' }})
+    needs: build
+    if: github.event_name == 'workflow_call' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_environment || 'dev' }}
+    permissions:
+      id-token: write # required so GitHub issues the OIDC token azure/login exchanges
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # OIDC auth step (ADR-015): azure/login with only the non-secret
+      # client-id/tenant-id/subscription-id of this environment's
+      # least-privilege deploy service principal (contigo-sp-dev /
+      # contigo-sp-demo, task E01/F03/US01/T01). No client secret, no
+      # AZURE_CREDENTIALS. vars.* resolve from this job's `environment:`,
+      # so dev and demo each read their own service principal's identity.
+      - name: Azure login (OIDC)
+        uses: ./.github/actions/azure-login
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure containerapp CLI extension
+        run: az extension add --name containerapp --upgrade -y
+
+      - name: Resolve ACR for this environment
+        run: |
+          set -euo pipefail
+          RG="rg-contigo-${TARGET_ENVIRONMENT}"
+          ACR_NAME=$(az acr list --resource-group "$RG" --query "[0].name" -o tsv)
+          ACR_LOGIN_SERVER=$(az acr list --resource-group "$RG" --query "[0].loginServer" -o tsv)
+          if [ -z "$ACR_NAME" ]; then
+            echo "::error::no Container Registry found in resource group $RG"
+            exit 1
+          fi
+          echo "RESOURCE_GROUP=$RG" >> "$GITHUB_ENV"
+          echo "ACR_NAME=$ACR_NAME" >> "$GITHUB_ENV"
+          echo "ACR_LOGIN_SERVER=$ACR_LOGIN_SERVER" >> "$GITHUB_ENV"
+
+      # ACR Tasks builds the image server-side in Azure -- no local Docker
+      # daemon needed on the runner. The Dockerfiles below are the backend
+      # containerization task's deliverable; these paths are the CI
+      # contract those images must satisfy, not something this task
+      # authors.
+      - name: Build + push API image (az acr build)
+        run: |
+          az acr build \
+            --registry "$ACR_NAME" \
+            --image "contigo-api:${{ github.sha }}" \
+            --file backend/src/Contigo.Api/Dockerfile \
+            backend
+
+      - name: Build + push Worker image (az acr build)
+        run: |
+          az acr build \
+            --registry "$ACR_NAME" \
+            --image "contigo-worker:${{ github.sha }}" \
+            --file backend/src/Contigo.Worker/Dockerfile \
+            backend
+
+      # Container App names are fixed by infra/modules/containerapps
+      # ("ca-contigo-<env>-api" / "-worker"); no random suffix, safe to
+      # compose here from TARGET_ENVIRONMENT.
+      - name: Deploy API Container App revision
+        run: |
+          az containerapp update \
+            --name "ca-contigo-${TARGET_ENVIRONMENT}-api" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$ACR_LOGIN_SERVER/contigo-api:${{ github.sha }}"
+
+      - name: Deploy Worker Container App revision
+        run: |
+          az containerapp update \
+            --name "ca-contigo-${TARGET_ENVIRONMENT}-worker" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$ACR_LOGIN_SERVER/contigo-worker:${{ github.sha }}"

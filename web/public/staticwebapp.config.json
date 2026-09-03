@@ -1,0 +1,6 @@
+{
+  "navigationFallback": {
+    "rewrite": "/index.html",
+    "exclude": ["/config.json", "/staticwebapp.config.json", "/assets/*"]
+  }
+}

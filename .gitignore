@@ -37,3 +37,16 @@ local.settings.json
 # Python scripts/tests at the repo root.
 __pycache__/
 *.pyc
+
+# .NET build artifacts — task E01/F04/US01/T01 scaffolds the backend solution.
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+*.nupkg
+*.snupkg
+
+# Node build artifacts (web/, and future mobile/) — task E01/F07/US01/T01
+# scaffolds the web client.
+node_modules/
+web/dist/

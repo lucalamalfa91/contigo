@@ -1,0 +1,36 @@
+{
+  "name": "contigo-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Contigo web client - React + TypeScript + Vite SPA, OIDC Authorization Code + PKCE (ADR-012, ADR-010).",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "vite",
+    "generate:api": "node scripts/generate-api-client.mjs",
+    "build": "npm run generate:api && tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@azure/msal-browser": "^5.21.0",
+    "@azure/msal-react": "^5.7.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "~6.9.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/node": "^20.19.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "jsdom": "~27.4.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
+  }
+}
