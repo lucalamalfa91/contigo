@@ -413,3 +413,124 @@ BEGIN
 END $EF$;
 COMMIT;
 
+START TRANSACTION;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260903080549_AddTenantRowLevelSecurity') THEN
+    ALTER TABLE "contract" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "contract" FORCE ROW LEVEL SECURITY;
+    CREATE POLICY tenant_isolation ON "contract"
+        USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+        WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260903080549_AddTenantRowLevelSecurity') THEN
+    ALTER TABLE "contract_version" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "contract_version" FORCE ROW LEVEL SECURITY;
+    CREATE POLICY tenant_isolation ON "contract_version"
+        USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+        WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260903080549_AddTenantRowLevelSecurity') THEN
+    ALTER TABLE "correction_history" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "correction_history" FORCE ROW LEVEL SECURITY;
+    CREATE POLICY tenant_isolation ON "correction_history"
+        USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+        WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260903080549_AddTenantRowLevelSecurity') THEN
+    ALTER TABLE "document" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "document" FORCE ROW LEVEL SECURITY;
+    CREATE POLICY tenant_isolation ON "document"
+        USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+        WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260903080549_AddTenantRowLevelSecurity') THEN
+    ALTER TABLE "document_version" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "document_version" FORCE ROW LEVEL SECURITY;
+    CREATE POLICY tenant_isolation ON "document_version"
+        USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+        WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260903080549_AddTenantRowLevelSecurity') THEN
+    ALTER TABLE "extraction_job" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "extraction_job" FORCE ROW LEVEL SECURITY;
+    CREATE POLICY tenant_isolation ON "extraction_job"
+        USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+        WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260903080549_AddTenantRowLevelSecurity') THEN
+    ALTER TABLE "clause" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "clause" FORCE ROW LEVEL SECURITY;
+    CREATE POLICY tenant_isolation ON "clause"
+        USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+        WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260903080549_AddTenantRowLevelSecurity') THEN
+    ALTER TABLE "obligation" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "obligation" FORCE ROW LEVEL SECURITY;
+    CREATE POLICY tenant_isolation ON "obligation"
+        USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+        WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260903080549_AddTenantRowLevelSecurity') THEN
+    ALTER TABLE "risk" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "risk" FORCE ROW LEVEL SECURITY;
+    CREATE POLICY tenant_isolation ON "risk"
+        USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+        WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260903080549_AddTenantRowLevelSecurity') THEN
+    ALTER TABLE "embedding" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "embedding" FORCE ROW LEVEL SECURITY;
+    CREATE POLICY tenant_isolation ON "embedding"
+        USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+        WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260903080549_AddTenantRowLevelSecurity') THEN
+    INSERT INTO "__EFMigrationsHistory" (migration_id, product_version)
+    VALUES ('20260903080549_AddTenantRowLevelSecurity', '10.0.4');
+    END IF;
+END $EF$;
+COMMIT;
+
