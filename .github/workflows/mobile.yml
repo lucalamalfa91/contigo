@@ -1,0 +1,81 @@
+name: mobile
+
+# ADR-013: mobile (React Native + Expo + TypeScript) is a parallel,
+# non-gating lane -- V1 is web-first and nothing in R0-R4 or the Day-1
+# demo depends on a native build or store review. This workflow only
+# builds/typechecks (no deploy target exists for mobile in either
+# environment, and none is required -- ADR-013: "no mobile store release
+# is required for any R0-R4 wave"). It must never block `dev`/`demo`
+# promotion (parent story us-02 AC-3):
+#
+#   - continue-on-error: true at both job and step level, so a failure
+#     here always reports as a (warning) success to the workflow run --
+#     it cannot fail a required check even if one were mis-added.
+#   - this job must never be added to
+#     scripts/apply_github_branch_protection.py's
+#     REQUIRED_STATUS_CHECK_CONTEXTS. That script currently ships that
+#     list empty; whoever first populates it with "backend build",
+#     "web build", "infra validate" etc. must not add "mobile build".
+#
+# Path-filtered to mobile/ only (parent story us-02 AC-1). No
+# workflow_call trigger: mobile has no per-environment deploy job for the
+# demo promotion workflow (us-03) to reuse.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "mobile/**"
+      - ".github/workflows/mobile.yml"
+  push:
+    branches: [main]
+    paths:
+      - "mobile/**"
+      - ".github/workflows/mobile.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build (non-blocking)
+    runs-on: ubuntu-latest
+    # Belt-and-suspenders alongside the per-step continue-on-error below:
+    # even if this job is ever wired into a required check by mistake,
+    # continue-on-error makes its reported conclusion "success" (with a
+    # warning), so it can never fail a merge or a dev/demo promotion.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      # No cache-dependency-path: mobile/ has no package-lock.json until
+      # the client-scaffold task lands (only .gitkeep today); see web.yml
+      # for why that makes setup-node's cache option unsafe to set yet.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+        continue-on-error: true
+
+      # mobile/ is scaffolded by a separate client-scaffold task
+      # (ADR-013 is decided; the Expo/RN app itself is not this task's
+      # file scope). --if-present keeps this workflow valid before that
+      # scaffold lands, and a no-op once mobile/ exists but a given script
+      # isn't defined yet. No `eas build` / store submission here -- V1
+      # has no mobile store release (ADR-013).
+      - name: npm ci
+        working-directory: mobile
+        run: npm ci --if-present
+        continue-on-error: true
+
+      - name: npm run build
+        working-directory: mobile
+        run: npm run build --if-present
+        continue-on-error: true
+
+      - name: npm test
+        working-directory: mobile
+        run: npm test --if-present
+        continue-on-error: true
