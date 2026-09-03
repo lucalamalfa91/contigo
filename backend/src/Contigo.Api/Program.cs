@@ -92,6 +92,49 @@ app.MapPost("/api/documents", async Task<IResult> (
     });
 });
 
+// Task E01/F06/US01/T02 (us-01-document-upload, AC-3): reads back the metadata/status AC-2
+// already persists (task T01), scoped to the caller's tenant. Same interim X-Tenant-Id
+// placeholder as POST /api/documents above (ADR-010 is not in force for this task either, so
+// there is still no validated caller principal to take the tenant from) — see that endpoint's
+// comment for why this is not promoted to reports/open-questions.md by this task.
+app.MapGet("/api/documents/{id}", async Task<IResult> (
+    string id,
+    HttpRequest request,
+    DocumentQueryService queryService,
+    CancellationToken cancellationToken) =>
+{
+    if (!request.Headers.TryGetValue("X-Tenant-Id", out var tenantHeaderValues)
+        || !Guid.TryParse(tenantHeaderValues.ToString(), out var tenantGuid))
+    {
+        return Results.BadRequest("A valid 'X-Tenant-Id' header (a GUID) is required.");
+    }
+
+    if (!Guid.TryParse(id, out var documentGuid))
+    {
+        return Results.BadRequest("The document id in the route must be a GUID.");
+    }
+
+    var metadata = await queryService
+        .GetByIdAsync(new TenantId(tenantGuid), new EntityId(documentGuid), cancellationToken)
+        .ConfigureAwait(false);
+
+    if (metadata is null)
+    {
+        return Results.NotFound();
+    }
+
+    return Results.Ok(new
+    {
+        id = metadata.DocumentId.Value,
+        contractId = metadata.ContractId?.Value,
+        fileName = metadata.FileName,
+        mimeType = metadata.MimeType,
+        documentType = metadata.DocumentType.ToString(),
+        processingStatus = metadata.ProcessingStatus.ToString(),
+        createdAt = metadata.CreatedAt,
+    });
+});
+
 app.Run();
 
 // Exposes the top-level-statement entry point to WebApplicationFactory<Program> in the

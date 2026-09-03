@@ -15,7 +15,9 @@ namespace Contigo.Documents.Contracts.Infrastructure;
 /// itself, so the first endpoint/handler to land only had to call
 /// <see cref="ITenantContext.BeginScope"/> around it — the RLS backstop was already live. That
 /// first endpoint is task E01/F06/US01/T01's <c>POST /api/documents</c>, wired via
-/// <see cref="DocumentUploadService"/>, registered here alongside the DbContext.
+/// <see cref="DocumentUploadService"/>, registered here alongside the DbContext. Task
+/// E01/F06/US01/T02's <c>GET /api/documents/{id}</c> reuses the same DbContext registration and
+/// adds <see cref="DocumentQueryService"/> alongside it.
 /// </summary>
 public static class ServiceCollectionExtensions
 {
@@ -35,6 +37,7 @@ public static class ServiceCollectionExtensions
         // Scoped: shares the request/job's own DbContext instance (also Scoped, via AddDbContext
         // above) rather than a second, independently-tracked context.
         services.AddScoped<DocumentUploadService>();
+        services.AddScoped<DocumentQueryService>();
 
         return services;
     }
