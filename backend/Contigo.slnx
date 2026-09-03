@@ -16,6 +16,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Contigo.ArchitectureTests/Contigo.ArchitectureTests.csproj" />
+    <Project Path="tests/Contigo.Audit.Tests/Contigo.Audit.Tests.csproj" />
     <Project Path="tests/Contigo.Documents.Contracts.Tests/Contigo.Documents.Contracts.Tests.csproj" />
     <Project Path="tests/Contigo.Identity.Workspace.Tests/Contigo.Identity.Workspace.Tests.csproj" />
     <Project Path="tests/Contigo.Tenancy/Contigo.Tenancy.csproj" />
