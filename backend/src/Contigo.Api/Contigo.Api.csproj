@@ -14,5 +14,10 @@
     <ProjectReference Include="..\Contigo.Audit\Contigo.Audit.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Only the host may reference a cloud storage SDK directly (ADR-002); domain modules see
+         only Contigo.SharedKernel.Storage.IDocumentStorage. -->
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.26.0" />
+  </ItemGroup>
 
 </Project>
