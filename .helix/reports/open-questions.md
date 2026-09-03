@@ -54,3 +54,23 @@ Mark a wave-spec task `status: gated` only when **no** assumption is defensible.
 - **OQ-impl-004** — `web.yml` deploys to an Azure Static Web App resource; no `infra/modules/staticwebapp` exists yet (only `acr`, `containerapps`, `identity`, `keyvault`, `monitor`, `network`, `postgres`, `servicebus`, `storage` are provisioned). **Status**: `open` — needs a web-hosting infra task (feature-02-shaped) to provision the per-environment Static Web App and set `vars.AZURE_STATIC_WEB_APP_NAME` at the `dev`/`demo` GitHub Environment scope. `web.yml`'s deploy step fails fast with a named error if that variable is unset, rather than silently no-op-ing. Ref: ADR-012.
 - **OQ-impl-005** — `backend.yml` builds `backend/src/Contigo.Api/Dockerfile` and `backend/src/Contigo.Worker/Dockerfile` via `az acr build`; neither Dockerfile exists yet anywhere in the repo. **Status**: `open` — needs a backend containerization task to add both Dockerfiles at those exact paths (the CI contract fixed here). Ref: ADR-002, ADR-005.
 - **OQ-impl-006** — `infra.yml`/`backend.yml`/`web.yml` (not `mobile.yml`, which has no deploy target) declare `on.workflow_call` with a `target_environment` input, and their deploy/apply job's `environment:` and resource names key off it, so task E01/F03/US03/T01's `demo-promote.yml` can call `uses: ./.github/workflows/backend.yml` / `web.yml` / `infra.yml` with `target_environment: demo` per its own task text ("reuses the per-folder deploy jobs") instead of duplicating them. **Status**: `assumed-confirmed`. **Assumption in force**: this is additive only — direct `push`/`pull_request` triggers are unchanged and default to `dev`; us-03 still owns `demo-promote.yml`, the `demo` GitHub Environment/reviewers, and the `demo-v*` tag trigger untouched by this task. Ref: ADR-016, task E01/F03/US03/T01.
+## Implementer / E01/F04/US02/T01 (EF Core + pgvector wiring)
+
+- **OQ-impl-001** — ADR-004 fixes the embed-role model as "Foundry embedding model (e.g.
+  `text-embedding-3-small` or `text-embedding-3-large`)... dimension fixed at schema time; small
+  dimension preferred" but does not pin an exact integer. **Status**: `assumed-confirmed`.
+  **Assumption in force**: `Embedding.Vector` is a fixed `vector(1536)` Postgres column
+  (`Embedding.VectorDimensions` constant), matching `text-embedding-3-small`'s native output size
+  — the smaller of the two named candidates, per ADR-004's "small dimension preferred for
+  cost/size." If the council/AI Gateway later selects a different embed model with a different
+  native dimension, this column width is a migration, not a redesign. Ref: ADR-003, ADR-004,
+  `backend/src/Contigo.Documents.Contracts/Domain/Embedding.cs`.
+- **OQ-impl-002** — ADR-003/ADR-009 write every table/column name in lowercase snake_case
+  (`tenant_id`, `document`, `contract`, `embedding`, `clause`, ...), but neither ADR names an EF
+  Core naming convention mechanism. **Status**: `assumed-confirmed`. **Assumption in force**: the
+  Documents/Contracts `DbContext` calls `UseSnakeCaseNamingConvention()` (`EFCore.NamingConventions`
+  package) so the physical schema matches the ADRs' own naming verbatim — without it, Npgsql/EF
+  Core would emit quoted PascalCase identifiers instead. This convention is now load-bearing for
+  every future migration in this module; us-03's RLS policies (`CREATE POLICY ... USING
+  (tenant_id = ...)`) can rely on the lowercase column names existing as written. Ref: ADR-003,
+  ADR-009, `backend/src/Contigo.Documents.Contracts/Infrastructure/DocumentsContractsDbContextOptions.cs`.
