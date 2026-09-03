@@ -22,6 +22,16 @@ namespace Contigo.Audit.Tests;
 /// security regardless of policy or `FORCE` — asserting isolation over that connection would pass
 /// vacuously. This role stands in for "the application's own database role", so a passing test
 /// here is a real proof, not a tautology.
+///
+/// Also covers task E01/F06/US02/T02 (story us-02-audit-baseline AC-2, the `audit-query`
+/// artifact): <see cref="Tenant_cannot_read_another_tenants_audit_events_through_AuditQueryService"/>
+/// proves the same guarantee holds through <see cref="AuditQueryService"/> — the exact type
+/// `GET /api/audit` calls — not only through <see cref="AuditDbContext"/> directly. And
+/// <see cref="GetEventsAsync_returns_the_callers_tenant_even_when_the_caller_never_opened_a_scope"/>
+/// proves the actual production shape of that call — nothing upstream of
+/// <see cref="AuditQueryService"/> ever opens a tenant scope, see `Contigo.Api.Program` — still
+/// sees the caller's own events, i.e. that <see cref="AuditQueryService"/> opens that scope itself
+/// rather than relying on one already being active.
 /// </summary>
 public sealed class AuditRlsCrossTenantIsolationTests : IAsyncLifetime
 {
@@ -93,6 +103,62 @@ public sealed class AuditRlsCrossTenantIsolationTests : IAsyncLifetime
             Assert.Equal("owned-by-tenant-a", visibleRow.ResourceId);
             Assert.Equal(tenantA, visibleRow.TenantId);
         }
+    }
+
+    [Fact]
+    public async Task Tenant_cannot_read_another_tenants_audit_events_through_AuditQueryService()
+    {
+        // Same guarantee as Tenant_cannot_read_another_tenants_audit_events, but through
+        // AuditQueryService (task E01/F06/US02/T02's `audit-query` artifact) — the exact type
+        // `GET /api/audit` calls — under the same unprivileged, NOBYPASSRLS application role, so
+        // the proof covers the real query path end to end, not only AuditDbContext directly.
+        var tenantA = TenantId.New();
+        var tenantB = TenantId.New();
+
+        await WriteEventAsync(tenantA, resourceId: "owned-by-tenant-a");
+        await WriteEventAsync(tenantB, resourceId: "owned-by-tenant-b");
+
+        var tenantContext = new TenantContext();
+        using (tenantContext.BeginScope(tenantA))
+        {
+            await using var db = CreateAppContext(tenantContext);
+            IAuditQueryService queryService = new AuditQueryService(db, tenantContext);
+
+            var visible = await queryService.GetEventsAsync(tenantA);
+
+            var visibleRow = Assert.Single(visible);
+            Assert.Equal("owned-by-tenant-a", visibleRow.ResourceId);
+        }
+    }
+
+    [Fact]
+    public async Task GetEventsAsync_returns_the_callers_tenant_even_when_the_caller_never_opened_a_scope()
+    {
+        // Regression test: unlike Tenant_cannot_read_another_tenants_audit_events_through_
+        // AuditQueryService above, this test itself never calls tenantContext.BeginScope — that
+        // is the actual shape of the real GET /api/audit call. AuditEndpointExtensions.
+        // GetAuditEventsAsync resolves a tenantId from the caller's claims and passes it straight
+        // to IAuditQueryService.GetEventsAsync; nothing upstream (no middleware — see
+        // Contigo.Api.Program, which wires none) ever opens a tenant scope first. If
+        // AuditQueryService.GetEventsAsync did not open its own scope, this would see zero rows
+        // under the restricted role — same fail-closed RLS behaviour as
+        // No_active_tenant_scope_sees_zero_audit_events below — even for the tenant's own,
+        // legitimate query. This is the test that would have caught that gap.
+        var tenantA = TenantId.New();
+        var tenantB = TenantId.New();
+
+        await WriteEventAsync(tenantA, resourceId: "owned-by-tenant-a");
+        await WriteEventAsync(tenantB, resourceId: "owned-by-tenant-b");
+
+        var tenantContext = new TenantContext();
+        await using var db = CreateAppContext(tenantContext);
+        IAuditQueryService queryService = new AuditQueryService(db, tenantContext);
+
+        // No BeginScope call anywhere in this test: GetEventsAsync must establish its own.
+        var visible = await queryService.GetEventsAsync(tenantA);
+
+        var visibleRow = Assert.Single(visible);
+        Assert.Equal("owned-by-tenant-a", visibleRow.ResourceId);
     }
 
     [Fact]

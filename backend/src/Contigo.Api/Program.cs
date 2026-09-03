@@ -1,6 +1,8 @@
 // Contigo API Host — thin composition root (ADR-002).
 // Wires all modules via DI; contains no business logic.
+using Contigo.Api;
 using Contigo.Api.Infrastructure;
+using Contigo.Audit.Infrastructure;
 using Contigo.Documents.Contracts.Application;
 using Contigo.Documents.Contracts.Infrastructure;
 using Contigo.SharedKernel;
@@ -28,6 +30,16 @@ var storageConnectionString = builder.Configuration.GetConnectionString("Storage
         "(set env var ConnectionStrings__Storage in deployed environments).");
 
 builder.Services.AddAzureBlobDocumentStorage(storageConnectionString);
+
+// Audit module (task E01/F06/US02/T02, GET /api/audit). Fails fast with a named error rather
+// than silently falling back when the config is missing (same "fail loud, not silent"
+// convention this codebase already uses for required CI/CD config).
+var auditConnectionString = builder.Configuration.GetConnectionString("Audit")
+    ?? throw new InvalidOperationException(
+        "Missing required configuration: ConnectionStrings:Audit " +
+        "(see appsettings.Development.json for the local dev default).");
+
+builder.Services.AddAuditModule(auditConnectionString);
 
 builder.Services.AddHealthChecks();
 
@@ -134,6 +146,11 @@ app.MapGet("/api/documents/{id}", async Task<IResult> (
         createdAt = metadata.CreatedAt,
     });
 });
+
+// Task E01/F06/US02/T02 (us-02-audit-baseline, AC-2): authorized, tenant-scoped GET /api/audit.
+// See AuditEndpointExtensions for the endpoint itself and WorkspacePrincipalAuthorization for
+// the authorization decision (401 vs 403 vs the tenant-scoped read).
+app.MapAuditEndpoints();
 
 app.Run();
 
