@@ -93,11 +93,11 @@ models:
         thinking:
           type: disabled
 
-  # Lineage only -- not resolved as a chat client. Slot-tier remapped by
-  # ANTHROPIC_DEFAULT_SONNET_MODEL in the environment.
+  # Lineage only -- not a chat client. Concrete Sonnet id so implementer /
+  # reviewer / conflict-fixer do not inherit ~/.claude settings.json (haiku).
   - id: coding-primary
     provider: claude-code
-    model: sonnet
+    model: claude-sonnet-5
 
 # -----------------------------------------------------------------------------
 # Tools -- native registry is artifact-relative; `..` is refused.
@@ -202,7 +202,7 @@ agents:
     instructions_file: agents/decomposition-remediator.md
 
   - id: implementer
-    model: coding-primary
+    model: coding-primary  # Claude Sonnet (claude-sonnet-5)
     skills: [kb-contract, marker-discipline, afi]
     instructions_file: agents/implementer.md
     harness:
@@ -443,7 +443,9 @@ orchestrations:
       base_branch: main
       integration_branch: integration
       max_parallel: 3
-      max_task_attempts: 1
+      # 3: Connection lost mid-response is TRANSIENT (Helix wraps ResultError);
+      # genuine IMPLEMENTATION_GAPS stay TERMINAL and do not consume retries.
+      max_task_attempts: 3
       auto_level_phases: true
       merge_between_phases: true
       merge_auto: true
