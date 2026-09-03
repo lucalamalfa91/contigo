@@ -15,9 +15,22 @@ export interface MobileEnvConfig {
   apiBaseUrl: string;
   oidcAuthority: string;
   oidcClientId: string;
+  /**
+   * API scopes requested at sign-in (e.g. "api://<api-client-id>/Contigo.Read"),
+   * mirroring `web/src/config/appConfig.ts`'s `oidcApiScopes`. ADR-010 names
+   * `Contigo.Read`/`Contigo.Write` as placeholders pending the API surface
+   * being fixed (see reports/open-questions.md OQ-client-007), so this stays
+   * config-driven rather than hard-coded — `src/auth/oidcConfig.ts` adds the
+   * standard `openid`/`profile`/`offline_access` scopes on top of this list.
+   */
+  oidcApiScopes: string[];
 }
 
-type RequiredKey = 'EXPO_PUBLIC_API_BASE_URL' | 'EXPO_PUBLIC_OIDC_AUTHORITY' | 'EXPO_PUBLIC_OIDC_CLIENT_ID';
+type RequiredKey =
+  | 'EXPO_PUBLIC_API_BASE_URL'
+  | 'EXPO_PUBLIC_OIDC_AUTHORITY'
+  | 'EXPO_PUBLIC_OIDC_CLIENT_ID'
+  | 'EXPO_PUBLIC_OIDC_API_SCOPES';
 
 // An index signature (not named optional properties) so that
 // `NodeJS.ProcessEnv` — itself index-signature-only — is directly
@@ -38,6 +51,27 @@ function readRequiredEnvVar(name: RequiredKey, source: EnvSource): string {
 }
 
 /**
+ * Reads a required comma-separated list env var (e.g.
+ * `EXPO_PUBLIC_OIDC_API_SCOPES`). Entries are trimmed and empty entries are
+ * dropped; fails fast (same contract as `readRequiredEnvVar`) if the
+ * variable is unset or contains no usable scope after trimming.
+ */
+function readRequiredScopesEnvVar(name: RequiredKey, source: EnvSource): string[] {
+  const raw = readRequiredEnvVar(name, source);
+  const scopes = raw
+    .split(',')
+    .map((scope) => scope.trim())
+    .filter((scope) => scope.length > 0);
+  if (scopes.length === 0) {
+    throw new Error(
+      `Environment variable ${name} must contain at least one non-empty, comma-separated ` +
+        'scope (see mobile/.env.example).'
+    );
+  }
+  return scopes;
+}
+
+/**
  * Reads the mobile app's per-environment config. Defaults to `process.env`
  * (populated by Metro/Expo from `EXPO_PUBLIC_*` vars at build time); a
  * `source` can be injected for testing without mutating global state.
@@ -47,5 +81,6 @@ export function getMobileEnvConfig(source: EnvSource = process.env): MobileEnvCo
     apiBaseUrl: readRequiredEnvVar('EXPO_PUBLIC_API_BASE_URL', source),
     oidcAuthority: readRequiredEnvVar('EXPO_PUBLIC_OIDC_AUTHORITY', source),
     oidcClientId: readRequiredEnvVar('EXPO_PUBLIC_OIDC_CLIENT_ID', source),
+    oidcApiScopes: readRequiredScopesEnvVar('EXPO_PUBLIC_OIDC_API_SCOPES', source),
   };
 }
