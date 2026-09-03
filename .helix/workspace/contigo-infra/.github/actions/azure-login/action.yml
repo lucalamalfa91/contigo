@@ -1,0 +1,51 @@
+# ------------------------------------------------------------------
+# Composite action: Azure OIDC Login
+#
+# Reusable GitHub Actions step that authenticates to Azure via
+# OIDC federated credentials.  Accepts only non-secret fields:
+# client-id, tenant-id, subscription-id.  No client secret, no
+# AZURE_CREDENTIALS (ADR-015 AC-2, AC-3).
+#
+# Usage in a workflow job:
+#
+#   permissions:
+#     id-token: write          # required for OIDC token request
+#     contents: read
+#
+#   steps:
+#     - uses: ./.github/actions/azure-login
+#       with:
+#         client-id:       ${{ vars.AZURE_CLIENT_ID }}
+#         tenant-id:       ${{ vars.AZURE_TENANT_ID }}
+#         subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+#
+# The calling workflow MUST set `permissions.id-token: write` so
+# GitHub's OIDC provider issues the JWT that azure/login exchanges
+# for an Entra ID access token.
+# ------------------------------------------------------------------
+
+name: 'Azure OIDC Login'
+description: >-
+  Authenticate GitHub Actions to Azure via OIDC federated credentials.
+  Uses azure/login with only non-secret inputs — no stored secret (ADR-015).
+
+inputs:
+  client-id:
+    description: 'Entra AD application (client) ID of the service principal.'
+    required: true
+  tenant-id:
+    description: 'Entra ID tenant ID.'
+    required: true
+  subscription-id:
+    description: 'Azure subscription ID.'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Azure Login via OIDC federation
+      uses: azure/login@v2
+      with:
+        client-id: ${{ inputs.client-id }}
+        tenant-id: ${{ inputs.tenant-id }}
+        subscription-id: ${{ inputs.subscription-id }}
