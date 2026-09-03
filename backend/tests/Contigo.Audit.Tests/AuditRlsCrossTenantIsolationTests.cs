@@ -1,0 +1,146 @@
+using Contigo.Audit.Infrastructure;
+using Contigo.SharedKernel;
+using Contigo.SharedKernel.Tenancy;
+using Microsoft.EntityFrameworkCore;
+using Npgsql;
+using Testcontainers.PostgreSql;
+
+namespace Contigo.Audit.Tests;
+
+/// <summary>
+/// Proves the Definition of Done for task E01/F06/US02/T01 (story us-02-audit-baseline, AC-1):
+/// with the RLS policy from migration `AddTenantRowLevelSecurity` applied and
+/// <see cref="TenantRlsConnectionInterceptor"/> setting the per-connection `app.tenant_id` claim,
+/// one tenant's connection genuinely cannot read (or write) another tenant's audit trail — the
+/// isolation is enforced by Postgres itself, not by an application-level `WHERE` clause. Mirrors
+/// task E01/F05/US01/T01's own proof for Identity/Workspace
+/// (`Contigo.Identity.Workspace.Tests.WorkspaceRlsCrossTenantIsolationTests`).
+///
+/// Runs all assertions through a dedicated, deliberately unprivileged Postgres role
+/// (<see cref="AppRoleName"/>: `NOSUPERUSER NOBYPASSRLS`, not the table owner). The Testcontainers
+/// bootstrap role is always a Postgres superuser, and superusers unconditionally bypass row
+/// security regardless of policy or `FORCE` — asserting isolation over that connection would pass
+/// vacuously. This role stands in for "the application's own database role", so a passing test
+/// here is a real proof, not a tautology.
+/// </summary>
+public sealed class AuditRlsCrossTenantIsolationTests : IAsyncLifetime
+{
+    private const string AppRoleName = "contigo_audit_app";
+    private const string AppRolePassword = "contigo_audit_app_test_password";
+
+    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:16-alpine")
+        .Build();
+
+    private string _appConnectionString = string.Empty;
+
+    public async Task InitializeAsync()
+    {
+        await _postgres.StartAsync();
+
+        var adminOptions = new DbContextOptionsBuilder<AuditDbContext>();
+        AuditDbContextOptions.Configure(adminOptions, _postgres.GetConnectionString());
+
+        await using (var adminDb = new AuditDbContext(adminOptions.Options))
+        {
+            // Applies Initial + AddTenantRowLevelSecurity + AddAppendOnlyEnforcement.
+            await adminDb.Database.MigrateAsync();
+
+            // A non-owner, non-superuser, NOBYPASSRLS role: see the type doc comment for why
+            // this is required for the test to mean anything.
+            await adminDb.Database.ExecuteSqlRawAsync(
+                $"""
+                CREATE ROLE {AppRoleName} LOGIN PASSWORD '{AppRolePassword}' NOSUPERUSER NOBYPASSRLS;
+                GRANT USAGE ON SCHEMA public TO {AppRoleName};
+                GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {AppRoleName};
+                """);
+        }
+
+        _appConnectionString = new NpgsqlConnectionStringBuilder(_postgres.GetConnectionString())
+        {
+            Username = AppRoleName,
+            Password = AppRolePassword,
+        }.ConnectionString;
+    }
+
+    public Task DisposeAsync() => _postgres.DisposeAsync().AsTask();
+
+    private AuditDbContext CreateAppContext(ITenantContext tenantContext)
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<AuditDbContext>();
+        AuditDbContextOptions.Configure(optionsBuilder, _appConnectionString, tenantContext);
+        return new AuditDbContext(optionsBuilder.Options);
+    }
+
+    [Fact]
+    public async Task Tenant_cannot_read_another_tenants_audit_events()
+    {
+        var tenantA = TenantId.New();
+        var tenantB = TenantId.New();
+
+        await WriteEventAsync(tenantA, resourceId: "owned-by-tenant-a");
+        await WriteEventAsync(tenantB, resourceId: "owned-by-tenant-b");
+
+        var tenantContext = new TenantContext();
+        using (tenantContext.BeginScope(tenantA))
+        {
+            await using var db = CreateAppContext(tenantContext);
+
+            // AC-1: tenant B's row exists (seeded above, over the same table) but RLS makes it
+            // invisible on a connection scoped to tenant A.
+            var visible = await db.AuditEvents.ToListAsync();
+
+            var visibleRow = Assert.Single(visible);
+            Assert.Equal("owned-by-tenant-a", visibleRow.ResourceId);
+            Assert.Equal(tenantA, visibleRow.TenantId);
+        }
+    }
+
+    [Fact]
+    public async Task No_active_tenant_scope_sees_zero_audit_events()
+    {
+        await WriteEventAsync(TenantId.New(), resourceId: "belongs-to-someone-else");
+
+        // No BeginScope entered: ITenantContext.Current is null, so the interceptor leaves
+        // app.tenant_id unset. current_setting(..., true) then returns NULL, and
+        // `tenant_id = NULL` is never true — fail closed, zero rows visible to anyone.
+        var tenantContext = new TenantContext();
+        await using var db = CreateAppContext(tenantContext);
+
+        var visible = await db.AuditEvents.ToListAsync();
+
+        Assert.Empty(visible);
+    }
+
+    [Fact]
+    public async Task Cannot_write_an_audit_event_claiming_a_different_tenant_than_the_active_scope()
+    {
+        var activeScope = TenantId.New();
+        var claimedOnEntry = TenantId.New(); // deliberately different from the active scope.
+
+        var tenantContext = new TenantContext();
+        using var _ = tenantContext.BeginScope(activeScope);
+        await using var db = CreateAppContext(tenantContext);
+
+        var entry = new AuditEntry(
+            claimedOnEntry, "cross-tenant-writer", "document.upload", "Document",
+            "forged-resource", DateTimeOffset.UtcNow);
+
+        IAuditWriter writer = new AuditWriter(db);
+
+        // AC-1/ADR-009: the policy's WITH CHECK, not just USING, must reject a write for a
+        // tenant other than the one the connection is scoped to — the backstop covers writes,
+        // not only reads, even when it is IAuditWriter itself issuing the write.
+        await Assert.ThrowsAsync<DbUpdateException>(() => writer.WriteAsync(entry));
+    }
+
+    private async Task WriteEventAsync(TenantId tenantId, string resourceId)
+    {
+        var tenantContext = new TenantContext();
+        using var _ = tenantContext.BeginScope(tenantId);
+        await using var db = CreateAppContext(tenantContext);
+
+        IAuditWriter writer = new AuditWriter(db);
+        await writer.WriteAsync(new AuditEntry(
+            tenantId, "seed-actor", "seed.action", "SeedResource", resourceId, DateTimeOffset.UtcNow));
+    }
+}
