@@ -45,3 +45,8 @@ __pycache__/
 *.suo
 *.nupkg
 *.snupkg
+
+# Node build artifacts (web/, and future mobile/) — task E01/F07/US01/T01
+# scaffolds the web client.
+node_modules/
+web/dist/
