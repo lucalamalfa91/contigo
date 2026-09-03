@@ -37,3 +37,11 @@ local.settings.json
 # Python scripts/tests at the repo root.
 __pycache__/
 *.pyc
+
+# .NET build artifacts — task E01/F04/US01/T01 scaffolds the backend solution.
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+*.nupkg
+*.snupkg
