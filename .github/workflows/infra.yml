@@ -1,0 +1,135 @@
+name: infra
+
+# ADR-014 (per-folder deploy jobs, path filters, trunk-based main -> dev
+# auto-deploy) and ADR-007 (Terraform layout: reusable modules + two thin
+# environment roots, remote state per env via HCP Terraform). Path-filtered
+# to infra/ only, so a backend/web/mobile-only change never runs this
+# workflow and vice versa (parent story us-02 AC-1).
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/infra.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/infra.yml"
+  # us-03's demo promotion workflow (ADR-016) reuses this same plan/apply
+  # job by calling it with target_environment: demo. dev and demo never
+  # share state or backend (ADR-007) -- only the job *definition* is
+  # shared; TF_ROOT below resolves to a different environment root/HCP
+  # workspace per call.
+  workflow_call:
+    inputs:
+      target_environment:
+        description: >-
+          Terraform environment root to plan/apply: "dev" or "demo".
+          Defaults to "dev", which is all this task (us-02) wires up.
+        required: false
+        type: string
+        default: dev
+
+# Least privilege by default. Neither job below requests `id-token`: see
+# the comment on the plan/apply job for why Azure OIDC is not part of this
+# workflow.
+permissions:
+  contents: read
+
+concurrency:
+  group: infra-${{ inputs.target_environment || 'dev' }}-${{ github.ref }}
+  cancel-in-progress: false # never cancel a run mid-apply
+
+env:
+  TF_ENVIRONMENT: ${{ inputs.target_environment || 'dev' }}
+  TF_ROOT: infra/environments/${{ inputs.target_environment || 'dev' }}
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  # Required status check for the protected `main` branch (ADR-014
+  # "status checks required (the per-folder CI jobs)"). No Azure or HCP
+  # credentials are needed for fmt/validate, so this runs unconditionally
+  # on every PR that touches infra/.
+  validate:
+    name: terraform fmt + validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: terraform fmt -check
+        working-directory: infra
+        run: terraform fmt -check -recursive
+
+      - name: terraform init (no backend -- syntax/config only)
+        working-directory: ${{ env.TF_ROOT }}
+        run: terraform init -backend=false -input=false
+
+      - name: terraform validate
+        working-directory: ${{ env.TF_ROOT }}
+        run: terraform validate
+
+  # Plans against the real HCP Terraform workspace for TF_ENVIRONMENT
+  # ("contigo-dev" / "contigo-demo", ADR-007, backend.tf per environment
+  # root). Runs on PRs too (read-only) so a plan is visible before merge.
+  plan:
+    name: terraform plan (${{ inputs.target_environment || 'dev' }})
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+          # HCP Terraform's own API token (organization contigo-platform).
+          # This is *not* an Azure credential and is outside ADR-015's
+          # "CI -> Azure auth" scope -- it authenticates the CLI to the HCP
+          # Terraform API/backend, nothing more.
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: terraform init
+        working-directory: ${{ env.TF_ROOT }}
+        run: terraform init -input=false
+
+      - name: terraform plan
+        working-directory: ${{ env.TF_ROOT }}
+        run: terraform plan -input=false
+
+  # Applies on merge to main (AC-2) or when reused by the demo promotion
+  # workflow. Both contigo-dev and contigo-demo HCP Terraform workspaces
+  # run in execution-mode "remote" (scripts/hcp_vcs_wiring.py,
+  # ADR-007's chosen operating model: "HCP Terraform itself runs plan/apply
+  # and owns the run"). The CLI invoked below only creates/confirms that
+  # run over the HCP Terraform API from this GitHub Actions runner; the
+  # plan/apply itself executes on HCP's own infrastructure, authenticating
+  # to Azure using the ARM_* credentials configured as that HCP workspace's
+  # own workspace variables (out of this workflow's, and this task's,
+  # scope). That is why this job requests no `id-token: write` / azure-login
+  # step: the GitHub Actions runner never talks to Azure directly for
+  # infra, only to the HCP Terraform API via TF_API_TOKEN above.
+  apply:
+    name: terraform apply (${{ inputs.target_environment || 'dev' }})
+    needs: plan
+    if: github.event_name == 'workflow_call' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_environment || 'dev' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: terraform init
+        working-directory: ${{ env.TF_ROOT }}
+        run: terraform init -input=false
+
+      - name: terraform apply
+        working-directory: ${{ env.TF_ROOT }}
+        run: terraform apply -input=false -auto-approve
