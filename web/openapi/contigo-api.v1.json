@@ -1,0 +1,49 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Contigo API",
+    "version": "1.0.0",
+    "description": "Contract for the Contigo backend API (backend/src/Contigo.Api), consumed by the web (this file) and mobile (ADR-013) TypeScript clients per ADR-012's \"single OpenAPI document -> one generated TypeScript client, no hand-written divergent DTOs\" rule (see reports/architecture/draft/client-architect/api-consumption.md #1).\n\nProvenance / interim status (task E01/F07/US01/T02): the API host does not yet self-publish this document -- no Microsoft.AspNetCore.OpenApi / Swashbuckle / NSwag is wired into backend/src/Contigo.Api/Program.cs as of this task, and adding that is outside this task's file scope (the web client only; this task's frontmatter is target_repo: contigo-web). Until a backend task adds self-published OpenAPI generation, this file is hand-authored to describe exactly the routes Program.cs actually implements today, cross-checked against backend/tests/Contigo.Api.Tests. It is the single file `npm run generate:api` (web/scripts/generate-api-client.mjs) reads to produce web/src/api/generated/schema.ts, and must grow endpoint-by-endpoint as backend/src/Contigo.Api/Program.cs grows -- then be replaced outright once the API self-publishes its own document.\n\nURL versioning (OQ-client-007 in reports/open-questions.md, still `open` at council-close: \"OpenAPI codegen tool and URL versioning scheme ... owned by software-architect\") is deliberately NOT applied to the paths below: Program.cs maps bare `/health`, not `/v1/health`, and a client generated against a path the API does not actually serve would 404 in every real environment. `info.version` above tracks this document's own revision; add a URL path prefix here only once software-architect fixes one and Program.cs actually serves it under that prefix.\n\nCodegen tool choice (also part of OQ-client-007, resolved here for this task rather than left blocking it, per reports/open-questions.md's \"add an entry, state the assumption, build against it\"): third-party OpenAPI-to-TypeScript generators evaluated at authoring time (openapi-typescript@7.13.0, which peer-depends on `typescript@^5.x`) hard-conflict with this repo's already-committed `typescript@^7.0.2` (web/package.json, task E01/F07/US01/T01) under npm's default strict peer resolution. Rather than force an incorrect peer resolution (`--legacy-peer-deps`/`--force`) or downgrade a previous task's already-committed TypeScript version, this contract is compiled by a small first-party generator (web/scripts/generate-api-client.mjs, zero new dependencies) that reads this JSON file and emits the `paths`/`operations` TypeScript types the same way the mainstream tools shape them. Swap in a third-party tool once one publishes TypeScript-7-compatible peer ranges; the generated *output shape* (`paths`/`operations`) is deliberately kept compatible with that ecosystem convention so the swap is mechanical."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Relative to the runtime-configured API origin (AppConfig.apiBaseUrl, ADR-012 \"config, not code\"; see web/src/config/appConfig.ts). This document intentionally does not hard-code a dev/demo host."
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Liveness/readiness probe.",
+        "description": "Maps 1:1 to `app.MapHealthChecks(\"/health\")` in backend/src/Contigo.Api/Program.cs, which registers no custom HealthCheckOptions.ResponseWriter -- so it uses ASP.NET Core's default plain-text writer (Content-Type: text/plain, body is just the status name) rather than a JSON body. The 200-on-healthy case is verified by backend/tests/Contigo.Api.Tests/DeployableApiTests.cs (Health_endpoint_returns_200_ok); the Degraded/Unhealthy cases follow Microsoft.Extensions.Diagnostics.HealthChecks' documented default status-code mapping (Healthy/Degraded -> 200, Unhealthy -> 503), which this repo has not overridden.",
+        "responses": {
+          "200": {
+            "description": "Healthy or Degraded.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "enum": ["Healthy", "Degraded"]
+                },
+                "example": "Healthy"
+              }
+            }
+          },
+          "503": {
+            "description": "Unhealthy.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "enum": ["Unhealthy"]
+                },
+                "example": "Unhealthy"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

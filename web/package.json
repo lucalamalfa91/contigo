@@ -9,7 +9,8 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "generate:api": "node scripts/generate-api-client.mjs",
+    "build": "npm run generate:api && tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run"
   },
