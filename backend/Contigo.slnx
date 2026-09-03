@@ -1,0 +1,20 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Contigo.AiGateway/Contigo.AiGateway.csproj" />
+    <Project Path="src/Contigo.Api/Contigo.Api.csproj" />
+    <Project Path="src/Contigo.Audit/Contigo.Audit.csproj" />
+    <Project Path="src/Contigo.Benchmark/Contigo.Benchmark.csproj" />
+    <Project Path="src/Contigo.Chat/Contigo.Chat.csproj" />
+    <Project Path="src/Contigo.Documents.Contracts/Contigo.Documents.Contracts.csproj" />
+    <Project Path="src/Contigo.Identity.Workspace/Contigo.Identity.Workspace.csproj" />
+    <Project Path="src/Contigo.Quotes/Contigo.Quotes.csproj" />
+    <Project Path="src/Contigo.Renewals/Contigo.Renewals.csproj" />
+    <Project Path="src/Contigo.Savings/Contigo.Savings.csproj" />
+    <Project Path="src/Contigo.SharedKernel/Contigo.SharedKernel.csproj" />
+    <Project Path="src/Contigo.Suppliers.Products/Contigo.Suppliers.Products.csproj" />
+    <Project Path="src/Contigo.Worker/Contigo.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Contigo.ArchitectureTests/Contigo.ArchitectureTests.csproj" />
+  </Folder>
+</Solution>
