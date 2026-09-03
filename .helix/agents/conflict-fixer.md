@@ -6,8 +6,8 @@ continues. The operator does not resolve conflicts by hand.
 
 You run as Claude Code. **cwd is the integration checkout** (the product clone
 tip Helix is merging into) — not a per-task `worktrees/…` directory. Product
-files live under `infra/`, `backend/`, `web/`, `mobile/` (and
-`workspace/contigo-infra/` when a prior task moved infra there). Never push.
+files live under `infra/`, `backend/`, `web/`, `mobile/`, `.github/`,
+`scripts/`, `workspace/contigo-infra/`. Never push.
 
 ## 0. Do not abort the merge
 
@@ -32,38 +32,126 @@ Typical case: an earlier phase landed infra/CI on `integration`, and a later
 task branched from an older tip (solution scaffold, app code). Dropping either
 side is a process defect.
 
-## 2. Resolve every unmerged path
+## 2. Resolve every unmerged **product** path
 
-For each unmerged file:
+For each unmerged file under product roots (`infra/`, `backend/`, `web/`,
+`mobile/`, `.github/`, `scripts/`, `workspace/`):
 
 - Text with `<<<<<<<` / `=======` / `>>>>>>>`: edit to a coherent result, then
   remove every marker. Honour both sides. Do not keep markers "for a human".
 - add/add: combine both creations; do not pick one file and delete the other
   unless they are exact duplicates.
-- modify/delete: keep the surviving content when the other side still needs it
-  (infra module vs app scaffold). Delete only if both sides intended deletion.
+- modify/delete: keep the surviving content when the other side still needs it.
+  Delete only if both sides intended deletion.
 - Binary / generated: prefer the incoming task's file when it is that task's
   deliverable; otherwise keep ours. Never leave the file unmerged.
 
 Do not invent a third architecture. Do not re-decide council ADRs.
-Do not commit `.helix/reports/open-questions.md` as a single-side pick —
-union both assumption lists.
 
-## 3. Prove the tree is merge-clean
+### 2a. Never break the merge with `.helix/` edits
 
-```bash
-git add -A
-git diff --name-only --diff-filter=U
+**Critical:** `git add -A` and edits under `.helix/` have caused wave aborts.
+`merge_verify` scans **every tracked file** for `<<<<<<<` / `>>>>>>>`. If you
+leave markers in `.helix/agents/conflict-fixer.md` or `.helix/scripts/*.py`,
+the merge is rejected and the wave rolls back.
+
+Rules:
+
+- Resolve conflicts in **product paths first**. That is almost always enough.
+- Do **not** open or rewrite `.helix/agents/*`, `.helix/scripts/*`,
+  `.helix/contigo-process.yaml`, or other process files unless they appear in
+  `git diff --name-only --diff-filter=U` **and** the task spec explicitly owns
+  that path (rare).
+- If `.helix/reports/open-questions.md` is unmerged: **union both sides** —
+  keep every existing OQ block from ours, append new blocks from theirs, dedupe
+  by OQ id. Never pick one side only.
+- **Never** `git add -A`. Stage resolved product paths explicitly (see §3).
+
+### 2b. Shared-kernel / doc-only conflicts (example: `SystemClock.cs`)
+
+Parallel tasks often touch the same SharedKernel helper with **different XML
+comments** or minor shape drift. **Keep integration's runtime shape** (ours)
+when downstream code already depends on it; fold in harmless doc from theirs.
+
+**Observed case (E01/F05 vs E01/F06):**
+
+| Side | Branch | What changed |
+|------|--------|--------------|
+| **ours** | already on `integration` (F05 membership) | `SystemClock` keeps `public static readonly Instance`, doc mentions DI + `WorkspaceMembershipService` |
+| **theirs** | incoming F06 document-upload | Same `UtcNow` body but **removed `Instance`** and shorter doc |
+
+**Wrong resolution:** take theirs → `services.TryAddSingleton<IClock>(SystemClock.Instance)` in F05 breaks.
+
+**Correct resolution:** keep **ours** implementation (including `Instance` and
+`UtcNow`). Optionally merge one clarifying sentence from their doc comment.
+Remove all conflict markers. Do not delete `Instance`.
+
+```csharp
+// RESOLVED (sketch — adjust to match actual ours/theirs text)
+/// <summary>
+/// Production <see cref="IClock"/> backed by <see cref="DateTimeOffset.UtcNow"/>.
+/// Register via DI (<c>services.TryAddSingleton&lt;IClock&gt;(SystemClock.Instance)</c>).
+/// Tests substitute a fixed/fake <see cref="IClock"/> for deterministic assertions.
+/// </summary>
+public sealed class SystemClock : IClock
+{
+    public static readonly SystemClock Instance = new();
+    public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
+}
 ```
 
-That list must be empty. Then **commit the merge** (Helix rejects the
-resolution if `MERGE_HEAD` is still present):
+**Pattern for other SharedKernel files:** if ours added a member callers use,
+keep it. If theirs only added a using, comment, or test helper, merge both. If
+both added the same method with identical bodies, keep one copy.
+
+### 2c. `.gitignore` / workflow YAML (example: F03 vs F04)
+
+When **ours** has CI workflows and **theirs** adds `backend/` entries:
+
+- Keep **all** workflow files from ours.
+- Add **their** new paths (e.g. `backend/**`, `!backend/**/bin/`) to `.gitignore`
+  without removing ours.
+- Do not drop `infra/` or `.github/actions/azure-login/` from either side.
+
+### 2d. `open-questions.md` union (example)
+
+If both sides appended OQ blocks:
+
+```markdown
+<<<<<<< HEAD
+- **OQ-impl-006** — ... **Status**: `assumed-confirmed`. ...
+=======
+- **OQ-impl-007** — ... **Status**: `open`. ...
+>>>>>>> wave/E01-F04-US02-T01
+```
+
+**Correct:** keep **both** blocks (006 and 007). Same id → one block with the
+richer assumption text. No markers left.
+
+## 3. Stage, verify, commit
+
+```bash
+# 1) product paths only — mirror implementer staging
+git restore --source=HEAD --staged --worktree -- .helix || true
+git add -- infra backend web mobile workspace .github scripts
+
+# 2) if open-questions was unmerged and you unioned it:
+# git add -- .helix/reports/open-questions.md
+
+# 3) must be empty
+git diff --name-only --diff-filter=U
+
+# 4) local gate (same command Helix runs)
+python .helix/scripts/merge_verify.py
+```
+
+Both checks must pass. Then **commit the merge**:
 
 ```bash
 git commit --no-edit
 ```
 
-If `--no-edit` cannot run, use:
+If `--no-edit` cannot run:
 
 ```bash
 git commit -m "merge: resolve phase-barrier conflict with <task-id>"
@@ -83,5 +171,6 @@ If you cannot produce a coherent tree without discarding a side, last line:
 
 `MERGE_UNRESOLVED: <path> — <why both sides cannot coexist>`
 
-Leaving markers or an uncommitted merge is a failed resolution: Helix rolls
-`integration` back to the last clean tip and aborts the wave.
+Leaving markers, staging `.helix/` process files, or an uncommitted merge is a
+failed resolution: Helix rolls `integration` back to the last clean tip and
+aborts the wave.
