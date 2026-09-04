@@ -104,6 +104,11 @@ EXPECTED_MODULE_OUTPUTS = {
         "id": "azurerm_log_analytics_workspace.this.id",
         "workspace_id": "azurerm_log_analytics_workspace.this.workspace_id",
     },
+    "staticwebapp": {
+        "id": "azurerm_static_web_app.this.id",
+        "name": "azurerm_static_web_app.this.name",
+        "default_host_name": "azurerm_static_web_app.this.default_host_name",
+    },
 }
 
 # root output name -> expected `value = ...` expression in
@@ -126,6 +131,8 @@ EXPECTED_ROOT_OUTPUTS = {
     "key_vault_uri": "module.keyvault.vault_uri",
     "acr_login_server": "module.acr.login_server",
     "log_analytics_workspace_id": "module.monitor.workspace_id",
+    "static_web_app_name": "module.staticwebapp.name",
+    "static_web_app_hostname": "module.staticwebapp.default_host_name",
 }
 
 # module -> [(resource_type, resource_name), ...] this task must prove is
@@ -144,6 +151,7 @@ TAGGED_RESOURCES_BY_MODULE = {
     "keyvault": [("azurerm_key_vault", "this")],
     "acr": [("azurerm_container_registry", "this")],
     "monitor": [("azurerm_log_analytics_workspace", "this")],
+    "staticwebapp": [("azurerm_static_web_app", "this")],
 }
 
 

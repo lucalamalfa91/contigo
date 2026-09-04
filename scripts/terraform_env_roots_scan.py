@@ -10,7 +10,7 @@ this is that scan.
 
 Scope: this task (`terraform-env-roots`) owns the two thin environment roots
 under `infra/environments/`. It depends on task T01's `terraform-module-library`
-(the nine modules under `infra/modules/`), which already carries its own
+(the modules under `infra/modules/`), which already carries its own
 structural coverage; this script does not re-verify module *internals*
 (e.g. per-resource tagging inside `infra/modules/*/main.tf`) -- it verifies
 what a correct env root must show at its own layer: which modules it wires,
@@ -26,8 +26,8 @@ Checks, all read-only, no network, no `terraform` binary required:
      name that belongs to that environment (`contigo-dev` / `contigo-demo`).
   3. dev and demo do not point at the same HCP Terraform workspace (ADR-007:
      the two environments never share state).
-  4. each main.tf wires all nine required modules (AC-1's list), each from
-     its `../../modules/<name>` source path (ADR-007 module layout).
+  4. each main.tf wires all required modules (AC-1's list plus staticwebapp),
+     each from its `../../modules/<name>` source path (ADR-007 module layout).
   5. each main.tf's `locals.environment` resolves to its own directory name
      -- either a literal (`environment = "demo"`) or a variable reference
      (`environment = var.environment`, resolved via that root's own
@@ -72,6 +72,7 @@ REQUIRED_MODULES = (
     "keyvault",
     "acr",
     "monitor",
+    "staticwebapp",
 )
 REQUIRED_PROVIDERS = ("azurerm", "azuread", "random")
 
