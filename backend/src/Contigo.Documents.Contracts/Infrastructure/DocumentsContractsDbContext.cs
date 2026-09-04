@@ -18,6 +18,7 @@ public sealed class DocumentsContractsDbContext(DbContextOptions<DocumentsContra
     public DbSet<ExtractionJob> ExtractionJobs => Set<ExtractionJob>();
     public DbSet<Contract> Contracts => Set<Contract>();
     public DbSet<ContractVersion> ContractVersions => Set<ContractVersion>();
+    public DbSet<ContractLineItem> ContractLineItems => Set<ContractLineItem>();
     public DbSet<Clause> Clauses => Set<Clause>();
     public DbSet<Obligation> Obligations => Set<Obligation>();
     public DbSet<Risk> Risks => Set<Risk>();
@@ -34,6 +35,7 @@ public sealed class DocumentsContractsDbContext(DbContextOptions<DocumentsContra
         modelBuilder.ApplyConfiguration(new ExtractionJobConfiguration());
         modelBuilder.ApplyConfiguration(new ContractConfiguration());
         modelBuilder.ApplyConfiguration(new ContractVersionConfiguration());
+        modelBuilder.ApplyConfiguration(new ContractLineItemConfiguration());
         modelBuilder.ApplyConfiguration(new ClauseConfiguration());
         modelBuilder.ApplyConfiguration(new ObligationConfiguration());
         modelBuilder.ApplyConfiguration(new RiskConfiguration());

@@ -534,3 +534,71 @@ BEGIN
 END $EF$;
 COMMIT;
 
+START TRANSACTION;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904093959_AddContractLineItem') THEN
+    CREATE TABLE contract_line_item (
+        id uuid NOT NULL,
+        contract_id uuid NOT NULL,
+        product_id uuid,
+        sku character varying(200),
+        description character varying(1000) NOT NULL,
+        quantity numeric(18,4),
+        unit character varying(50),
+        unit_price numeric(18,2),
+        list_price numeric(18,2),
+        discount numeric(5,2),
+        billing_period character varying(50),
+        annual_cost numeric(18,2),
+        total_cost numeric(18,2),
+        created_at timestamp with time zone NOT NULL,
+        tenant_id uuid NOT NULL,
+        CONSTRAINT pk_contract_line_item PRIMARY KEY (id),
+        CONSTRAINT fk_contract_line_item_contract_contract_id FOREIGN KEY (contract_id) REFERENCES contract (id) ON DELETE CASCADE
+    );
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904093959_AddContractLineItem') THEN
+    CREATE INDEX ix_contract_line_item_contract_id ON contract_line_item (contract_id);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904093959_AddContractLineItem') THEN
+    CREATE INDEX ix_contract_line_item_product_id ON contract_line_item (product_id);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904093959_AddContractLineItem') THEN
+    CREATE INDEX ix_contract_line_item_tenant_id ON contract_line_item (tenant_id);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904093959_AddContractLineItem') THEN
+    ALTER TABLE "contract_line_item" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "contract_line_item" FORCE ROW LEVEL SECURITY;
+    CREATE POLICY tenant_isolation ON "contract_line_item"
+        USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+        WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904093959_AddContractLineItem') THEN
+    INSERT INTO "__EFMigrationsHistory" (migration_id, product_version)
+    VALUES ('20260904093959_AddContractLineItem', '10.0.4');
+    END IF;
+END $EF$;
+COMMIT;
+
