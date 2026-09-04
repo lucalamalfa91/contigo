@@ -30,7 +30,7 @@ backend/
     Contigo.Renewals/            # scaffold (R2)
     Contigo.Savings/             # scaffold (R3)
     Contigo.Quotes/              # scaffold (R4)
-    Contigo.Chat/                # Ask Contigo structured-vs-semantic query router (R1, task E02/F04/US01/T01)
+    Contigo.Chat/                # Ask Contigo structured-vs-semantic query router (R1, task E02/F04/US01/T01) + deterministic dates/spend query handlers (task E02/F04/US01/T02)
   tests/                         # per-module + architecture + R0 integration
 ```
 
@@ -124,6 +124,28 @@ span/page + confidence (spec §7.3) — directly on `ContractLineItem`/
 `Clause`/`Obligation`/`Risk`, or via the new `ExtractionEvidence` table for
 `Contract`'s own scalar fields. Nothing yet calls it from an HTTP endpoint
 or the queue; wiring a caller is a later task.
+
+## Ask Contigo — query router + deterministic queries
+
+`Contigo.Chat.Application.AskContigoQueryRouter` classifies a natural-language
+question (product spec §8.3) as `Structured` (deterministic query/filter, no
+LLM) or `Semantic` (needs RAG retrieval) — task E02/F04/US01/T01.
+`DeterministicQueryPlanner` + `DeterministicQueryHandler` (task
+E02/F04/US01/T02) turn a `Structured` decision into an actual answer for the
+two families spec §8.3 names as "dates" and "spend": "which contracts renew
+in the next N days" (a filter on `Contract.AutoRenewal`/`EndDate`) and
+"what is our annual spend [with a supplier]" (a sum of `Contract.AnnualSpend`).
+A structured question outside those two families (for example "total
+contract value") is reported as `Unsupported` rather than answered against
+the wrong field.
+
+`Contigo.Chat` cannot reference `Contigo.Documents.Contracts` (see
+"Dependency direction" below), so the handler operates on `ContractFact` — a
+small snapshot DTO the module owns itself — rather than the real `Contract`
+entity. Nothing in this wave maps a real, tenant-scoped `Contract` row to
+`ContractFact` or exposes any of this behind an HTTP endpoint yet; that
+composition is `Contigo.Api`'s job (the one project allowed to reference
+every module) and lands with whichever later task wires `/api/chat/query`.
 
 ## Containers and CI
 
