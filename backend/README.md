@@ -90,6 +90,7 @@ RLS policies are added in those migrations, not in Terraform.
 | GET | `/api/contracts/{id}` | Contract 360 aggregate; spec §8.2 header + tabs (overview, commercials, products, clauses, obligations, risks, documents, benchmark, renewal, activity); `X-Tenant-Id` header; 404 when the contract does not exist or belongs to another tenant; `benchmark`/`activity` are always empty arrays until R3/R4 — see `Contract360Result`'s doc comment |
 | POST | `/api/chat/query` | Ask Contigo (spec §8.3); `{ question: string }` + `X-Tenant-Id` header; routes via `AskContigoQueryRouter`. `Semantic` questions run the real RAG pipeline (`EmbeddingRetrievalService.SearchAsync` tenant-scoped retrieval → `RagAnswerService` → `IAiGateway.AnswerAsync`) and respond `{ question, intent, canDetermine, answer, citations: [{documentId, page, section}], message }` — `citations` empty and `canDetermine: false` when authorized retrieval finds nothing (spec §8.4 "no evidence, no claim"), never a fabricated answer. `Structured` questions get an honest `canDetermine: false` + explanatory `message` — no task has yet mapped a real, tenant-scoped `Contract` row into `Contigo.Chat.Application.ContractFact` for `DeterministicQueryHandler` to run against, see that type's own doc comment |
 | GET | `/api/renewals` | Renewal pipeline + insight card (spec §9.3/§10.1); `X-Tenant-Id` header; auto-renewing contracts only, most urgent first; response is `{ items, totalCount }`, each item `{ contractId, supplierId, status, renewalDate, daysUntilRenewal, annualSpend, cancellationDeadline, daysUntilCancellationDeadline, autoRenewal, action, insightCard: { facts, recommendations } }` — `insightCard.recommendations`' benchmark/savings fields (`annualUpliftPercent`, `marketPosition`, `potentialSavingsRange`) are honestly `null` until the Benchmark/Savings modules land (R3); `action`/`recommendedAction` is a deterministic urgency rule, not the full spec §9.2 Priority Score — see `Contigo.Renewals.Application.RenewalPipelineBuilder`'s own doc comment |
+| GET | `/api/renewals/{contractId}/priority` | Explainable priority-score breakdown for one contract (spec §9.2; story us-02-priority-score AC-1/AC-2, task E03/F01/US02/T02); `X-Tenant-Id` header; 404 when the contract does not exist or belongs to another tenant (same rule as `GET /api/contracts/{id}`); response is `{ contractId, totalScore, components: { spendWeight, timeUrgency, benchmarkOpportunity, priceIncreaseRisk, contractRisk } }`, each component `{ score, explanation }` — component weights are configurable, see `Contigo.Renewals.Configuration.PriorityScoreWeightsOptions` below; `priceIncreaseRisk`/`benchmarkOpportunity` use their honest no-data default (minimum / neutral respectively) since no uplift or benchmark-position data is wired to real contracts yet |
 
 **Interim auth:** every endpoint above that takes an `X-Tenant-Id` header
 (all except `GET /api/audit`, which already expects a claims principal)
@@ -368,7 +369,7 @@ score/component breakdown (us-02-priority-score), a threshold-alert flag
 /api/renewals/{id}/action`), and persistence — spec §9.1 says "create/update"
 (upsert semantics) but no task has given `Contigo.Renewals` a `DbContext` yet,
 so today `RenewalOpportunity` is an in-memory value, not a stored row.
-## Renewal Intelligence — explainable priority score
+## Renewal Intelligence — explainable, tunable priority score
 
 `Contigo.Renewals.Application.PriorityScoreCalculator` (task E03/F01/US02/T01,
 us-02-priority-score) is product spec §9.2's formula made concrete: `"Priority
@@ -379,32 +380,53 @@ synchronous, no database/HTTP/LLM call) — `Calculate` takes one
 `RenewalEngine`'s own arithmetic, never a second copy of it) plus one
 `RenewalPriorityInputs` (the raw spend/uplift/contract-risk/benchmark-position
 facts `RenewalEngine` does not compute) and returns a `PriorityScoreResult`:
-a `TotalScore` (0–100) plus each of the five components as its own named,
-explained `PriorityScoreComponent` (score 0–20 each) — spec §9.2's "Store
-both total score and component scores so the recommendation is explainable
-and tunable" (AC-2), not a single opaque number.
+a `TotalScore` (0–100 under the spec-default weights) plus each of the five
+components as its own named, explained `PriorityScoreComponent` — spec
+§9.2's "Store both total score and component scores so the recommendation is
+explainable and tunable" (AC-2), not a single opaque number.
 
 A component whose raw input is unknown never fabricates a guess (Appendix C
 rule 10): every component except benchmark opportunity defaults to the
 minimum (0); benchmark opportunity defaults to the documented neutral
-midpoint (`PriorityScoreCalculator.NeutralComponentScore`, 10) specifically,
-because parent story AC-3 names that exact rule — `"Benchmark-opportunity
-component reads the R3 benchmark only when available (else neutral)"`. Today
-that is *always* the neutral case: `Contigo.Benchmark.IBenchmarkService` is
-still an R0 placeholder with no query operations, so
-`RenewalPriorityInputs.BenchmarkMarketPositionPercent` has no real producer
-yet — the same "caller supplies it however it likes today, a real mapping
-lands later" gap `ContractRenewalTerms` already documents for this module.
-Every tier boundary (spend, uplift %, benchmark %) and the time-urgency
-tiers (aligned to spec §9.1's own 365/270/180/120/90/60/30-day windows) are
-this task's first-pass, documented defaults — task-02
-(priority-explainability) is where they become tunable configuration, not a
-re-derivation of the formula.
+midpoint (`PriorityScoreCalculator.NeutralComponentScore`, 10 under the spec
+default) specifically, because parent story AC-3 names that exact rule —
+`"Benchmark-opportunity component reads the R3 benchmark only when available
+(else neutral)"`. Today that is *always* the neutral case:
+`Contigo.Benchmark.IBenchmarkService` is still an R0 placeholder with no
+query operations, so `RenewalPriorityInputs.BenchmarkMarketPositionPercent`
+has no real producer yet — the same "caller supplies it however it likes
+today, a real mapping lands later" gap `ContractRenewalTerms` already
+documents for this module. Every tier boundary (spend, uplift %,
+benchmark %) and the time-urgency tiers (aligned to spec §9.1's own
+365/270/180/120/90/60/30-day windows) are fixed, product-spec-cited defaults
+— task-02 deliberately did not re-derive that tiering (see next paragraph
+for what it did make tunable).
 
-`AddRenewalsModule` registers `PriorityScoreCalculator` the same way it
-registers `RenewalEngine` — no constructor dependencies at all, so it needs
-no `IClock`. Like `RenewalEngine`, no host endpoint or worker job calls it
-yet.
+**Task E03/F01/US02/T02 (priority-explainability)** closed both gaps the
+paragraph above used to name. *Tunable*: each of the five components' own
+*maximum* contribution is now
+`Contigo.Renewals.Configuration.PriorityScoreWeightsOptions` (config section
+`Renewals:PriorityWeights`, `SpendWeightMax`/`TimeUrgencyMax`/
+`BenchmarkOpportunityMax`/`PriceIncreaseRiskMax`/`ContractRiskMax`, each
+defaulting to 20 — the untouched spec default) — `PriorityScoreCalculator` rescales every tier's
+fixed contribution proportionally (the tier's fraction of the spec-default
+20, times the configured maximum), so the tiering itself is unchanged but
+each term's weight in the sum is an operator decision, not a compile-time
+literal. *Explainable, queryable*: `Contigo.Api.RenewalsEndpointExtensions`
+now maps `GET /api/renewals/{contractId}/priority` (see the HTTP surface
+table above) — `PriorityScoreCalculator`'s first real host caller, composing
+`Contract360QueryService`'s tenant-scoped contract lookup (annual spend, end
+date, auto-renewal, risk) the same way `GET /api/renewals` composes
+`PortfolioQueryService`; `AnnualUpliftPercent`/`BenchmarkMarketPositionPercent`
+stay honestly `null` for the same reason `GET /api/renewals`'s own insight
+card does (neither has a real producer yet).
+
+`AddRenewalsModule` registers `PriorityScoreWeightsOptions` the same
+"bind lazily from `IConfiguration`, property initializers supply the spec
+default" way as `ThresholdWindowOptions` (see below), then registers
+`PriorityScoreCalculator` as before — its one constructor parameter is now
+that options singleton, injected automatically.
+
 ### Renewal threshold scheduler
 
 `Contigo.Renewals.Application.RenewalThresholdScheduler` (task

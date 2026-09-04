@@ -1,12 +1,17 @@
 using Contigo.Documents.Contracts.Application;
+using Contigo.Documents.Contracts.Domain;
 using Contigo.Renewals.Application;
+using Contigo.Renewals.Domain;
 using Contigo.SharedKernel;
 
 namespace Contigo.Api;
 
 /// <summary>
 /// Maps `GET /api/renewals` (product spec Appendix A "Renewal pipeline"; §9.1/§9.3/§10.1; story
-/// us-01-renewal-dashboard-api AC-1/AC-2, task E03/F03/US01/T01). Thin composition per ADR-002:
+/// us-01-renewal-dashboard-api AC-1/AC-2, task E03/F03/US01/T01) and
+/// `GET /api/renewals/{contractId}/priority` (story us-02-priority-score AC-1/AC-2, task
+/// E03/F01/US02/T02, the wave-spec's `renewal-priority-explain` artifact — the "explainability
+/// query" half of that task's own title). Thin composition per ADR-002:
 /// <see cref="PortfolioQueryService"/> (Documents/Contracts) already reads the tenant-scoped
 /// contract facts an "actionable renewal pipeline" needs (supplier id, annual spend, end date,
 /// auto-renewal, the already-extracted cancellation-deadline fact — same rows `GET /api/contracts`
@@ -19,6 +24,25 @@ namespace Contigo.Api;
 /// project allowed to reference every module" (`backend/README.md` "Dependency direction") — the
 /// same pattern <c>ChatEndpointExtensions</c> already uses for <c>EmbeddingSearchResult</c> -&gt;
 /// <c>AiEvidenceSnippet</c>.
+///
+/// <para>
+/// `GET /api/renewals/{contractId}/priority` reuses <see cref="Contract360QueryService"/>
+/// (already the tenant-scoped, 404-on-missing-or-wrong-tenant single-contract lookup
+/// `Contigo.Api.ContractsEndpointExtensions` uses for `GET /api/contracts/{id}`) instead of the
+/// portfolio's paged list — one contract, not a page. <see cref="MapRiskLevel"/> below is the
+/// composition <see cref="ContractRiskLevel"/>'s own doc comment named as an open gap ("a
+/// composition root maps `PortfolioListItem.Risk`... onto this enum 1:1; no task in this wave
+/// wires that composition yet") — <see cref="Contract360Header.Risk"/> is computed the same way
+/// <c>PortfolioListItem.Risk</c> is, so the same mapping applies. <c>AnnualUpliftPercent</c> and
+/// <c>BenchmarkMarketPositionPercent</c> stay honestly <see langword="null"/> — neither has a real
+/// producer yet (Benchmark Service is still an R0 placeholder, and no task has added an uplift
+/// column/extraction field to <c>Contract</c>), the same gap
+/// <see cref="RenewalInsightRecommendations"/>'s own doc comment already documents for the sibling
+/// `GET /api/renewals` response — <see cref="Contigo.Renewals.Application.PriorityScoreCalculator"/>
+/// itself already handles an unknown input honestly (Appendix C rule 10: the minimum for uplift,
+/// the documented neutral midpoint for benchmark position, parent story AC-3), so this composition
+/// does not need its own special case for either.
+/// </para>
 ///
 /// Same interim `X-Tenant-Id` header placeholder as every other endpoint in this host
 /// (<c>Program.cs</c>'s document endpoints, <see cref="WorkspaceEndpointExtensions"/>,
@@ -45,6 +69,7 @@ public static class RenewalsEndpointExtensions
     public static IEndpointRouteBuilder MapRenewalsEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/api/renewals", GetRenewalsAsync);
+        endpoints.MapGet("/api/renewals/{contractId}/priority", GetRenewalPriorityAsync);
         return endpoints;
     }
 
@@ -76,6 +101,51 @@ public static class RenewalsEndpointExtensions
             items = pipeline.Select(ToPipelineResponse),
             totalCount = portfolioPage.TotalCount,
         });
+    }
+
+    /// <summary>
+    /// `GET /api/renewals/{contractId}/priority` (task E03/F01/US02/T02, parent story
+    /// us-02-priority-score AC-1/AC-2) — the explainable priority-score breakdown for one
+    /// tenant-scoped contract. Same guard-clause shape as
+    /// <c>Contigo.Api.ContractsEndpointExtensions.GetContract360Async</c> (tenant header, then
+    /// route-id GUID, both before any database call); a contract that does not exist, or belongs
+    /// to a different tenant than the caller's `X-Tenant-Id`, both read back as 404 —
+    /// <see cref="Contract360QueryService"/> cannot and does not distinguish the two (ADR-009).
+    /// </summary>
+    private static async Task<IResult> GetRenewalPriorityAsync(
+        string contractId,
+        HttpRequest request,
+        Contract360QueryService contract360QueryService,
+        RenewalEngine renewalEngine,
+        PriorityScoreCalculator priorityScoreCalculator,
+        CancellationToken cancellationToken)
+    {
+        if (!request.Headers.TryGetValue("X-Tenant-Id", out var tenantHeaderValues)
+            || !Guid.TryParse(tenantHeaderValues.ToString(), out var tenantGuid))
+        {
+            return Results.BadRequest("A valid 'X-Tenant-Id' header (a GUID) is required.");
+        }
+
+        if (!Guid.TryParse(contractId, out var contractGuid))
+        {
+            return Results.BadRequest("The contract id in the route must be a GUID.");
+        }
+
+        var tenantId = new TenantId(tenantGuid);
+        var contractEntityId = new EntityId(contractGuid);
+
+        var contract360 = await contract360QueryService
+            .GetByIdAsync(tenantId, contractEntityId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (contract360 is null)
+        {
+            return Results.NotFound();
+        }
+
+        var priority = ComputePriority(contract360.Header, renewalEngine, priorityScoreCalculator);
+
+        return Results.Ok(ToPriorityResponse(priority));
     }
 
     /// <summary>
@@ -139,4 +209,81 @@ public static class RenewalsEndpointExtensions
             },
         };
     }
+
+    /// <summary>
+    /// Composes <see cref="Contract360Header"/> (Documents/Contracts) into the two small DTOs
+    /// <see cref="RenewalEngine"/>/<see cref="PriorityScoreCalculator"/> actually accept
+    /// (<see cref="ContractRenewalTerms"/>, <see cref="RenewalPriorityInputs"/>) and runs both —
+    /// the same "map here, in the one project allowed to reference every module" pattern
+    /// <see cref="ToCandidate"/> already uses for the dashboard endpoint. <c>CancellationNoticeDays</c>
+    /// is deliberately null (same gap <c>Contigo.Renewals.Application.ContractRenewalTerms</c>'s
+    /// own doc comment documents: <c>Contract</c> has no persisted column for it yet) — this
+    /// endpoint only needs the priority score, not a cancellation deadline.
+    /// </summary>
+    private static PriorityScoreResult ComputePriority(
+        Contract360Header header, RenewalEngine renewalEngine, PriorityScoreCalculator priorityScoreCalculator)
+    {
+        var terms = new ContractRenewalTerms(
+            header.ContractId, header.EndDate, header.AutoRenewal, CancellationNoticeDays: null);
+        var calculation = renewalEngine.Calculate(terms);
+
+        var inputs = new RenewalPriorityInputs(
+            header.AnnualSpend,
+            AnnualUpliftPercent: null,
+            MapRiskLevel(header.Risk),
+            BenchmarkMarketPositionPercent: null);
+
+        return priorityScoreCalculator.Calculate(calculation, inputs);
+    }
+
+    /// <summary>
+    /// Maps Documents/Contracts' <see cref="RiskSeverity"/> onto the Renewals module's own
+    /// <see cref="ContractRiskLevel"/>, 1:1 by name (both name exactly Low/Medium/High/Critical) —
+    /// the composition <see cref="ContractRiskLevel"/>'s own doc comment named as an open gap ("a
+    /// composition root maps `PortfolioListItem.Risk`... onto this enum 1:1; no task in this wave
+    /// wires that composition yet"). Only <c>Contigo.Api</c> may perform this mapping: ADR-002
+    /// forbids <c>Contigo.Renewals</c> from referencing <c>Contigo.Documents.Contracts</c> at all
+    /// (`Contigo.ArchitectureTests.DependencyDirectionTests`'s allow-list for that module is
+    /// exactly `[SharedKernel, Benchmark]`).
+    /// </summary>
+    private static ContractRiskLevel? MapRiskLevel(RiskSeverity? risk) => risk switch
+    {
+        null => null,
+        RiskSeverity.Low => ContractRiskLevel.Low,
+        RiskSeverity.Medium => ContractRiskLevel.Medium,
+        RiskSeverity.High => ContractRiskLevel.High,
+        RiskSeverity.Critical => ContractRiskLevel.Critical,
+        _ => throw new ArgumentOutOfRangeException(nameof(risk), risk, "Unknown RiskSeverity."),
+    };
+
+    /// <summary>
+    /// Wire-shapes <see cref="PriorityScoreResult"/> (parent story us-02-priority-score AC-1/AC-2):
+    /// total plus every named component as its own <c>{ score, explanation }</c> pair, never a
+    /// single opaque number — the "explainability query" this task (E03/F01/US02/T02) adds as
+    /// <see cref="PriorityScoreCalculator"/>'s first real host caller
+    /// (<c>Contigo.Renewals.Infrastructure.ServiceCollectionExtensions</c>'s own doc comment used
+    /// to name this exact gap: "no host endpoint calls it yet").
+    /// </summary>
+    private static object ToPriorityResponse(PriorityScoreResult result)
+    {
+        return new
+        {
+            contractId = result.ContractId.Value,
+            totalScore = result.TotalScore,
+            components = new
+            {
+                spendWeight = ToComponentResponse(result.SpendWeight),
+                timeUrgency = ToComponentResponse(result.TimeUrgency),
+                benchmarkOpportunity = ToComponentResponse(result.BenchmarkOpportunity),
+                priceIncreaseRisk = ToComponentResponse(result.PriceIncreaseRisk),
+                contractRisk = ToComponentResponse(result.ContractRisk),
+            },
+        };
+    }
+
+    private static object ToComponentResponse(PriorityScoreComponent component) => new
+    {
+        score = component.Score,
+        explanation = component.Explanation,
+    };
 }

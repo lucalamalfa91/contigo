@@ -10,45 +10,34 @@ namespace Contigo.Renewals.Infrastructure;
 /// <summary>
 /// Composition-root wiring for the Renewals module (ADR-002: "each module exposes an
 /// AddXxx(IServiceCollection) extension method"; domain modules never wire themselves into a host
-/// directly). Task E03/F01/US01/T01 (deterministic-dates) added <see cref="RenewalEngine"/>; task
-/// E03/F01/US01/T02 (renewal-opportunity) adds <see cref="RenewalOpportunityGenerator"/> on top of
-/// it. No host endpoint takes a dependency on either yet —
-/// <c>Contigo.Api.csproj</c>/<c>Contigo.Worker.csproj</c> already carry a <c>ProjectReference</c> to
-/// <c>Contigo.Renewals.csproj</c> in anticipation of it, the same "wiring lands with the first real
-/// caller" sequencing <c>Contigo.Chat.Infrastructure.ServiceCollectionExtensions</c>'s own doc
-/// comment describes for that module. This method exists now so the remaining tasks that depend on
-/// <c>renewal-engine</c> (priority score, the threshold scheduler) can resolve
-/// <see cref="RenewalEngine"/> from a container instead of constructing it by hand, and so anything
-/// that depends on <c>renewal-opportunity</c> (today: only the r2-integration task) can resolve
-/// <see cref="RenewalOpportunityGenerator"/> the same way.
-/// directly). Task E03/F01/US01/T01 (deterministic-dates) adds <see cref="RenewalEngine"/> but no
-/// host endpoint takes a dependency on it yet — <c>Contigo.Api.csproj</c>/<c>Contigo.Worker.csproj</c>
-/// already carry a <c>ProjectReference</c> to <c>Contigo.Renewals.csproj</c> in anticipation of it,
-/// the same "wiring lands with the first real caller" sequencing
-/// <c>Contigo.Chat.Infrastructure.ServiceCollectionExtensions</c>'s own doc comment describes for
-/// that module. This method exists now so the three tasks that depend on <c>renewal-engine</c>
-/// (renewal-opportunity generation, priority score, the threshold scheduler) can resolve
-/// <see cref="RenewalEngine"/> from a container instead of constructing it by hand. Task
-/// E03/F01/US02/T01 (priority-score) adds <see cref="PriorityScoreCalculator"/> the same way, for
-/// the same reason — still no host endpoint takes a dependency on it yet either.
-/// E03/F02/US01/T01 (threshold-scheduler) adds <see cref="RenewalThresholdScheduler"/> and its
-/// <see cref="ThresholdWindowOptions"/> — the first real callers named by this method's own
-/// original doc comment ("the three tasks that depend on renewal-engine: renewal-opportunity
-/// generation, priority score, the threshold scheduler"). No host endpoint calls
-/// <see cref="RenewalEngine"/> directly yet, but <c>Contigo.Worker.WorkerServiceCollectionExtensions
-/// .AddWorkerHost</c> now calls <see cref="AddRenewalsModule"/> so its own daily-cadence hosted
-/// service can resolve <see cref="RenewalThresholdScheduler"/> — the same "wiring lands with the
-/// first real caller" sequencing <c>Contigo.Chat.Infrastructure.ServiceCollectionExtensions</c>'s
-/// own doc comment describes for that module.
-/// directly). Task E03/F01/US01/T01 (deterministic-dates) added <see cref="RenewalEngine"/>;
-/// task E03/F03/US01/T01 (renewal-dashboard, this task) adds <see cref="RenewalPipelineBuilder"/>
-/// and is the first real caller — <c>Contigo.Api.Program</c> now calls
-/// <see cref="AddRenewalsModule"/> and maps <c>GET /api/renewals</c>
-/// (<c>Contigo.Api.RenewalsEndpointExtensions</c>), the same "wiring lands with the first real
-/// caller" sequencing <c>Contigo.Chat.Infrastructure.ServiceCollectionExtensions</c>'s own doc
-/// comment describes for that module. <c>Contigo.Worker.csproj</c> still only carries a
-/// <c>ProjectReference</c> to <c>Contigo.Renewals.csproj</c> in anticipation — no worker job calls
-/// this module yet (the threshold scheduler remains a follow-up task).
+/// directly). Registers every artifact this module has produced so far, task by task:
+///
+/// <list type="bullet">
+/// <item>E03/F01/US01/T01 (deterministic-dates): <see cref="RenewalEngine"/>.</item>
+/// <item>E03/F01/US01/T02 (renewal-opportunity): <see cref="RenewalOpportunityGenerator"/>, built
+/// on <see cref="RenewalEngine"/>.</item>
+/// <item>E03/F01/US02/T01 (priority-score): <see cref="PriorityScoreCalculator"/>.</item>
+/// <item>E03/F02/US01/T01 (threshold-scheduler): <see cref="RenewalThresholdScheduler"/> and its
+/// <see cref="ThresholdWindowOptions"/> (config section <c>Renewals:Thresholds</c>) — the first
+/// real caller is <c>Contigo.Worker.WorkerServiceCollectionExtensions.AddWorkerHost</c>, which now
+/// calls this method so its own daily-cadence hosted service can resolve it.</item>
+/// <item>E03/F03/US01/T01 (renewal-dashboard): <see cref="RenewalPipelineBuilder"/> — the first
+/// real caller is <c>Contigo.Api.Program</c>, which now calls this method and maps
+/// <c>GET /api/renewals</c> (<c>Contigo.Api.RenewalsEndpointExtensions</c>).</item>
+/// <item>E03/F01/US02/T02 (priority-explainability, this task): <see cref="PriorityScoreWeightsOptions"/>
+/// (config section <c>Renewals:PriorityWeights</c>) — <see cref="PriorityScoreCalculator"/>'s
+/// registration below is unchanged (still <c>AddScoped</c>), but it now resolves this options
+/// singleton as a constructor dependency instead of using its own compile-time defaults. First real
+/// caller: <c>Contigo.Api.RenewalsEndpointExtensions</c>'s new <c>GET /api/renewals/{id}/priority</c>
+/// route.</item>
+/// </list>
+///
+/// Every "wiring lands with the first real caller" gap this list used to describe is now closed —
+/// <c>Contigo.Chat.Infrastructure.ServiceCollectionExtensions</c>'s own doc comment describes the
+/// same sequencing for that module. <c>Contigo.Worker.csproj</c> still only carries a
+/// <c>ProjectReference</c> to <c>Contigo.Renewals.csproj</c> in anticipation of
+/// <see cref="RenewalOpportunityGenerator"/>/<see cref="PriorityScoreCalculator"/>/
+/// <see cref="RenewalPipelineBuilder"/> specifically — no worker job calls any of the three yet.
 /// </summary>
 public static class ServiceCollectionExtensions
 {
@@ -74,11 +63,32 @@ public static class ServiceCollectionExtensions
         // above, so registration order within this method does not matter to the container (Scoped
         // services resolve their own dependencies lazily, per scope).
         services.AddScoped<RenewalOpportunityGenerator>();
-        // PriorityScoreCalculator has no constructor dependencies at all (unlike RenewalEngine, it
-        // does not even need IClock — every date-derived input, DaysUntilRenewal, arrives already
-        // computed on the RenewalCalculationResult its Calculate method takes). Scoped anyway, for
+
+        // Task E03/F01/US02/T02 (priority-explainability): PriorityScoreWeightsOptions binds the
+        // same "start from IConfiguration, property initializers supply the spec default" way as
+        // ThresholdWindowOptions immediately below — every property here is a scalar decimal, so
+        // (unlike ThresholdWindowOptions.DaysBeforeDeadline) the plain array-merge footgun that
+        // class's own doc comment documents does not apply, and a direct
+        // `new PriorityScoreWeightsOptions()` + `section.Bind(options)` is safe as-is. Singleton:
+        // this options object is immutable after construction and shared by every
+        // PriorityScoreCalculator instance across every scope, the same lifetime
+        // ThresholdWindowOptions itself already uses.
+        services.TryAddSingleton(sp =>
+        {
+            var configuration = sp.GetRequiredService<IConfiguration>();
+            var options = new PriorityScoreWeightsOptions();
+            configuration.GetSection(PriorityScoreWeightsOptions.SectionName).Bind(options);
+            return options;
+        });
+
+        // PriorityScoreCalculator has no *required* constructor dependency (its one constructor
+        // parameter defaults to null, resolved to a spec-default PriorityScoreWeightsOptions
+        // internally — see that class's own doc comment) — but the container always finds the
+        // PriorityScoreWeightsOptions singleton just registered above and injects it, so a real
+        // host's calculator is always the configured one, never the fallback. Scoped anyway, for
         // the same uniform-lifetime reason as RenewalEngine above, not because it is stateful.
         services.AddScoped<PriorityScoreCalculator>();
+
         // Task E03/F02/US01/T01 (threshold-scheduler): same "bind lazily from IConfiguration,
         // property initializers supply the spec default" pattern
         // Contigo.AiGateway.ServiceCollectionExtensions.AddAiGatewayModule already uses for its own

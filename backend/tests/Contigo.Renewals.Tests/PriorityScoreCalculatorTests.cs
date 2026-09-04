@@ -1,5 +1,6 @@
 using System.Reflection;
 using Contigo.Renewals.Application;
+using Contigo.Renewals.Configuration;
 using Contigo.Renewals.Domain;
 using Contigo.SharedKernel;
 
@@ -342,5 +343,95 @@ public sealed class PriorityScoreCalculatorTests
 
         Assert.Empty(constructorParamsFromBenchmark);
         Assert.Empty(methodParamsFromBenchmark);
+    }
+
+    // ----- Tunable weights (task E03/F01/US02/T02, parent story AC-2 "tunable") -----
+
+    [Fact]
+    public void No_weights_supplied_reproduces_the_spec_default_20_point_scale()
+    {
+        // The parameterless constructor (every test above uses it via the shared _calculator
+        // field) must behave identically to one explicitly given a fresh, unconfigured
+        // PriorityScoreWeightsOptions — proves the null-weights fallback documented on
+        // PriorityScoreCalculator's own _weights field is really "the spec default", not some
+        // other behaviour.
+        var explicitDefault = new PriorityScoreCalculator(new PriorityScoreWeightsOptions());
+        var renewal = RenewalWithDays(134);
+        var inputs = Inputs(spend: 640_000, uplift: 7, risk: ContractRiskLevel.High, benchmarkPosition: 18);
+
+        Assert.Equal(_calculator.Calculate(renewal, inputs), explicitDefault.Calculate(renewal, inputs));
+    }
+
+    [Fact]
+    public void Custom_SpendWeightMax_rescales_every_spend_tier_proportionally_not_just_the_maximum()
+    {
+        var calculator = new PriorityScoreCalculator(new PriorityScoreWeightsOptions { SpendWeightMax = 40m });
+
+        // 300,000 lands in the ">= 250,000" tier — spec-default fraction 0.8 of the maximum (16 of
+        // 20) — so a doubled maximum must produce a doubled tier score (32 of 40), not just a
+        // doubled *ceiling* that leaves the middle tiers untouched.
+        var result = calculator.Calculate(RenewalWithDays(null), Inputs(spend: 300_000));
+
+        Assert.Equal(32m, result.SpendWeight.Score);
+        Assert.Contains("32", result.SpendWeight.Explanation);
+    }
+
+    [Fact]
+    public void Custom_weights_change_each_components_maximum_contribution_and_the_total()
+    {
+        var weights = new PriorityScoreWeightsOptions
+        {
+            SpendWeightMax = 40m,
+            TimeUrgencyMax = 10m,
+            BenchmarkOpportunityMax = 8m,
+            PriceIncreaseRiskMax = 100m,
+            ContractRiskMax = 1m,
+        };
+        var calculator = new PriorityScoreCalculator(weights);
+        var renewal = RenewalWithDays(-5); // overdue -> maximum time urgency
+        var inputs = Inputs(spend: 1_000_000, uplift: 50, risk: ContractRiskLevel.Critical, benchmarkPosition: 100);
+
+        var result = calculator.Calculate(renewal, inputs);
+
+        // Every input saturates its component (mirrors
+        // TotalScore_reaches_the_maximum_when_every_component_is_maxed, but with configured
+        // weights instead of the spec default) — each component lands exactly on its own
+        // configured maximum, and the total is their sum, not the spec-default 100.
+        Assert.Equal(40m, result.SpendWeight.Score);
+        Assert.Equal(10m, result.TimeUrgency.Score);
+        Assert.Equal(8m, result.BenchmarkOpportunity.Score);
+        Assert.Equal(100m, result.PriceIncreaseRisk.Score);
+        Assert.Equal(1m, result.ContractRisk.Score);
+        Assert.Equal(159m, result.TotalScore);
+    }
+
+    [Fact]
+    public void Custom_BenchmarkOpportunityMax_rescales_the_neutral_no_data_value_too()
+    {
+        // Parent story AC-3's "neutral" value is half of the benchmark component's own maximum
+        // (PriorityScoreCalculator.NeutralComponentScore's own doc comment) — proving it tracks a
+        // configured BenchmarkOpportunityMax (not the spec-default const) is the whole point of
+        // making that maximum tunable in the first place.
+        var calculator = new PriorityScoreCalculator(new PriorityScoreWeightsOptions { BenchmarkOpportunityMax = 9m });
+
+        var result = calculator.Calculate(RenewalWithDays(null), Inputs(benchmarkPosition: null));
+
+        Assert.Equal(4.5m, result.BenchmarkOpportunity.Score);
+        Assert.Contains("4.5", result.BenchmarkOpportunity.Explanation);
+    }
+
+    [Fact]
+    public void Custom_weights_do_not_change_which_tier_a_contract_falls_into()
+    {
+        // The rescale is proportional, not a re-derivation of the tiering (this task's own scope
+        // boundary, see PriorityScoreWeightsOptions' own doc comment): a spend just under the
+        // 500,000 boundary must still land in the "250,000 or more" tier, not silently jump to
+        // the maximum just because a larger weight is configured.
+        var calculator = new PriorityScoreCalculator(new PriorityScoreWeightsOptions { SpendWeightMax = 1_000m });
+
+        var result = calculator.Calculate(RenewalWithDays(null), Inputs(spend: 499_999));
+
+        Assert.Equal(800m, result.SpendWeight.Score); // 0.8 * 1,000, the "250,000 or more" tier
+        Assert.NotEqual(1_000m, result.SpendWeight.Score); // never the maximum for this input
     }
 }
