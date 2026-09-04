@@ -165,8 +165,11 @@ app.MapGet("/api/documents/{id}", async Task<IResult> (
 });
 
 // Task E02/F05/US01/T01 (us-01-correction-history, AC-1): versioned PATCH /api/contracts/{id}.
-// See ContractsEndpointExtensions for the endpoint itself and ContractCorrectionService for the
-// versioning/history decisions (never a destructive overwrite — Appendix C rule 5).
+// Task E02/F03/US02/T01 (us-02-contract-360-aggregate, AC-1/AC-2/AC-3): GET /api/contracts/{id},
+// the spec §8.2 header + tab aggregate. See ContractsEndpointExtensions for both endpoints —
+// ContractCorrectionService owns the versioning/history decisions for the PATCH (never a
+// destructive overwrite — Appendix C rule 5); Contract360QueryService owns the tenant-scoped
+// aggregation for the GET (ADR-009).
 app.MapContractsEndpoints();
 
 // Task E01/F06/US02/T02 (us-02-audit-baseline, AC-2): authorized, tenant-scoped GET /api/audit.

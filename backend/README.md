@@ -20,11 +20,11 @@ backend/
     Contigo.Worker/              # thin worker composition root
     Contigo.SharedKernel/        # TenantId, EntityId, Result<T>, IClock, IAuditWriter, IDocumentStorage
     Contigo.Identity.Workspace/  # workspace, membership, roles (live)
-    Contigo.Documents.Contracts/ # upload, metadata, staged extraction pipeline (live)
-    Contigo.Documents.Contracts/ # upload, metadata, extraction job, contract correction (live)
+    Contigo.Documents.Contracts/ # upload, metadata, extraction jobs, staged extraction pipeline,
+                                  # portfolio list, Contract 360, contract correction (live)
     Contigo.Audit/               # append-only audit events (live)
-    Contigo.AiGateway/           # IAiGateway + LoggingAiGateway decorator — no Foundry SDK yet
-    Contigo.AiGateway/           # IAiGateway + FixtureAiGateway, wired via DI — no Foundry SDK yet
+    Contigo.AiGateway/           # IAiGateway + FixtureAiGateway (deterministic) behind the
+                                  # LoggingAiGateway decorator, wired via DI — no Foundry SDK yet
     Contigo.Benchmark/           # IBenchmarkService only — fixture adapter is later (R3)
     Contigo.Suppliers.Products/  # scaffold (R1+)
     Contigo.Renewals/            # scaffold (R2)
@@ -79,15 +79,13 @@ RLS policies are added in those migrations, not in Terraform.
 | PATCH | `/api/contracts/{id}` | `{ corrections: { <field>: <string\|null> }, reason? }` + `X-Tenant-Id` header; versioned correction (ADR-003 `ContractVersion`/`CorrectionHistory`, ADR-009 RLS) — see `Contigo.Documents.Contracts.Application.ContractCorrectionService.CorrectableFieldNames` for the accepted field list |
 | GET | `/api/audit` | tenant-scoped; expects a claims principal (integration tests inject one) |
 | GET | `/api/contracts` | portfolio list; spec §8.1 columns; `X-Tenant-Id` header; optional filters `supplierId`, `status`, `risk` (Low/Medium/High/Critical), `autoRenewal`, `minAnnualSpend`, `maxAnnualSpend`, `renewalFrom`/`renewalTo` (yyyy-MM-dd) — no `category` filter yet, see `PortfolioFilter`'s doc comment |
+| GET | `/api/contracts/{id}` | Contract 360 aggregate; spec §8.2 header + tabs (overview, commercials, products, clauses, obligations, risks, documents, benchmark, renewal, activity); `X-Tenant-Id` header; 404 when the contract does not exist or belongs to another tenant; `benchmark`/`activity` are always empty arrays until R3/R4 — see `Contract360Result`'s doc comment |
 
-**Interim auth:** document upload/read and the portfolio list take the
-tenant from `X-Tenant-Id`, not from a validated JWT. ADR-010 (Entra ID /
-OIDC on the API) is not wired in the host yet. Do not treat the header as
-the long-term contract.
-**Interim auth:** document upload/read and the contract correction PATCH
-take the tenant from `X-Tenant-Id`, not from a validated JWT. ADR-010
-(Entra ID / OIDC on the API) is not wired in the host yet. Do not treat
-the header as the long-term contract.
+**Interim auth:** document upload/read, the portfolio list, the contract
+correction PATCH, and the Contract 360 GET all take the tenant from
+`X-Tenant-Id`, not from a validated JWT. ADR-010 (Entra ID / OIDC on the
+API) is not wired in the host yet. Do not treat the header as the
+long-term contract.
 
 The web client generates TypeScript types from
 `web/openapi/contigo-api.v1.json`. The API does **not** yet self-publish

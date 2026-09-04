@@ -5,23 +5,208 @@ namespace Contigo.Api;
 
 /// <summary>
 /// Maps `PATCH /api/contracts/{id}` (product spec Appendix A API table: "Validated field
-/// corrections"; story us-01-correction-history AC-1, task E02/F05/US01/T01). Thin composition
-/// per ADR-002 — <see cref="ContractCorrectionService"/> owns the actual versioning/history
-/// decisions; this file only translates HTTP &lt;-&gt; the service call, same shape as
-/// <see cref="WorkspaceEndpointExtensions"/>/<see cref="AuditEndpointExtensions"/>.
+/// corrections"; story us-01-correction-history AC-1, task E02/F05/US01/T01) and
+/// `GET /api/contracts/{id}` (Appendix A: "Contract 360 data"; story
+/// us-02-contract-360-aggregate AC-1/AC-2/AC-3, task E02/F03/US02/T01). Thin composition per
+/// ADR-002 — <see cref="ContractCorrectionService"/> and <see cref="Contract360QueryService"/>
+/// own the actual versioning/history and aggregation decisions respectively; this file only
+/// translates HTTP &lt;-&gt; the service call, same shape as
+/// <see cref="WorkspaceEndpointExtensions"/>/<see cref="AuditEndpointExtensions"/>/
+/// <see cref="PortfolioEndpointExtensions"/>.
 ///
-/// Same interim `X-Tenant-Id` header placeholder as <c>Program.cs</c>'s document endpoints and
-/// <see cref="WorkspaceEndpointExtensions"/> (ADR-010 is not in this task's "Architecture
-/// decisions in force" list, so there is no validated caller principal yet) — see
-/// <c>Program.cs</c>'s own comment on why this interim gap is not promoted to
-/// reports/open-questions.md by this task.
+/// Same interim `X-Tenant-Id` header placeholder as <c>Program.cs</c>'s document endpoints,
+/// <see cref="WorkspaceEndpointExtensions"/>, and <see cref="PortfolioEndpointExtensions"/>
+/// (ADR-010 is not in either task's "Architecture decisions in force" list, so there is no
+/// validated caller principal yet) — see <c>Program.cs</c>'s own comment on why this interim gap
+/// is not promoted to reports/open-questions.md by these tasks.
 /// </summary>
 public static class ContractsEndpointExtensions
 {
     public static IEndpointRouteBuilder MapContractsEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapGet("/api/contracts/{id}", GetContract360Async);
         endpoints.MapPatch("/api/contracts/{id}", CorrectContractAsync);
         return endpoints;
+    }
+
+    /// <summary>
+    /// `GET /api/contracts/{id}` (us-02-contract-360-aggregate AC-1): the spec §8.2 header + tab
+    /// aggregate. AC-3 "Authorization filter applies (default tenant scoping)": a contract that
+    /// does not exist, or that belongs to a different tenant than the caller's `X-Tenant-Id`,
+    /// both read back as 404 — <see cref="Contract360QueryService"/> cannot and does not
+    /// distinguish the two (see that type's own doc comment on why, ADR-009).
+    /// </summary>
+    private static async Task<IResult> GetContract360Async(
+        string id,
+        HttpRequest request,
+        Contract360QueryService contract360QueryService,
+        CancellationToken cancellationToken)
+    {
+        if (!request.Headers.TryGetValue("X-Tenant-Id", out var tenantHeaderValues)
+            || !Guid.TryParse(tenantHeaderValues.ToString(), out var tenantGuid))
+        {
+            return Results.BadRequest("A valid 'X-Tenant-Id' header (a GUID) is required.");
+        }
+
+        if (!Guid.TryParse(id, out var contractGuid))
+        {
+            return Results.BadRequest("The contract id in the route must be a GUID.");
+        }
+
+        var result = await contract360QueryService
+            .GetByIdAsync(new TenantId(tenantGuid), new EntityId(contractGuid), cancellationToken)
+            .ConfigureAwait(false);
+
+        if (result is null)
+        {
+            return Results.NotFound();
+        }
+
+        return Results.Ok(ToContract360Response(result));
+    }
+
+    /// <summary>
+    /// Wire-shapes <see cref="Contract360Result"/> in spec §8.2 tab order (Overview, Commercials,
+    /// Products, Clauses, Obligations, Risks, Documents, Benchmark, Renewal, Activity). Enum
+    /// members and <see cref="EntityId"/>/<see cref="EntityId"/>? wrapper values are projected to
+    /// plain strings/GUIDs — the same convention <see cref="PortfolioEndpointExtensions"/> and
+    /// <c>Program.cs</c>'s document endpoints already use, since neither has a custom JSON
+    /// converter registered anywhere in this solution.
+    /// </summary>
+    private static object ToContract360Response(Contract360Result result)
+    {
+        var header = result.Header;
+        var overview = result.Overview;
+        var commercials = result.Commercials;
+        var renewal = result.Renewal;
+
+        return new
+        {
+            contractId = result.ContractId.Value,
+            header = new
+            {
+                contractId = header.ContractId.Value,
+                supplierId = header.SupplierId?.Value,
+                type = header.Type.ToString(),
+                status = header.Status,
+                annualSpend = header.AnnualSpend,
+                totalContractValue = header.TotalContractValue,
+                startDate = header.StartDate,
+                endDate = header.EndDate,
+                renewalDate = header.RenewalDate,
+                cancellationDeadline = header.CancellationDeadline,
+                autoRenewal = header.AutoRenewal,
+                risk = header.Risk?.ToString(),
+            },
+            tabs = new
+            {
+                overview = new
+                {
+                    currency = overview.Currency,
+                    effectiveDate = overview.EffectiveDate,
+                    renewalTermMonths = overview.RenewalTermMonths,
+                    paymentTerms = overview.PaymentTerms,
+                    governingLaw = overview.GoverningLaw,
+                    parentContractId = overview.ParentContractId?.Value,
+                    version = overview.Version,
+                    createdAt = overview.CreatedAt,
+                },
+                commercials = new
+                {
+                    annualSpend = commercials.AnnualSpend,
+                    totalContractValue = commercials.TotalContractValue,
+                    currency = commercials.Currency,
+                    paymentTerms = commercials.PaymentTerms,
+                    autoRenewal = commercials.AutoRenewal,
+                    renewalTermMonths = commercials.RenewalTermMonths,
+                    lineItemCount = commercials.LineItemCount,
+                    lineItemAnnualCostTotal = commercials.LineItemAnnualCostTotal,
+                    lineItemTotalCostTotal = commercials.LineItemTotalCostTotal,
+                },
+                products = result.Products.Select(p => new
+                {
+                    lineItemId = p.LineItemId.Value,
+                    productId = p.ProductId?.Value,
+                    sku = p.Sku,
+                    description = p.Description,
+                    quantity = p.Quantity,
+                    unit = p.Unit,
+                    unitPrice = p.UnitPrice,
+                    listPrice = p.ListPrice,
+                    discount = p.Discount,
+                    billingPeriod = p.BillingPeriod,
+                    annualCost = p.AnnualCost,
+                    totalCost = p.TotalCost,
+                    sourceDocumentId = p.SourceDocumentId?.Value,
+                    sourceSpan = p.SourceSpan,
+                    sourcePage = p.SourcePage,
+                    confidence = p.Confidence,
+                }),
+                clauses = result.Clauses.Select(c => new
+                {
+                    clauseId = c.ClauseId.Value,
+                    clauseType = c.ClauseType,
+                    rawText = c.RawText,
+                    normalizedValue = c.NormalizedValue,
+                    riskLevel = c.RiskLevel?.ToString(),
+                    sourceDocumentId = c.SourceDocumentId?.Value,
+                    sourceSpan = c.SourceSpan,
+                    sourcePage = c.SourcePage,
+                    confidence = c.Confidence,
+                }),
+                obligations = result.Obligations.Select(o => new
+                {
+                    obligationId = o.ObligationId.Value,
+                    party = o.Party,
+                    obligationType = o.ObligationType,
+                    description = o.Description,
+                    dueDate = o.DueDate,
+                    recurrenceRule = o.RecurrenceRule,
+                    criticality = o.Criticality,
+                    status = o.Status,
+                    sourceDocumentId = o.SourceDocumentId?.Value,
+                    sourceSpan = o.SourceSpan,
+                    sourcePage = o.SourcePage,
+                    confidence = o.Confidence,
+                }),
+                risks = result.Risks.Select(r => new
+                {
+                    riskId = r.RiskId.Value,
+                    riskType = r.RiskType,
+                    severity = r.Severity.ToString(),
+                    description = r.Description,
+                    status = r.Status,
+                    clauseId = r.ClauseId?.Value,
+                    sourceDocumentId = r.SourceDocumentId?.Value,
+                    sourceSpan = r.SourceSpan,
+                    sourcePage = r.SourcePage,
+                    confidence = r.Confidence,
+                }),
+                documents = result.Documents.Select(d => new
+                {
+                    documentId = d.DocumentId.Value,
+                    fileName = d.FileName,
+                    mimeType = d.MimeType,
+                    documentType = d.DocumentType.ToString(),
+                    processingStatus = d.ProcessingStatus.ToString(),
+                    createdAt = d.CreatedAt,
+                }),
+                // Always empty in this wave — see Contract360Result's own doc comment
+                // (us-02-contract-360-aggregate "Task-count note": benchmark/activity are R3/R4
+                // placeholders that "read only validated data and return empty until later
+                // waves").
+                benchmark = Array.Empty<object>(),
+                renewal = new
+                {
+                    endDate = renewal.EndDate,
+                    renewalDate = renewal.RenewalDate,
+                    cancellationDeadline = renewal.CancellationDeadline,
+                    autoRenewal = renewal.AutoRenewal,
+                    renewalTermMonths = renewal.RenewalTermMonths,
+                },
+                activity = Array.Empty<object>(),
+            },
+        };
     }
 
     private static async Task<IResult> CorrectContractAsync(

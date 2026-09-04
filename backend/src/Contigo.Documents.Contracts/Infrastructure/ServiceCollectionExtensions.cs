@@ -28,11 +28,11 @@ namespace Contigo.Documents.Contracts.Infrastructure;
 /// (<c>Contigo.Api/Program.cs</c>, <c>Contigo.Worker.WorkerServiceCollectionExtensions</c>),
 /// keeps <see cref="IAiGateway"/> resolvable everywhere this module already is without changing
 /// either host's code.
-/// adds <see cref="DocumentQueryService"/> alongside it. Task E02/F03/US01/T01's
-/// <c>GET /api/contracts</c> reuses it again and adds <see cref="PortfolioQueryService"/>.
-/// adds <see cref="DocumentQueryService"/> alongside it. Task E02/F05/US01/T01's `PATCH
-/// /api/contracts/{id}` (<see cref="ContractCorrectionService"/>) reuses the same registration
-/// again.
+/// Task E02/F03/US01/T01's <c>GET /api/contracts</c> reuses the same registration and adds
+/// <see cref="PortfolioQueryService"/>; task E02/F05/US01/T01's `PATCH /api/contracts/{id}` adds
+/// <see cref="ContractCorrectionService"/>; task E02/F03/US02/T01's `GET /api/contracts/{id}`
+/// (Contract 360) adds <see cref="Contract360QueryService"/> — all reuse the same DbContext
+/// registration, never a second one.
 /// </summary>
 public static class ServiceCollectionExtensions
 {
@@ -59,6 +59,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<StagedExtractionService>();
         services.AddScoped<PortfolioQueryService>();
         services.AddScoped<ContractCorrectionService>();
+        services.AddScoped<Contract360QueryService>();
 
         return services;
     }

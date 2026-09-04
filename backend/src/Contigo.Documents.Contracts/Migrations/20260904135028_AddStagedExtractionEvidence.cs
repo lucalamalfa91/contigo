@@ -7,70 +7,38 @@ namespace Contigo.Documents.Contracts.Migrations
 {
     /// <summary>
     /// Task E02/F01/US02/T01 (us-02-staged-extraction, AC-2 "every extracted fact carries source
-    /// span + confidence"): completes source-span/page/confidence evidence on
-    /// <c>risk</c>/<c>obligation</c>/<c>contract_line_item</c> (already-existing "one row = one
-    /// fact" tables that were missing one or more of those columns — see
-    /// <c>Domain.Risk</c>/<c>Domain.Obligation</c>/<c>Domain.ContractLineItem</c>'s own doc
-    /// comments), and adds <c>extraction_evidence</c> for the scalar <c>contract</c> fields that
-    /// have no "one row = one fact" table of their own (see <c>Domain.ExtractionEvidence</c>'s
-    /// doc comment). <c>extraction_evidence</c> is a new tenant-scoped table, so — exactly like
-    /// <c>AddContractLineItem</c> before it — its RLS enable/force/policy statements are bundled
-    /// into this same migration rather than a separate follow-up, so there is no migration
-    /// history state where it exists without RLS (ADR-009).
+    /// span + confidence"): adds <c>extraction_evidence</c> for the scalar <c>contract</c> fields
+    /// that have no "one row = one fact" table of their own (see
+    /// <c>Domain.ExtractionEvidence</c>'s doc comment). <c>extraction_evidence</c> is a new
+    /// tenant-scoped table, so — exactly like <c>AddContractLineItem</c> before it — its RLS
+    /// enable/force/policy statements are bundled into this same migration rather than a separate
+    /// follow-up, so there is no migration history state where it exists without RLS (ADR-009).
     /// <c>Contigo.Tenancy.Tests.TenantRlsMigrationCheckTests</c>/<c>TenantRlsDeployableScriptCheckTests</c>
     /// discover it automatically (every <c>TenantScopedEntity</c> subclass) and would fail the
     /// build if this were omitted.
+    ///
+    /// This migration originally also (re)added source-span/page/confidence evidence columns on
+    /// <c>risk</c>/<c>obligation</c>/<c>contract_line_item</c> — the same columns the
+    /// sibling task E02/F02/US01/T02 was independently adding in
+    /// <see cref="AddEvidenceConfidenceVersionColumns"/> (timestamped earlier, so it runs first).
+    /// The two tasks' migrations converged on the same target columns without either seeing the
+    /// other's work; the phase-barrier merge kept both files, which made every
+    /// <c>Database.MigrateAsync()</c> call fail with Postgres error 42701 ("column ... already
+    /// exists") from this migration re-adding what the earlier one had already added — 100% of
+    /// this bounded context's Testcontainers-backed tests, not just this task's. Task
+    /// E02/F03/US02/T01 removed the redundant <c>AddColumn</c>/<c>DropColumn</c> calls here
+    /// (verified column-for-column against <see cref="AddEvidenceConfidenceVersionColumns"/>'s
+    /// own <c>Up()</c>); the end-state schema is unchanged; only the broken duplicate add is
+    /// gone. <c>Migrations/Scripts/documents-contracts.sql</c> was regenerated from this fix via
+    /// `dotnet ef migrations script --idempotent` (was itself corrupted by the same merge —
+    /// mismatched `IF`/`END IF` nesting from interleaving two independently-generated script
+    /// halves).
     /// </summary>
     public partial class AddStagedExtractionEvidence : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<int>(
-                name: "source_page",
-                table: "risk",
-                type: "integer",
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "source_span",
-                table: "risk",
-                type: "character varying(500)",
-                maxLength: 500,
-                nullable: true);
-
-            migrationBuilder.AddColumn<int>(
-                name: "source_page",
-                table: "obligation",
-                type: "integer",
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "source_span",
-                table: "obligation",
-                type: "character varying(500)",
-                maxLength: 500,
-                nullable: true);
-
-            migrationBuilder.AddColumn<double>(
-                name: "confidence",
-                table: "contract_line_item",
-                type: "double precision",
-                nullable: true);
-
-            migrationBuilder.AddColumn<int>(
-                name: "source_page",
-                table: "contract_line_item",
-                type: "integer",
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "source_span",
-                table: "contract_line_item",
-                type: "character varying(500)",
-                maxLength: 500,
-                nullable: true);
-
             migrationBuilder.CreateTable(
                 name: "extraction_evidence",
                 columns: table => new
@@ -155,34 +123,6 @@ namespace Contigo.Documents.Contracts.Migrations
 
             migrationBuilder.DropTable(
                 name: "extraction_evidence");
-
-            migrationBuilder.DropColumn(
-                name: "source_page",
-                table: "risk");
-
-            migrationBuilder.DropColumn(
-                name: "source_span",
-                table: "risk");
-
-            migrationBuilder.DropColumn(
-                name: "source_page",
-                table: "obligation");
-
-            migrationBuilder.DropColumn(
-                name: "source_span",
-                table: "obligation");
-
-            migrationBuilder.DropColumn(
-                name: "confidence",
-                table: "contract_line_item");
-
-            migrationBuilder.DropColumn(
-                name: "source_page",
-                table: "contract_line_item");
-
-            migrationBuilder.DropColumn(
-                name: "source_span",
-                table: "contract_line_item");
         }
     }
 }
