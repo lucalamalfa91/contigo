@@ -136,8 +136,11 @@ module "containerapps" {
   # Task E01/F02/US04/T02 (ADR-011): this root's OWN identity module
   # instance only -- never dev's -- so the API/worker Container Apps can
   # only ever present demo's workload identity.
-  workload_identity_id = module.identity.workload_identity_id
-  acr_login_server     = module.acr.login_server
+  workload_identity_id          = module.identity.workload_identity_id
+  acr_login_server              = module.acr.login_server
+  postgres_connection_secret_id = module.keyvault.postgres_connection_secret_versionless_id
+  storage_connection_secret_id  = module.keyvault.storage_connection_secret_versionless_id
+  spa_host_name                 = module.staticwebapp.default_host_name
 }
 
 # ADR-005: Key Vault Standard tier (no Premium/HSM), RBAC-authorized;
@@ -150,7 +153,9 @@ module "keyvault" {
   resource_group_name = azurerm_resource_group.this.name
   # Task E01/F02/US04/T01 (ADR-011): this root's OWN identity module
   # instance only -- never dev's -- so the grant never crosses envs.
-  workload_principal_id = module.identity.workload_principal_id
+  workload_principal_id      = module.identity.workload_principal_id
+  postgres_connection_string = module.postgres.connection_string
+  storage_connection_string  = module.storage.primary_connection_string
 }
 
 # ADR-005: Container Registry Basic tier, one per environment (isolation

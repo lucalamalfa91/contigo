@@ -112,8 +112,11 @@ module "containerapps" {
   # Task E01/F02/US04/T02 (ADR-011): this root's OWN identity module
   # instance only -- never demo's -- so the API/worker Container Apps can
   # only ever present dev's workload identity.
-  workload_identity_id = module.identity.workload_identity_id
-  acr_login_server     = module.acr.login_server
+  workload_identity_id          = module.identity.workload_identity_id
+  acr_login_server              = module.acr.login_server
+  postgres_connection_secret_id = module.keyvault.postgres_connection_secret_versionless_id
+  storage_connection_secret_id  = module.keyvault.storage_connection_secret_versionless_id
+  spa_host_name                 = module.staticwebapp.default_host_name
 }
 
 module "keyvault" {
@@ -124,7 +127,9 @@ module "keyvault" {
   resource_group_name = azurerm_resource_group.this.name
   # Task E01/F02/US04/T01 (ADR-011): this root's OWN identity module
   # instance only -- never demo's -- so the grant never crosses envs.
-  workload_principal_id = module.identity.workload_principal_id
+  workload_principal_id      = module.identity.workload_principal_id
+  postgres_connection_string = module.postgres.connection_string
+  storage_connection_string  = module.storage.primary_connection_string
 }
 
 module "acr" {

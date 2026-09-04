@@ -18,3 +18,14 @@ output "fqdn" {
   description = "Fully qualified domain name of the PostgreSQL Flexible Server (connection endpoint)."
   value       = azurerm_postgresql_flexible_server.this.fqdn
 }
+
+output "database_name" {
+  description = "Application database name (contigo_<env>), created on this server."
+  value       = azurerm_postgresql_flexible_server_database.app.name
+}
+
+output "connection_string" {
+  description = "Npgsql connection string for the application database. Written to this environment's Key Vault; never re-exported from the env root (ADR-007/ADR-011)."
+  value       = local.connection_string
+  sensitive   = true
+}

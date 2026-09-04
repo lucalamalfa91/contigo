@@ -51,3 +51,34 @@ resource "azurerm_role_assignment" "workload_secrets_user" {
   principal_id                     = var.workload_principal_id
   skip_service_principal_aad_check = true
 }
+
+# RBAC-enabled vaults grant the creator no data-plane rights. The applying
+# principal (HCP workspace ARM_* / local az login) needs Secrets Officer
+# to write the connection-string secrets below.
+resource "azurerm_role_assignment" "deployer_secrets_officer" {
+  scope                = azurerm_key_vault.this.id
+  role_definition_name = "Key Vault Secrets Officer"
+  principal_id         = data.azurerm_client_config.current.object_id
+}
+
+resource "azurerm_key_vault_secret" "postgres_connection" {
+  name         = "postgres-connection"
+  value        = var.postgres_connection_string
+  key_vault_id = azurerm_key_vault.this.id
+
+  depends_on = [
+    azurerm_role_assignment.deployer_secrets_officer,
+    azurerm_role_assignment.workload_secrets_user,
+  ]
+}
+
+resource "azurerm_key_vault_secret" "storage_connection" {
+  name         = "storage-connection"
+  value        = var.storage_connection_string
+  key_vault_id = azurerm_key_vault.this.id
+
+  depends_on = [
+    azurerm_role_assignment.deployer_secrets_officer,
+    azurerm_role_assignment.workload_secrets_user,
+  ]
+}
