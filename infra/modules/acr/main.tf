@@ -1,8 +1,8 @@
 # modules/acr -- one Basic-tier Container Registry per environment
 # (ADR-005: per-env isolation for any deployment-time pull identity, one
 # Basic registry per env rather than one shared registry). Admin
-# credentials disabled -- pulls use managed identity + RBAC (AcrPull),
-# wired in a later task; no admin secret is ever generated.
+# credentials disabled -- pulls use this environment's workload identity
+# + RBAC (AcrPull) below; no admin secret is ever generated.
 locals {
   tags = {
     project = "contigo"
@@ -25,4 +25,17 @@ resource "azurerm_container_registry" "this" {
   admin_enabled       = false
 
   tags = local.tags
+}
+
+# Container Apps pull `contigo-api:<sha>` / `contigo-worker:<sha>` with
+# this environment's user-assigned identity (modules/containerapps
+# registry { identity = var.workload_identity_id }). Contributor on the
+# RG is not enough -- ACR requires the AcrPull data-plane role.
+# skip_service_principal_aad_check matches modules/keyvault (AAD lag on
+# a just-created managed identity).
+resource "azurerm_role_assignment" "acr_pull" {
+  scope                            = azurerm_container_registry.this.id
+  role_definition_name             = "AcrPull"
+  principal_id                     = var.workload_principal_id
+  skip_service_principal_aad_check = true
 }

@@ -163,14 +163,24 @@ jobs:
             echo "::error::$SWA_NAME was not found in $RG. Confirm the HCP VCS apply for workspace contigo-${TARGET_ENVIRONMENT} at $HCP_RUNS, wait until it is CURRENT, then re-run this job."
             exit 1
           fi
-          # az staticwebapp show flattens ARM JSON: hostname is defaultHostname
-          # (Microsoft's own docs), not properties.defaultHostname. az containerapp
-          # show keeps the ARM shape. Accept both so the same job works for
+          # CLI `show` flattens some resources (SWA defaultHostname) and
+          # keeps ARM shape on others. Prefer az resource show (always
+          # properties.*) then fall back so the same job works for
           # TARGET_ENVIRONMENT=dev and demo.
-          SWA_HOST=$(az staticwebapp show --name "$SWA_NAME" --resource-group "$RG" \
-            --query "defaultHostname || properties.defaultHostname" -o tsv | tr -d '\r')
-          API_FQDN=$(az containerapp show --name "$API_NAME" --resource-group "$RG" \
-            --query "properties.configuration.ingress.fqdn || configuration.ingress.fqdn || properties.latestRevisionFqdn || latestRevisionFqdn" -o tsv | tr -d '\r')
+          SWA_HOST=$(az resource show --resource-group "$RG" --name "$SWA_NAME" \
+            --resource-type Microsoft.Web/staticSites \
+            --query "properties.defaultHostname" -o tsv | tr -d '\r')
+          if [[ -z "$SWA_HOST" ]]; then
+            SWA_HOST=$(az staticwebapp show --name "$SWA_NAME" --resource-group "$RG" \
+              --query "defaultHostname || properties.defaultHostname" -o tsv | tr -d '\r')
+          fi
+          API_FQDN=$(az resource show --resource-group "$RG" --name "$API_NAME" \
+            --resource-type Microsoft.App/containerApps \
+            --query "properties.configuration.ingress.fqdn || properties.latestRevisionFqdn" -o tsv | tr -d '\r')
+          if [[ -z "$API_FQDN" ]]; then
+            API_FQDN=$(az containerapp show --name "$API_NAME" --resource-group "$RG" \
+              --query "properties.configuration.ingress.fqdn || configuration.ingress.fqdn || properties.latestRevisionFqdn || latestRevisionFqdn" -o tsv | tr -d '\r')
+          fi
           CLIENT_ID=$(az identity show --name "$UAI_NAME" --resource-group "$RG" \
             --query "tags.oidcPublicClientId" -o tsv | tr -d '\r')
           if [[ -z "$SWA_HOST" ]]; then

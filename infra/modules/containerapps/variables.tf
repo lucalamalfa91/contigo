@@ -31,6 +31,11 @@ variable "workload_identity_id" {
   type        = string
 }
 
+variable "acr_login_server" {
+  description = "Login server of this environment's Container Registry (modules/acr login_server). Used in registry {} so API/worker pull with the workload identity, not an admin password."
+  type        = string
+}
+
 variable "container_image" {
   description = "Placeholder container image for the API and worker apps until the first real image is published to the acr module's registry (ADR-005: Consumption profile Container Apps)."
   type        = string

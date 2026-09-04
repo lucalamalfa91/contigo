@@ -137,6 +137,7 @@ module "containerapps" {
   # instance only -- never dev's -- so the API/worker Container Apps can
   # only ever present demo's workload identity.
   workload_identity_id = module.identity.workload_identity_id
+  acr_login_server     = module.acr.login_server
 }
 
 # ADR-005: Key Vault Standard tier (no Premium/HSM), RBAC-authorized;
@@ -160,6 +161,9 @@ module "acr" {
   environment         = local.environment
   location            = var.location
   resource_group_name = azurerm_resource_group.this.name
+  # This root's OWN identity only -- never dev's -- so AcrPull cannot
+  # pull images from the other environment's registry.
+  workload_principal_id = module.identity.workload_principal_id
 }
 
 # ADR-005: Log Analytics workspace, Pay-As-You-Go with a daily
