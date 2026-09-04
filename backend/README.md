@@ -22,7 +22,7 @@ backend/
     Contigo.Identity.Workspace/  # workspace, membership, roles (live)
     Contigo.Documents.Contracts/ # upload, metadata, extraction job (live)
     Contigo.Audit/               # append-only audit events (live)
-    Contigo.AiGateway/           # IAiGateway only — no Foundry SDK yet
+    Contigo.AiGateway/           # IAiGateway + LoggingAiGateway decorator — no Foundry SDK yet
     Contigo.Benchmark/           # IBenchmarkService only — fixture adapter is later (R3)
     Contigo.Suppliers.Products/  # scaffold (R1+)
     Contigo.Renewals/            # scaffold (R2)
