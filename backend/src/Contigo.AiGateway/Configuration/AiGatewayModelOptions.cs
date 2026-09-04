@@ -34,4 +34,15 @@ public sealed class AiGatewayModelOptions
 
     /// <summary>ADR-004 candidate: "Same instruction model as extract, or one tier up if citation quality is insufficient".</summary>
     public AiModelSelection Answer { get; init; } = new("gpt-4o-mini", "unconfirmed");
+
+    /// <summary>
+    /// ADR-017 candidate: Azure AI Document Intelligence <c>prebuilt-read</c> — the cheapest model
+    /// that meets the `ocr` role's evidence requirement (full-document text + page map). Added by
+    /// task E02/F01/US02/T02 (hybrid-ocr): ADR-017 "gains a fifth role, `ocr`, bound through
+    /// configuration like the other roles" — this class already existed for the first four
+    /// (task E02/F01/US01/T01), so the fifth is one more property, not a new options type. A
+    /// caller that also needs table/section layout (not just full-document text) swaps this to
+    /// `prebuilt-layout` via configuration, same as any other role.
+    /// </summary>
+    public AiModelSelection Ocr { get; init; } = new("prebuilt-read", "unconfirmed");
 }

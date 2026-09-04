@@ -60,6 +60,14 @@ public static class ServiceCollectionExtensions
         services.AddScoped<PortfolioQueryService>();
         services.AddScoped<ContractCorrectionService>();
 
+        // Task E02/F01/US02/T02 (hybrid-ocr): the native/OCR pre-pass that produces the
+        // DocumentPageText list StagedExtractionService above already depends on.
+        // NativeDocumentTextExtractor holds no per-request state (no DbContext, no ambient tenant
+        // scope), so — unlike the DbContext-bound services above — Singleton is correct, not just
+        // convenient.
+        services.TryAddSingleton<INativeDocumentTextExtractor, NativeDocumentTextExtractor>();
+        services.AddScoped<HybridDocumentParsingService>();
+
         return services;
     }
 }

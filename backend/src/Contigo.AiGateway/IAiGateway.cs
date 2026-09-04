@@ -12,15 +12,14 @@ namespace Contigo.AiGateway;
 /// <see cref="Contigo.AiGateway.Configuration.AiGatewayModelOptions"/> — so a model swap is a
 /// config change, never a code change.
 ///
-/// Task E02/F01/US01/T01 implements four of ADR-004's five roles: <see cref="ClassifyAsync"/>,
+/// Task E02/F01/US01/T01 implemented four of ADR-004's five roles: <see cref="ClassifyAsync"/>,
 /// <see cref="ExtractAsync"/>, <see cref="EmbedAsync"/>, <see cref="AnswerAsync"/> — exactly the
-/// set named by this task's own "Coding objective". The fifth role, `ocr` (ADR-017), is
-/// deliberately NOT added here: it belongs to task E02/F01/US02/T02 ("hybrid-ocr"), a later task
-/// in the same wave whose own coding objective is "Add hybrid OCR pre-pass behind gateway" and
-/// whose architecture decisions in force include ADR-017 (this task's do not — this task cites
-/// only ADR-004 and ADR-011). Adding a fifth method now would pre-empt that task's own design of
-/// the OCR request/result shape (full-document page map, ADR-017 "Implications for the
-/// decomposition") for no benefit — nothing in this wave calls it yet.
+/// set named by that task's own "Coding objective". Task E02/F01/US02/T02 ("hybrid-ocr") adds the
+/// fifth, <see cref="OcrAsync"/> (ADR-017), whose request/result shape is a full-document page map
+/// (ADR-017 "Implications for the decomposition": "must persist a page map so evidence
+/// source.page / section still resolve") rather than the free-text/JSON shapes the other four
+/// roles use — <see cref="OcrAsync"/> is the one role whose entire job is turning raw bytes into
+/// text, so it is also the one role whose input is bytes, not a string.
 ///
 /// Every method returns <see cref="Result{T}"/> (this codebase's convention for expected
 /// failures — e.g. <c>Contigo.Documents.Contracts.Application.DocumentUploadService</c>) rather
@@ -67,4 +66,22 @@ public interface IAiGateway
     /// </summary>
     Task<Result<AiAnswerResult>> AnswerAsync(
         AiAnswerRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// `ocr` role (ADR-017): the hybrid OCR pre-pass's provider call, added by task
+    /// E02/F01/US02/T02 (hybrid-ocr). Turns raw document bytes into page-mapped text for
+    /// scanned/image/low-text documents; native text extraction for born-digital pages happens in
+    /// the caller (<c>Contigo.Documents.Contracts.Application.Extraction.HybridDocumentParsingService</c>)
+    /// and never reaches this method — that step is not AI I/O (module-map: only Foundry/Document
+    /// Intelligence calls go through this gateway). Always processes the full submitted document
+    /// (ADR-017 "no 2-page cap"); a configured page-budget
+    /// (<see cref="Configuration.AiGatewayOcrOptions.MaxPagesPerDocument"/>) fails the call
+    /// visibly rather than truncating it. The returned page map
+    /// (<see cref="Contracts.AiOcrResult.Pages"/>) feeds
+    /// <c>Contigo.Documents.Contracts.Application.Extraction.DocumentPageText</c> so every
+    /// downstream extraction stage can still cite a source page regardless of whether native
+    /// parsing or OCR produced it.
+    /// </summary>
+    Task<Result<AiOcrResult>> OcrAsync(
+        AiOcrRequest request, CancellationToken cancellationToken = default);
 }

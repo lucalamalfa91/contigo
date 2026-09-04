@@ -32,6 +32,32 @@ public class ServiceCollectionExtensionsTests
         var options = provider.GetRequiredService<AiGatewayModelOptions>();
         Assert.Equal("gpt-4o-mini", options.Extract.ModelId);
         Assert.Equal("text-embedding-3-small", options.Embed.ModelId);
+        Assert.Equal("prebuilt-read", options.Ocr.ModelId);
+
+        // Task E02/F01/US02/T02: AiGatewayOcrOptions must also resolve, with its own ADR-017
+        // default, so the FixtureAiGateway constructor above never fails to resolve at startup.
+        var ocrOptions = provider.GetRequiredService<AiGatewayOcrOptions>();
+        Assert.Equal(300, ocrOptions.MaxPagesPerDocument);
+    }
+
+    [Fact]
+    public void AddAiGatewayModule_binds_the_page_budget_from_the_configured_AiGateway_Ocr_section()
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AiGateway:Ocr:MaxPagesPerDocument"] = "5",
+            })
+            .Build();
+        services.AddSingleton<IConfiguration>(configuration);
+
+        services.AddAiGatewayModule();
+
+        using var provider = services.BuildServiceProvider();
+        var ocrOptions = provider.GetRequiredService<AiGatewayOcrOptions>();
+
+        Assert.Equal(5, ocrOptions.MaxPagesPerDocument);
     }
 
     [Fact]

@@ -146,6 +146,28 @@ public sealed class LoggingAiGateway : IAiGateway
         return result;
     }
 
+    /// <inheritdoc/>
+    public async Task<Result<AiOcrResult>> OcrAsync(
+        AiOcrRequest request, CancellationToken cancellationToken = default)
+    {
+        var result = await _inner.OcrAsync(request, cancellationToken).ConfigureAwait(false);
+
+        if (result.IsSuccess)
+        {
+            // ADR-017: "Per-page OCR usage MUST be logged (page count, model id, cost
+            // attribution)" — the one field the other four roles' log line does not carry, so it
+            // is threaded through as an addendum rather than duplicating LogAsync's whole body.
+            await LogAsync(
+                    "ocr",
+                    result.Value.Metadata,
+                    cancellationToken,
+                    extraDetail: $"pageCount={result.Value.Pages.Count}")
+                .ConfigureAwait(false);
+        }
+
+        return result;
+    }
+
     /// <summary>
     /// Writes one append-only audit row per successful role call. Requires an active
     /// <see cref="ITenantContext.BeginScope"/> scope: an AI Gateway call that cannot be attributed
@@ -155,7 +177,13 @@ public sealed class LoggingAiGateway : IAiGateway
     /// here throw and fail the call: "ADR-011 treats audit as a compliance control, not a
     /// best-effort side-channel".
     /// </summary>
-    private async Task LogAsync(string role, AiCallMetadata metadata, CancellationToken cancellationToken)
+    /// <param name="extraDetail">
+    /// Role-specific addendum appended to the standard reproducibility fields — today only
+    /// <see cref="OcrAsync"/> supplies one (page count, ADR-017). <see langword="null"/> for every
+    /// other role, unchanged from before this parameter existed.
+    /// </param>
+    private async Task LogAsync(
+        string role, AiCallMetadata metadata, CancellationToken cancellationToken, string? extraDetail = null)
     {
         var tenantId = _tenantContext.Current ?? throw new InvalidOperationException(
             $"AI Gateway logging requires an active tenant scope (ITenantContext.BeginScope); " +
@@ -169,6 +197,11 @@ public sealed class LoggingAiGateway : IAiGateway
             $"model={metadata.ModelId} modelVersion={metadata.ModelVersion} " +
             $"promptVersion={metadata.PromptVersion} inputHash={metadata.InputHash} " +
             $"noTraining={_complianceOptions.NoTraining}";
+
+        if (extraDetail is not null)
+        {
+            detail += $" {extraDetail}";
+        }
 
         await _auditWriter.WriteAsync(
             new AuditEntry(

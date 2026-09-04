@@ -21,6 +21,14 @@ public class AiGatewayModelOptionsTests
     }
 
     [Fact]
+    public void Ocr_default_matches_ADR_017_candidate_model()
+    {
+        var options = new AiGatewayModelOptions();
+
+        Assert.Equal("prebuilt-read", options.Ocr.ModelId);
+    }
+
+    [Fact]
     public void Section_name_is_stable_for_configuration_binding()
     {
         Assert.Equal("AiGateway:Models", AiGatewayModelOptions.SectionName);

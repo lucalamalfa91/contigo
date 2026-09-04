@@ -20,11 +20,9 @@ backend/
     Contigo.Worker/              # thin worker composition root
     Contigo.SharedKernel/        # TenantId, EntityId, Result<T>, IClock, IAuditWriter, IDocumentStorage
     Contigo.Identity.Workspace/  # workspace, membership, roles (live)
-    Contigo.Documents.Contracts/ # upload, metadata, staged extraction pipeline (live)
-    Contigo.Documents.Contracts/ # upload, metadata, extraction job, contract correction (live)
+    Contigo.Documents.Contracts/ # upload, metadata, hybrid OCR pre-pass, staged extraction, contract correction (live)
     Contigo.Audit/               # append-only audit events (live)
-    Contigo.AiGateway/           # IAiGateway + LoggingAiGateway decorator — no Foundry SDK yet
-    Contigo.AiGateway/           # IAiGateway + FixtureAiGateway, wired via DI — no Foundry SDK yet
+    Contigo.AiGateway/           # IAiGateway (classify/extract/embed/answer/ocr) + FixtureAiGateway + LoggingAiGateway decorator, wired via DI — no Foundry/Document Intelligence SDK yet
     Contigo.Benchmark/           # IBenchmarkService only — fixture adapter is later (R3)
     Contigo.Suppliers.Products/  # scaffold (R1+)
     Contigo.Renewals/            # scaffold (R2)
@@ -106,24 +104,33 @@ those features.
 `Contigo.AiGateway` is wired into DI by `Contigo.Documents.Contracts`'s own
 `AddDocumentsContractsModule` (so both the API and Worker hosts get a
 working `IAiGateway` with no host-side change). `IAiGateway` is bound to
-`FixtureAiGateway` — deterministic, provider-free — until a live Foundry
-endpoint exists (ADR-004/ADR-017); domain code depends only on the
-interface. Per-role model ids/versions (`classify`/`extract`/`embed`/
-`answer`) bind from the `AiGateway:Models` configuration section
-(`AiGateway:Models:Extract:ModelId`, etc. — env var form
-`AiGateway__Models__Extract__ModelId`) and default to ADR-004's candidate
-models when that section is absent, so no config is required to run
-locally.
+`FixtureAiGateway` — deterministic, provider-free — until a live Foundry /
+Document Intelligence endpoint exists (ADR-004/ADR-017); domain code
+depends only on the interface. Per-role model ids/versions
+(`classify`/`extract`/`embed`/`answer`/`ocr`) bind from the
+`AiGateway:Models` configuration section (`AiGateway:Models:Extract:ModelId`,
+etc. — env var form `AiGateway__Models__Extract__ModelId`) and default to
+ADR-004/ADR-017's candidate models when that section is absent, so no
+config is required to run locally. The `ocr` role's page-count safety
+budget (ADR-017: fail visibly, never silently truncate) is its own
+`AiGateway:Ocr:MaxPagesPerDocument` section (default 300 — see
+`AiGatewayOcrOptions`).
 
-`Contigo.Documents.Contracts.Application.Extraction.StagedExtractionService`
-runs product spec §7.2's seven-stage pipeline (metadata → commercial terms
-→ dates → price/SKU → clauses → obligations → risk) over already
-page-mapped text (`DocumentPageText` — native-vs-OCR text acquisition is a
-separate concern, not this service's) and persists every fact with source
-span/page + confidence (spec §7.3) — directly on `ContractLineItem`/
-`Clause`/`Obligation`/`Risk`, or via the new `ExtractionEvidence` table for
-`Contract`'s own scalar fields. Nothing yet calls it from an HTTP endpoint
-or the queue; wiring a caller is a later task.
+`Contigo.Documents.Contracts.Application.Extraction.HybridDocumentParsingService`
+implements the hybrid OCR pre-pass (ADR-017): native text extraction
+(`NativeDocumentTextExtractor` — real `DocumentFormat.OpenXml` for
+DOCX/XLSX, a self-contained content-stream reader for PDF; no external PDF
+library is referenced — see that class's own doc comment for why) when
+sufficient, otherwise the full document (no 2-page cap) through the `ocr`
+gateway role. `StagedExtractionService` runs product spec §7.2's
+seven-stage pipeline (metadata → commercial terms → dates → price/SKU →
+clauses → obligations → risk) over the resulting page-mapped text
+(`DocumentPageText`) and persists every fact with source span/page +
+confidence (spec §7.3) — directly on `ContractLineItem`/`Clause`/
+`Obligation`/`Risk`, or via the `ExtractionEvidence` table for `Contract`'s
+own scalar fields. Nothing yet calls either service from an HTTP endpoint
+or the queue; wiring a caller (the Worker's classification-job dispatch)
+is a later task.
 
 ## Containers and CI
 

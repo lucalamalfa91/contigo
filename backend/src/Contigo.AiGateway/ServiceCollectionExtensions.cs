@@ -49,6 +49,19 @@ public static class ServiceCollectionExtensions
             return options;
         });
 
+        // Task E02/F01/US02/T02 (hybrid-ocr): same bind-with-defaults pattern as
+        // AiGatewayModelOptions immediately above — a deployment with no "AiGateway:Ocr" section
+        // configured still gets FixtureAiGateway's registered constructor parameter satisfied with
+        // ADR-017's own starting default (300 pages).
+        services.TryAddSingleton(sp =>
+        {
+            var options = new AiGatewayOcrOptions();
+            sp.GetRequiredService<IConfiguration>()
+                .GetSection(AiGatewayOcrOptions.SectionName)
+                .Bind(options);
+            return options;
+        });
+
         // ADR-004 "Implications for the decomposition" / ADR-017: "until [a live Foundry
         // endpoint exists], a fixture gateway adapter satisfies R0 scaffolding" — no
         // infra/modules Terraform module or Foundry connection string exists yet (see

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Contigo.AiGateway.Configuration;
@@ -23,7 +24,8 @@ namespace Contigo.AiGateway.Fixtures;
 /// <see cref="IAiGateway"/> seam — domain code never notices (AC-3: "Domain code calls only
 /// IAiGateway").
 /// </summary>
-public sealed class FixtureAiGateway(AiGatewayModelOptions modelOptions, IClock clock) : IAiGateway
+public sealed class FixtureAiGateway(
+    AiGatewayModelOptions modelOptions, IClock clock, AiGatewayOcrOptions? ocrOptions = null) : IAiGateway
 {
     /// <summary>
     /// Not a real Foundry prompt version — there is no live prompt behind this fixture. Recorded
@@ -31,6 +33,26 @@ public sealed class FixtureAiGateway(AiGatewayModelOptions modelOptions, IClock 
     /// it, per ADR-011's reproducibility fields.
     /// </summary>
     private const string PromptVersion = "fixture-v1";
+
+    /// <summary>
+    /// Optional trailing constructor parameter (default <see langword="null"/>, resolved to
+    /// <see cref="AiGatewayOcrOptions"/>'s own defaults below) so every existing call site that
+    /// constructs this type with the original two arguments — every test written before task
+    /// E02/F01/US02/T02, plus <see cref="ServiceCollectionExtensions.AddAiGatewayModule"/>'s own
+    /// registration, which resolves this via DI (a container matches this parameter to the
+    /// <see cref="AiGatewayOcrOptions"/> singleton that same method now also registers) — keeps
+    /// compiling unchanged.
+    /// </summary>
+    private readonly AiGatewayOcrOptions _ocrOptions = ocrOptions ?? new AiGatewayOcrOptions();
+
+    /// <summary>
+    /// Placeholder text for a page this fixture cannot decode (genuine binary content — a real
+    /// scanned image/PDF). Named so a test/log line can recognize "this is the fixture's honest
+    /// placeholder", not a corrupted real extraction (mirrors <see cref="ExtractAsync"/>'s own
+    /// "{}" placeholder — see that method's doc comment).
+    /// </summary>
+    private const string BinaryContentPlaceholder =
+        "[fixture-ocr: {0} bytes of binary content; no live Document Intelligence endpoint configured]";
 
     /// <summary>
     /// Ordered, case-insensitive substring cues the fixture uses to pick a
@@ -177,9 +199,83 @@ public sealed class FixtureAiGateway(AiGatewayModelOptions modelOptions, IClock 
         return Task.FromResult(Result<AiAnswerResult>.Success(grounded));
     }
 
+    /// <inheritdoc/>
+    public Task<Result<AiOcrResult>> OcrAsync(
+        AiOcrRequest request, CancellationToken cancellationToken = default)
+    {
+        if (request.Content.IsEmpty)
+        {
+            return Task.FromResult(Result<AiOcrResult>.Failure("Ocr requires non-empty document content."));
+        }
+
+        var pages = DecodePages(request.Content.Span);
+
+        // ADR-017: "over-budget jobs fail visibly (failed status), they are not silently
+        // truncated" — checked here, inside the one role every OCR call flows through
+        // (AiGatewayOcrOptions's own doc comment: "single choke point"), so no caller can bypass
+        // it. A real (non-fixture) implementation would run this same check against the page
+        // count Document Intelligence actually reports.
+        if (pages.Count > _ocrOptions.MaxPagesPerDocument)
+        {
+            return Task.FromResult(Result<AiOcrResult>.Failure(
+                $"OCR page budget exceeded: document '{request.FileName}' has {pages.Count} pages, " +
+                $"configured maximum is {_ocrOptions.MaxPagesPerDocument} (ADR-017: fail visibly, " +
+                "never silently truncate)."));
+        }
+
+        var result = new AiOcrResult(pages, BuildMetadata(modelOptions.Ocr, request.Content.Span));
+
+        return Task.FromResult(Result<AiOcrResult>.Success(result));
+    }
+
+    /// <summary>
+    /// No live Document Intelligence endpoint behind this fixture yet (ADR-017 "Implications for
+    /// the decomposition": "Fixture OCR is allowed for R0" — the same rule ADR-004 states for the
+    /// other four roles, extended by ADR-017 to this one). Deterministically decodes
+    /// <paramref name="content"/> as UTF-8 text and splits it on the form-feed character
+    /// (<c>\f</c>, U+000C) — a conventional plain-text page-break marker — so tests/callers can
+    /// exercise multi-page OCR output without a real scanned-image parser. Content that is not
+    /// valid UTF-8 text (genuine binary — a real scanned image/PDF) still returns one honest
+    /// placeholder page rather than fabricating plausible-looking contract text, the same "empty
+    /// JSON is honest" choice <see cref="ExtractAsync"/> already makes for its own placeholder.
+    /// </summary>
+    private static IReadOnlyList<AiOcrPage> DecodePages(ReadOnlySpan<byte> content)
+    {
+        string decoded;
+        try
+        {
+            decoded = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true)
+                .GetString(content);
+        }
+        catch (DecoderFallbackException)
+        {
+            return [new AiOcrPage(1, string.Format(CultureInfo.InvariantCulture, BinaryContentPlaceholder, content.Length))];
+        }
+
+        var pageTexts = decoded.Split('\f');
+        var pages = new List<AiOcrPage>(pageTexts.Length);
+
+        for (var i = 0; i < pageTexts.Length; i++)
+        {
+            pages.Add(new AiOcrPage(i + 1, pageTexts[i]));
+        }
+
+        return pages;
+    }
+
     private AiCallMetadata BuildMetadata(AiModelSelection model, string input)
     {
         var inputHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(input)));
+        return new AiCallMetadata(model.ModelId, model.ModelVersion, PromptVersion, clock.UtcNow, inputHash);
+    }
+
+    /// <summary>Byte-input twin of <see cref="BuildMetadata(AiModelSelection, string)"/> — the
+    /// `ocr` role's input is already bytes (see <see cref="AiOcrRequest.Content"/>'s own doc
+    /// comment), so hashing it directly avoids a lossy/re-encoding round trip through
+    /// <see cref="string"/> for content that may not even be valid text.</summary>
+    private AiCallMetadata BuildMetadata(AiModelSelection model, ReadOnlySpan<byte> input)
+    {
+        var inputHash = Convert.ToHexString(SHA256.HashData(input));
         return new AiCallMetadata(model.ModelId, model.ModelVersion, PromptVersion, clock.UtcNow, inputHash);
     }
 

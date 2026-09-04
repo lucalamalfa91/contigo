@@ -107,6 +107,10 @@ public sealed class StagedExtractionServiceTests : IAsyncLifetime
         public Task<Result<AiAnswerResult>> AnswerAsync(
             AiAnswerRequest request, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException("StagedExtractionService does not call AnswerAsync.");
+
+        public Task<Result<AiOcrResult>> OcrAsync(
+            AiOcrRequest request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("StagedExtractionService does not call OcrAsync.");
     }
 
     /// <summary>High-confidence payload for every AC-1 stage, used by the happy-path test.

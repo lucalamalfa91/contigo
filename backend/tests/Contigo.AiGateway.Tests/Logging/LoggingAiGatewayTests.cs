@@ -122,6 +122,45 @@ public class LoggingAiGatewayTests
     }
 
     [Fact]
+    public async Task Ocr_success_writes_one_audit_entry_including_page_count()
+    {
+        var (gateway, auditWriter, tenantContext) = CreateGateway();
+
+        using (tenantContext.BeginScope(TenantId.New()))
+        {
+            var content = System.Text.Encoding.UTF8.GetBytes("page one\fpage two\fpage three");
+            var result = await gateway.OcrAsync(new AiOcrRequest("contract.pdf", "application/pdf", content));
+
+            Assert.True(result.IsSuccess);
+            Assert.Equal(3, result.Value.Pages.Count);
+
+            var entry = Assert.Single(auditWriter.Written);
+            var detail = entry.Detail ?? throw new InvalidOperationException("expected Detail to be set");
+
+            Assert.Equal("ai.ocr", entry.Action);
+            Assert.Equal(result.Value.Metadata.InputHash, entry.ResourceId);
+            // ADR-017: OCR calls must also log page count so spend is observable — the one field
+            // the other four roles' log line does not carry.
+            Assert.Contains("pageCount=3", detail, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task Failed_ocr_call_does_not_write_an_audit_entry()
+    {
+        var (gateway, auditWriter, tenantContext) = CreateGateway();
+
+        using (tenantContext.BeginScope(TenantId.New()))
+        {
+            var result = await gateway.OcrAsync(
+                new AiOcrRequest("empty.pdf", "application/pdf", ReadOnlyMemory<byte>.Empty));
+
+            Assert.True(result.IsFailure);
+            Assert.Empty(auditWriter.Written);
+        }
+    }
+
+    [Fact]
     public async Task Failed_call_does_not_write_an_audit_entry()
     {
         var (gateway, auditWriter, tenantContext) = CreateGateway();
