@@ -10,3 +10,15 @@ output "vault_uri" {
   description = "URI of the Key Vault, used by apps to read secrets/keys at runtime."
   value       = azurerm_key_vault.this.vault_uri
 }
+
+output "postgres_connection_secret_versionless_id" {
+  description = "Versionless Key Vault secret ID for postgres-connection, consumed by Container Apps secret { key_vault_secret_id }."
+  value       = azurerm_key_vault_secret.postgres_connection.versionless_id
+  sensitive   = true
+}
+
+output "storage_connection_secret_versionless_id" {
+  description = "Versionless Key Vault secret ID for storage-connection, consumed by Container Apps secret { key_vault_secret_id }."
+  value       = azurerm_key_vault_secret.storage_connection.versionless_id
+  sensitive   = true
+}

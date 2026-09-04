@@ -6,22 +6,30 @@
 # ADR-007 forbids secrets in Terraform *source*. The administrator
 # password is generated with random_password so no literal secret is
 # ever written to a .tf file; it still lands in remote state (HCP
-# Terraform), which is expected and is not "source". A later task wires
-# this into modules/keyvault for app runtime access.
+# Terraform), which is expected and is not "source". The connection
+# string is written to this environment's Key Vault (modules/keyvault)
+# and pulled into Container Apps via managed identity (ADR-011).
 locals {
   tags = {
     project = "contigo"
     env     = var.environment
   }
+
+  database_name = "contigo_${var.environment}"
+
+  # Npgsql keyword format. override_special below excludes ';' so the
+  # password cannot split the connection string.
+  connection_string = "Host=${azurerm_postgresql_flexible_server.this.fqdn};Database=${local.database_name};Username=${var.administrator_login};Password=${random_password.administrator.result};Ssl Mode=Require"
 }
 
 resource "random_password" "administrator" {
-  length      = 32
-  special     = true
-  min_upper   = 2
-  min_lower   = 2
-  min_numeric = 2
-  min_special = 2
+  length           = 32
+  special          = true
+  min_upper        = 2
+  min_lower        = 2
+  min_numeric      = 2
+  min_special      = 2
+  override_special = "!@#%^*-_=+"
 }
 
 resource "azurerm_postgresql_flexible_server" "this" {
@@ -56,4 +64,21 @@ resource "azurerm_postgresql_flexible_server_configuration" "pgvector" {
   name      = "azure.extensions"
   server_id = azurerm_postgresql_flexible_server.this.id
   value     = "VECTOR"
+}
+
+# 0.0.0.0-0.0.0.0 is Azure's documented "Allow Azure services" rule so
+# Container Apps in this same subscription can reach the public endpoint.
+# Private-endpoint wiring through modules/network is later work.
+resource "azurerm_postgresql_flexible_server_firewall_rule" "allow_azure_services" {
+  name             = "AllowAzureServices"
+  server_id        = azurerm_postgresql_flexible_server.this.id
+  start_ip_address = "0.0.0.0"
+  end_ip_address   = "0.0.0.0"
+}
+
+resource "azurerm_postgresql_flexible_server_database" "app" {
+  name      = local.database_name
+  server_id = azurerm_postgresql_flexible_server.this.id
+  charset   = "UTF8"
+  collation = "en_US.utf8"
 }

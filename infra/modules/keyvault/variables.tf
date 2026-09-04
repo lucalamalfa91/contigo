@@ -27,3 +27,18 @@ variable "workload_principal_id" {
   description = "Principal (object) ID of this environment's user-assigned managed identity (modules/identity's `workload_principal_id` output). Granted read access to secrets in this environment's own vault only."
   type        = string
 }
+
+# ADR-011: connection strings land here from sibling modules -- never as
+# literals in .tf source. Both are required so each env root must wire
+# its own postgres/storage outputs (never the other env's).
+variable "postgres_connection_string" {
+  description = "Npgsql connection string for this environment's application database (modules/postgres connection_string). Written to this vault as postgres-connection."
+  type        = string
+  sensitive   = true
+}
+
+variable "storage_connection_string" {
+  description = "Primary storage connection string for this environment (modules/storage primary_connection_string). Written to this vault as storage-connection."
+  type        = string
+  sensitive   = true
+}

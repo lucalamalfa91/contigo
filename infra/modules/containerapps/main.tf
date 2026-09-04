@@ -41,6 +41,18 @@ resource "azurerm_container_app" "api" {
     identity = var.workload_identity_id
   }
 
+  secret {
+    name                = "pg-cs"
+    key_vault_secret_id = var.postgres_connection_secret_id
+    identity            = var.workload_identity_id
+  }
+
+  secret {
+    name                = "st-cs"
+    key_vault_secret_id = var.storage_connection_secret_id
+    identity            = var.workload_identity_id
+  }
+
   template {
     min_replicas = 0
     max_replicas = 1
@@ -50,6 +62,26 @@ resource "azurerm_container_app" "api" {
       image  = var.container_image
       cpu    = var.cpu
       memory = var.memory
+
+      env {
+        name        = "ConnectionStrings__IdentityWorkspace"
+        secret_name = "pg-cs"
+      }
+
+      env {
+        name        = "ConnectionStrings__DocumentsContracts"
+        secret_name = "pg-cs"
+      }
+
+      env {
+        name        = "ConnectionStrings__Audit"
+        secret_name = "pg-cs"
+      }
+
+      env {
+        name        = "ConnectionStrings__Storage"
+        secret_name = "st-cs"
+      }
     }
   }
 
@@ -60,6 +92,13 @@ resource "azurerm_container_app" "api" {
     traffic_weight {
       percentage      = 100
       latest_revision = true
+    }
+
+    cors {
+      allowed_origins           = ["https://${var.spa_host_name}"]
+      allowed_methods           = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+      allowed_headers           = ["*"]
+      allow_credentials_enabled = false
     }
   }
 
@@ -91,6 +130,12 @@ resource "azurerm_container_app" "worker" {
     identity = var.workload_identity_id
   }
 
+  secret {
+    name                = "pg-cs"
+    key_vault_secret_id = var.postgres_connection_secret_id
+    identity            = var.workload_identity_id
+  }
+
   template {
     min_replicas = 0
     max_replicas = 1
@@ -100,6 +145,16 @@ resource "azurerm_container_app" "worker" {
       image  = var.container_image
       cpu    = var.cpu
       memory = var.memory
+
+      env {
+        name        = "ConnectionStrings__DocumentsContracts"
+        secret_name = "pg-cs"
+      }
+
+      env {
+        name        = "ConnectionStrings__Audit"
+        secret_name = "pg-cs"
+      }
     }
   }
 

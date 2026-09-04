@@ -21,3 +21,9 @@ output "primary_queue_endpoint" {
   description = "Primary Queue service endpoint (lightweight inbox/dead-letter queue)."
   value       = azurerm_storage_account.this.primary_queue_endpoint
 }
+
+output "primary_connection_string" {
+  description = "Primary connection string for blob/queue. Written to this environment's Key Vault; never re-exported from the env root (ADR-007/ADR-011)."
+  value       = azurerm_storage_account.this.primary_connection_string
+  sensitive   = true
+}

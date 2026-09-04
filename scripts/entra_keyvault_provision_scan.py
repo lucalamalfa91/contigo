@@ -355,20 +355,24 @@ def check_keyvault_role_assignment(keyvault_dir: Path = KEYVAULT_DIR) -> tuple:
         return False, "modules/keyvault/main.tf does not exist"
     text = _strip_line_comments(path.read_text(encoding="utf-8"))
     names = find_resource_names_of_type(text, "azurerm_role_assignment")
-    if not names:
-        return False, "modules/keyvault/main.tf has no azurerm_role_assignment resource"
+    if "workload_secrets_user" not in names:
+        return False, 'modules/keyvault/main.tf has no azurerm_role_assignment.workload_secrets_user'
     problems = []
     for name in names:
         body = find_resource_block(text, "azurerm_role_assignment", name)
         scope = find_attr(body, "scope")
-        role = find_attr(body, "role_definition_name")
-        principal = find_attr(body, "principal_id")
         if scope != "azurerm_key_vault.this.id":
             problems.append(f"{name}.scope={scope!r}, expected 'azurerm_key_vault.this.id' (this module's own vault only)")
-        if role != '"Key Vault Secrets User"':
-            problems.append(f"{name}.role_definition_name={role!r}, expected '\"Key Vault Secrets User\"'")
-        if principal != "var.workload_principal_id":
-            problems.append(f"{name}.principal_id={principal!r}, expected 'var.workload_principal_id' (never a literal)")
+        # Additional assignments (e.g. deployer Secrets Officer so apply can
+        # write connection-string secrets) are allowed, but every grant must
+        # stay on this vault. The workload grant itself is the T01 contract.
+        if name == "workload_secrets_user":
+            role = find_attr(body, "role_definition_name")
+            principal = find_attr(body, "principal_id")
+            if role != '"Key Vault Secrets User"':
+                problems.append(f"{name}.role_definition_name={role!r}, expected '\"Key Vault Secrets User\"'")
+            if principal != "var.workload_principal_id":
+                problems.append(f"{name}.principal_id={principal!r}, expected 'var.workload_principal_id' (never a literal)")
     if problems:
         return False, "; ".join(problems)
     return True, (

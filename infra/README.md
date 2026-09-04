@@ -97,10 +97,23 @@ only on that path); the first demo apply is a HCP UI **New run** or a
 | ACR | `acrcontigo<env><6-char suffix>` (suffix is state-held) |
 | Static Web App | `swa-contigo-<env>` (Free SKU; resource location **West US 2**) |
 
-Container Apps currently boot from the placeholder image
+Container Apps boot from the placeholder image
 `mcr.microsoft.com/k8se/quickstart:latest` until the backend deploy job
 pushes `contigo-api:<sha>` / `contigo-worker:<sha>` and updates the apps.
-Ingress target port is `8080`.
+`lifecycle.ignore_changes` on the container image keeps a later apply from
+reverting a live revision to that placeholder. Ingress target port is `8080`.
+The API ingress CORS origin is this environment's Static Web App
+(`https://<swa-host>`).
+
+Connection strings (Postgres `contigo_<env>`, Storage) are written to this
+environment's Key Vault and referenced from the Container Apps as
+`secret { key_vault_secret_id }` using the workload identity (ADR-011).
+They are never literals in `.tf` source and are not re-exported from the
+env-root outputs.
+
+Postgres allows Azure services (`0.0.0.0-0.0.0.0`) so Container Apps in
+this subscription can reach the public endpoint. Private-endpoint wiring
+through `modules/network` is later work.
 
 ## Known gaps
 
@@ -109,11 +122,14 @@ Ingress target port is `8080`.
   attaches `registry { server, identity }` so API/worker pull without an
   admin password. Confirm the HCP VCS apply on `contigo-dev` /
   `contigo-demo` before the next `az containerapp update`, or pulls 401.
+- **First apply after the Key Vault / database wiring may need imports**
+  for resources created out of band on the live `dev`/`demo` apps: the
+  `AllowAzureServices` firewall rule, the `contigo_<env>` database, and
+  an existing `AcrPull` role assignment. HCP apply will otherwise fail
+  with "already exists".
 - **Static Web Apps region.** `Microsoft.Web/staticSites` is not offered in
   North Europe; West Europe is ineligible on this tenant. The module
   defaults to West US 2. Static assets are a global CDN; that region only
   hosts managed Functions / staging, which we disable.
-- **Postgres public access**, firewalled closed by default; private-endpoint
-  wiring through `modules/network` is later work.
 - **GHA `terraform plan` on push to `main`** is redundant with the HCP VCS
   run. Ignore/discard the CLI plan; the VCS run is authoritative.
