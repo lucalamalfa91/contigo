@@ -21,5 +21,14 @@ public sealed class Obligation : TenantScopedEntity
     public string? Status { get; set; }
     public double? Confidence { get; set; }
 
+    /// <summary>Page/section evidence pointer (Appendix C rule 2), mirroring
+    /// <see cref="Clause.SourceSpan"/>/<see cref="Clause.SourcePage"/> — <see cref="SourceDocumentId"/>
+    /// alone names which document, not where in it.</summary>
+    public string? SourceSpan { get; set; }
+    public int? SourcePage { get; set; }
+
     public required DateTimeOffset CreatedAt { get; set; }
+
+    /// <summary>Optimistic-concurrency guard — see <see cref="Contract.Version"/>.</summary>
+    public int Version { get; set; } = 1;
 }

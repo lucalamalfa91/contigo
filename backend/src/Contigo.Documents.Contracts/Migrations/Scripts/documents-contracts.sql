@@ -602,3 +602,140 @@ BEGIN
 END $EF$;
 COMMIT;
 
+START TRANSACTION;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904133500_AddEvidenceConfidenceVersionColumns') THEN
+    ALTER TABLE risk ADD source_document_id uuid;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904133500_AddEvidenceConfidenceVersionColumns') THEN
+    ALTER TABLE risk ADD source_page integer;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904133500_AddEvidenceConfidenceVersionColumns') THEN
+    ALTER TABLE risk ADD source_span character varying(500);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904133500_AddEvidenceConfidenceVersionColumns') THEN
+    ALTER TABLE risk ADD version integer NOT NULL DEFAULT 1;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904133500_AddEvidenceConfidenceVersionColumns') THEN
+    ALTER TABLE obligation ADD source_page integer;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904133500_AddEvidenceConfidenceVersionColumns') THEN
+    ALTER TABLE obligation ADD source_span character varying(500);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904133500_AddEvidenceConfidenceVersionColumns') THEN
+    ALTER TABLE obligation ADD version integer NOT NULL DEFAULT 1;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904133500_AddEvidenceConfidenceVersionColumns') THEN
+    ALTER TABLE contract_line_item ADD confidence double precision;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904133500_AddEvidenceConfidenceVersionColumns') THEN
+    ALTER TABLE contract_line_item ADD source_document_id uuid;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904133500_AddEvidenceConfidenceVersionColumns') THEN
+    ALTER TABLE contract_line_item ADD source_page integer;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904133500_AddEvidenceConfidenceVersionColumns') THEN
+    ALTER TABLE contract_line_item ADD source_span character varying(500);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904133500_AddEvidenceConfidenceVersionColumns') THEN
+    ALTER TABLE contract_line_item ADD version integer NOT NULL DEFAULT 1;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904133500_AddEvidenceConfidenceVersionColumns') THEN
+    ALTER TABLE contract ADD version integer NOT NULL DEFAULT 1;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904133500_AddEvidenceConfidenceVersionColumns') THEN
+    ALTER TABLE clause ADD version integer NOT NULL DEFAULT 1;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904133500_AddEvidenceConfidenceVersionColumns') THEN
+    CREATE INDEX ix_risk_source_document_id ON risk (source_document_id);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904133500_AddEvidenceConfidenceVersionColumns') THEN
+    CREATE INDEX ix_contract_line_item_source_document_id ON contract_line_item (source_document_id);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904133500_AddEvidenceConfidenceVersionColumns') THEN
+    ALTER TABLE contract_line_item ADD CONSTRAINT fk_contract_line_item_document_source_document_id FOREIGN KEY (source_document_id) REFERENCES document (id) ON DELETE RESTRICT;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904133500_AddEvidenceConfidenceVersionColumns') THEN
+    ALTER TABLE risk ADD CONSTRAINT fk_risk_document_source_document_id FOREIGN KEY (source_document_id) REFERENCES document (id) ON DELETE RESTRICT;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904133500_AddEvidenceConfidenceVersionColumns') THEN
+    INSERT INTO "__EFMigrationsHistory" (migration_id, product_version)
+    VALUES ('20260904133500_AddEvidenceConfidenceVersionColumns', '10.0.4');
+    END IF;
+END $EF$;
+COMMIT;
+

@@ -23,4 +23,7 @@ public sealed class Clause : TenantScopedEntity
     public double? Confidence { get; set; }
 
     public required DateTimeOffset CreatedAt { get; set; }
+
+    /// <summary>Optimistic-concurrency guard — see <see cref="Contract.Version"/>.</summary>
+    public int Version { get; set; } = 1;
 }
