@@ -104,11 +104,11 @@ Ingress target port is `8080`.
 
 ## Known gaps
 
-- **AcrPull is not in Terraform.** ACR has `admin_enabled = false`; the
-  workload identity is not yet granted `AcrPull`, and the Container Apps
-  `registry {}` block is not wired. Until a module change lands, pull
-  identity must be granted out of band (`az role assignment` +
-  `az containerapp registry set`) or image pull 403s.
+- **AcrPull is in Terraform.** `modules/acr` grants this env's workload
+  identity `AcrPull` on that env's registry only. `modules/containerapps`
+  attaches `registry { server, identity }` so API/worker pull without an
+  admin password. Confirm the HCP VCS apply on `contigo-dev` /
+  `contigo-demo` before the next `az containerapp update`, or pulls 401.
 - **Static Web Apps region.** `Microsoft.Web/staticSites` is not offered in
   North Europe; West Europe is ineligible on this tenant. The module
   defaults to West US 2. Static assets are a global CDN; that region only

@@ -36,6 +36,11 @@ resource "azurerm_container_app" "api" {
     identity_ids = [var.workload_identity_id]
   }
 
+  registry {
+    server   = var.acr_login_server
+    identity = var.workload_identity_id
+  }
+
   template {
     min_replicas = 0
     max_replicas = 1
@@ -59,6 +64,12 @@ resource "azurerm_container_app" "api" {
   }
 
   tags = local.tags
+
+  # CI (`backend.yml`) owns the image tag after the first `az acr build`.
+  # Do not let a later HCP apply revert API/worker to the MCR placeholder.
+  lifecycle {
+    ignore_changes = [template[0].container[0].image]
+  }
 }
 
 resource "azurerm_container_app" "worker" {
@@ -75,6 +86,11 @@ resource "azurerm_container_app" "worker" {
     identity_ids = [var.workload_identity_id]
   }
 
+  registry {
+    server   = var.acr_login_server
+    identity = var.workload_identity_id
+  }
+
   template {
     min_replicas = 0
     max_replicas = 1
@@ -88,4 +104,8 @@ resource "azurerm_container_app" "worker" {
   }
 
   tags = local.tags
+
+  lifecycle {
+    ignore_changes = [template[0].container[0].image]
+  }
 }

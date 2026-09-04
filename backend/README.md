@@ -303,8 +303,10 @@ Images are tagged with `github.sha`. Container Apps listen on **8080**
 environment variables (`ConnectionStrings__IdentityWorkspace`,
 `DocumentsContracts`, `Audit`, `Storage`) — never committed.
 
-Image pull requires AcrPull on the workload identity; that grant is not
-yet in Terraform — see [`infra/README.md`](../infra/README.md) known gaps.
+Image pull uses this environment's workload identity (`AcrPull` on
+`modules/acr`, `registry {}` on `modules/containerapps`). Confirm the
+HCP VCS apply on `contigo-<env>` before the first `az containerapp update`
+to that registry, or the revision fails with ACR `UNAUTHORIZED`.
 
 ## Dependency direction (ADR-002)
 
