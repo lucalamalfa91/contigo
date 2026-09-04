@@ -17,7 +17,8 @@ namespace Contigo.Documents.Contracts.Infrastructure;
 /// first endpoint is task E01/F06/US01/T01's <c>POST /api/documents</c>, wired via
 /// <see cref="DocumentUploadService"/>, registered here alongside the DbContext. Task
 /// E01/F06/US01/T02's <c>GET /api/documents/{id}</c> reuses the same DbContext registration and
-/// adds <see cref="DocumentQueryService"/> alongside it.
+/// adds <see cref="DocumentQueryService"/> alongside it. Task E02/F03/US01/T01's
+/// <c>GET /api/contracts</c> reuses it again and adds <see cref="PortfolioQueryService"/>.
 /// </summary>
 public static class ServiceCollectionExtensions
 {
@@ -38,6 +39,7 @@ public static class ServiceCollectionExtensions
         // above) rather than a second, independently-tracked context.
         services.AddScoped<DocumentUploadService>();
         services.AddScoped<DocumentQueryService>();
+        services.AddScoped<PortfolioQueryService>();
 
         return services;
     }

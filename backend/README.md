@@ -75,10 +75,12 @@ RLS policies are added in those migrations, not in Terraform.
 | POST | `/api/documents` | multipart `file` + `X-Tenant-Id` header |
 | GET | `/api/documents/{id}` | metadata/status; same header |
 | GET | `/api/audit` | tenant-scoped; expects a claims principal (integration tests inject one) |
+| GET | `/api/contracts` | portfolio list; spec §8.1 columns; `X-Tenant-Id` header; optional filters `supplierId`, `status`, `risk` (Low/Medium/High/Critical), `autoRenewal`, `minAnnualSpend`, `maxAnnualSpend`, `renewalFrom`/`renewalTo` (yyyy-MM-dd) — no `category` filter yet, see `PortfolioFilter`'s doc comment |
 
-**Interim auth:** document upload/read take the tenant from `X-Tenant-Id`,
-not from a validated JWT. ADR-010 (Entra ID / OIDC on the API) is not
-wired in the host yet. Do not treat the header as the long-term contract.
+**Interim auth:** document upload/read and the portfolio list take the
+tenant from `X-Tenant-Id`, not from a validated JWT. ADR-010 (Entra ID /
+OIDC on the API) is not wired in the host yet. Do not treat the header as
+the long-term contract.
 
 The web client generates TypeScript types from
 `web/openapi/contigo-api.v1.json`. The API does **not** yet self-publish
