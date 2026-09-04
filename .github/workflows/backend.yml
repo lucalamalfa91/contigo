@@ -139,6 +139,29 @@ jobs:
             --file backend/src/Contigo.Worker/Dockerfile \
             backend
 
+      # Container Apps pull from this env's ACR with the workload identity
+      # (AcrPull + registry {} from modules/acr and modules/containerapps).
+      # Bind the registry on the app before rolling the image so a promote
+      # to demo does not 401 if HCP applied the role but the registry
+      # attachment is not yet on the revision.
+      - name: Attach ACR pull identity to Container Apps
+        run: |
+          set -euo pipefail
+          UAI_NAME="id-contigo-${TARGET_ENVIRONMENT}-workload"
+          UAI_ID=$(az identity show --name "$UAI_NAME" --resource-group "$RESOURCE_GROUP" --query id -o tsv)
+          HCP_RUNS="https://app.terraform.io/app/contigo-platform/workspaces/contigo-${TARGET_ENVIRONMENT}/runs"
+          if [[ -z "$UAI_ID" ]]; then
+            echo "::error::could not resolve $UAI_NAME in $RESOURCE_GROUP. Confirm the HCP VCS apply at $HCP_RUNS, then re-run this job."
+            exit 1
+          fi
+          for APP in api worker; do
+            az containerapp registry set \
+              --name "ca-contigo-${TARGET_ENVIRONMENT}-${APP}" \
+              --resource-group "$RESOURCE_GROUP" \
+              --server "$ACR_LOGIN_SERVER" \
+              --identity "$UAI_ID"
+          done
+
       # Container App names are fixed by infra/modules/containerapps
       # ("ca-contigo-<env>-api" / "-worker"); no random suffix, safe to
       # compose here from TARGET_ENVIRONMENT.

@@ -113,6 +113,7 @@ module "containerapps" {
   # instance only -- never demo's -- so the API/worker Container Apps can
   # only ever present dev's workload identity.
   workload_identity_id = module.identity.workload_identity_id
+  acr_login_server     = module.acr.login_server
 }
 
 module "keyvault" {
@@ -132,6 +133,9 @@ module "acr" {
   environment         = local.environment
   location            = var.location
   resource_group_name = azurerm_resource_group.this.name
+  # This root's OWN identity only -- never demo's -- so AcrPull cannot
+  # pull images from the other environment's registry.
+  workload_principal_id = module.identity.workload_principal_id
 }
 
 module "monitor" {
