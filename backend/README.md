@@ -109,8 +109,12 @@ here yet, and `QueueConsumerHostedService` still never dispatches a
 received message to a domain handler. Extraction runs synchronously inside
 `Contigo.Api`'s `POST /api/documents` today instead (`DocumentProcessingPipeline`,
 above) — not through this Worker — a documented interim choice pending a
-real durable-queue producer/consumer pair. Renewal / benchmark / quote
-handlers land with those features.
+real durable-queue producer/consumer pair. Benchmark / quote handlers land
+with those features; renewal threshold scheduling (task E03/F02/US01/T01)
+is the first of the four `13.3 Background jobs` categories this host
+actually runs — see "Renewal threshold scheduler" above for
+`RenewalThresholdSchedulerHostedService` and its own honest gap (no real
+cross-tenant contract source wired yet).
 
 ## AI Gateway
 
@@ -295,6 +299,11 @@ out of this task's file scope:
    sequencing `AddChatModule` followed before `Contigo.Chat` had one (see
    that section above).
 2. `Contract` has no persisted `CancellationNoticeDays` column — its "dates"
+not the real `Contract` entity). One of the two gaps this section used to
+describe is now closed (see "Renewal threshold scheduler" below); the other
+remains, deliberately out of that task's file scope too:
+
+1. `Contract` has no persisted `CancellationNoticeDays` column — its "dates"
    extraction stage (`StagedExtractionService.ApplyDatesFact`) still writes
    a raw `cancellationDeadline` date directly from extraction instead of a
    notice-period day count (product spec §7.3's own extraction-evidence
@@ -361,6 +370,45 @@ re-derivation of the formula.
 registers `RenewalEngine` — no constructor dependencies at all, so it needs
 no `IClock`. Like `RenewalEngine`, no host endpoint or worker job calls it
 yet.
+### Renewal threshold scheduler
+
+`Contigo.Renewals.Application.RenewalThresholdScheduler` (task
+E03/F02/US01/T01, us-01-threshold-scheduler AC-1/AC-2) is product spec
+§9.1's "daily scheduler ... emit threshold events if applicable" made
+concrete: it runs `RenewalEngine.CalculateMany` over a tenant's
+`ContractRenewalTerms`, then checks each result's `DaysUntilRenewal`/
+`DaysUntilCancellationDeadline` against `Contigo.Renewals.Configuration
+.ThresholdWindowOptions.DaysBeforeDeadline` (config section
+`Renewals:Thresholds`, default 365/270/180/120/90/60/30 days — AC-1,
+"configurable"). An exact day-count match raises a `RenewalApproachingEvent`
+(`RenewalMilestoneKind.RenewalDate` or `.CancellationDeadline` — a contract
+can raise one, both, or neither on a given run) and writes it through
+`IAuditWriter` as one `renewal.approaching` entry (spec Appendix B; same
+"an audit entry is this codebase's actual event mechanism" convention as
+`document.uploaded`/`contract.corrected` — no in-process mediator exists
+yet, and picking one is council-owned, not this task's call) — durable and
+queryable via `GET /api/audit` even before a real consumer exists.
+
+`Contigo.Worker.Scheduling.RenewalThresholdSchedulerHostedService` is this
+module's first real host caller: `WorkerServiceCollectionExtensions
+.AddWorkerHost` now calls `AddRenewalsModule` (closing gap 1 that used to
+be listed above) and registers this `BackgroundService`, which ticks every
+`Worker:RenewalThresholdScheduler:Interval` (default 24h) and, per tenant
+batch, calls `RenewalThresholdScheduler.EvaluateThresholdsAsync` from a
+fresh DI scope (it must be Scoped, not injected directly into the Singleton
+hosted service — it depends on the Scoped `IAuditWriter`). Honest gap: its
+`IActiveRenewalContractsSource` port has no real implementation yet — the
+default `NoActiveRenewalContractsSource` always returns zero tenants.
+Enumerating every tenant's active contracts needs a cross-tenant workspace
+listing (`Contigo.Identity.Workspace`, not referenced by `Contigo.Worker`
+today) plus a per-tenant RLS-scoped contract query
+(`Contigo.Documents.Contracts`) — wiring a real adapter is follow-up
+composition work, the same category of gap this section's remaining item
+above describes. The timer loop itself is real and proven end to end
+(`Contigo.Worker.Tests.RenewalThresholdSchedulerHostedServiceTests`); AC-3
+("Scheduler recomputes when a contract/term is corrected") is parent story
+task-02's scope ("Alert creation + re-compute on correction"), not this
+task's.
 
 ## R1 demo smoke test
 

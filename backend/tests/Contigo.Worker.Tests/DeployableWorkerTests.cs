@@ -1,6 +1,8 @@
 using Contigo.Documents.Contracts.Infrastructure;
+using Contigo.Renewals.Application;
 using Contigo.SharedKernel.Tenancy;
 using Contigo.Worker.Queue;
+using Contigo.Worker.Scheduling;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -60,6 +62,34 @@ public sealed class DeployableWorkerTests
         var hostedServices = host.Services.GetServices<IHostedService>();
 
         Assert.Contains(hostedServices, service => service is QueueConsumerHostedService);
+    }
+
+    [Fact]
+    public void Host_composes_the_renewals_module_into_di()
+    {
+        using var host = BuildHost();
+        using var scope = host.Services.CreateScope();
+
+        // Task E03/F02/US01/T01 (threshold-scheduler): AddWorkerHost now calls AddRenewalsModule
+        // for real (RenewalEngine's own doc comment named this task as one of the first host
+        // callers) — resolve the Scoped RenewalThresholdScheduler out of the worker's own real
+        // service provider, proving it has no captive/unresolvable dependency (it needs
+        // IAuditWriter, which AddAuditModule above must have already registered).
+        var scheduler = scope.ServiceProvider.GetRequiredService<RenewalThresholdScheduler>();
+
+        Assert.NotNull(scheduler);
+    }
+
+    [Fact]
+    public void Host_registers_the_renewal_threshold_scheduler_hosted_service()
+    {
+        using var host = BuildHost();
+
+        // Parent story us-01-threshold-scheduler: "a daily scheduler" — a hosted service is
+        // actually registered to drive it, not just RenewalThresholdScheduler sitting unused.
+        var hostedServices = host.Services.GetServices<IHostedService>();
+
+        Assert.Contains(hostedServices, service => service is RenewalThresholdSchedulerHostedService);
     }
 
     [Fact]
