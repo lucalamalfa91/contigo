@@ -73,6 +73,22 @@ public sealed class ContractCorrectionServiceTests : IAsyncLifetime
         public DateTimeOffset UtcNow => now;
     }
 
+    /// <summary>Fake <see cref="IAuditWriter"/> that records every entry written — same shape and
+    /// name as <c>Contigo.Documents.Contracts.Tests.DocumentUploadServiceTests.RecordingAuditWriter</c>
+    /// (task E02/F05/US01/T02, correction-audit): a lightweight in-memory spy is enough to prove
+    /// <see cref="ContractCorrectionService.CorrectAsync"/> writes the right entry without standing
+    /// up a real Postgres-backed <c>Contigo.Audit.Infrastructure.AuditWriter</c>.</summary>
+    private sealed class RecordingAuditWriter : IAuditWriter
+    {
+        public List<AuditEntry> Written { get; } = [];
+
+        public Task WriteAsync(AuditEntry entry, CancellationToken cancellationToken = default)
+        {
+            Written.Add(entry);
+            return Task.CompletedTask;
+        }
+    }
+
     /// <summary>Seeds a <see cref="Contract"/> row directly — this module has no "create
     /// contract" writer yet (that is the extraction pipeline's job, out of this task's scope); a
     /// directly-seeded row stands in for "whatever the AI extraction originally wrote", which is
@@ -125,7 +141,8 @@ public sealed class ContractCorrectionServiceTests : IAsyncLifetime
         }
 
         await using var db = CreateAppContext(tenantContext);
-        var service = new ContractCorrectionService(db, tenantContext, new FixedClock(now));
+        var auditWriter = new RecordingAuditWriter();
+        var service = new ContractCorrectionService(db, tenantContext, new FixedClock(now), auditWriter);
 
         var result = await service.CorrectAsync(
             tenantId,
@@ -137,6 +154,19 @@ public sealed class ContractCorrectionServiceTests : IAsyncLifetime
         Assert.Equal(2, result.Value.VersionNumber);
         Assert.Equal(["annualSpend"], result.Value.CorrectedFields);
         Assert.Equal(now, result.Value.CorrectedAt);
+
+        // Task E02/F05/US01/T02 (correction-audit): exactly one audit entry, for this tenant,
+        // this contract, this action.
+        var auditEntry = Assert.Single(auditWriter.Written);
+        var auditDetail = auditEntry.Detail ?? throw new InvalidOperationException("expected Detail to be set");
+        Assert.Equal(tenantId, auditEntry.TenantId);
+        Assert.Equal("contract.corrected", auditEntry.Action);
+        Assert.Equal("contract", auditEntry.ResourceType);
+        Assert.Equal(contractId.Value.ToString(), auditEntry.ResourceId);
+        Assert.Equal(now, auditEntry.Timestamp);
+        Assert.Contains("versionNumber=2", auditDetail, StringComparison.Ordinal);
+        Assert.Contains("correctedFields=annualSpend", auditDetail, StringComparison.Ordinal);
+        Assert.Contains("reason=Corrected misread OCR amount", auditDetail, StringComparison.Ordinal);
 
         using (tenantContext.BeginScope(tenantId))
         {
@@ -184,9 +214,11 @@ public sealed class ContractCorrectionServiceTests : IAsyncLifetime
             contractId = await SeedContractAsync(seedDb, tenantId, now.AddDays(-1));
         }
 
+        var auditWriter = new RecordingAuditWriter();
+
         await using (var db = CreateAppContext(tenantContext))
         {
-            var service = new ContractCorrectionService(db, tenantContext, new FixedClock(now));
+            var service = new ContractCorrectionService(db, tenantContext, new FixedClock(now), auditWriter);
             var first = await service.CorrectAsync(
                 tenantId, contractId, new Dictionary<string, string?> { ["status"] = "active" }, "First fix");
             Assert.True(first.IsSuccess);
@@ -195,12 +227,20 @@ public sealed class ContractCorrectionServiceTests : IAsyncLifetime
 
         await using (var db = CreateAppContext(tenantContext))
         {
-            var service = new ContractCorrectionService(db, tenantContext, new FixedClock(now.AddHours(1)));
+            var service = new ContractCorrectionService(db, tenantContext, new FixedClock(now.AddHours(1)), auditWriter);
             var second = await service.CorrectAsync(
                 tenantId, contractId, new Dictionary<string, string?> { ["status"] = "expired" }, "Second fix");
             Assert.True(second.IsSuccess);
             Assert.Equal(3, second.Value.VersionNumber);
         }
+
+        // Task E02/F05/US01/T02 (correction-audit): one audit entry per correction call, not one
+        // per changed field and not a single entry shared across both requests.
+        Assert.Equal(2, auditWriter.Written.Count);
+        Assert.Equal("contract.corrected", auditWriter.Written[0].Action);
+        Assert.Equal(now, auditWriter.Written[0].Timestamp);
+        Assert.Equal("contract.corrected", auditWriter.Written[1].Action);
+        Assert.Equal(now.AddHours(1), auditWriter.Written[1].Timestamp);
 
         using (tenantContext.BeginScope(tenantId))
         {
@@ -242,7 +282,8 @@ public sealed class ContractCorrectionServiceTests : IAsyncLifetime
         }
 
         await using var db = CreateAppContext(tenantContext);
-        var service = new ContractCorrectionService(db, tenantContext, new FixedClock(now));
+        var auditWriter = new RecordingAuditWriter();
+        var service = new ContractCorrectionService(db, tenantContext, new FixedClock(now), auditWriter);
 
         // 'status' alone would be a valid, genuine change; 'startDate' is garbage. The whole
         // request must fail — including the field that would otherwise have been valid alone.
@@ -253,6 +294,7 @@ public sealed class ContractCorrectionServiceTests : IAsyncLifetime
             reason: null);
 
         Assert.True(result.IsFailure);
+        Assert.Empty(auditWriter.Written);
 
         using (tenantContext.BeginScope(tenantId))
         {
@@ -282,13 +324,15 @@ public sealed class ContractCorrectionServiceTests : IAsyncLifetime
         }
 
         await using var db = CreateAppContext(tenantContext);
-        var service = new ContractCorrectionService(db, tenantContext, new FixedClock(now));
+        var auditWriter = new RecordingAuditWriter();
+        var service = new ContractCorrectionService(db, tenantContext, new FixedClock(now), auditWriter);
 
         var result = await service.CorrectAsync(
             tenantId, contractId, new Dictionary<string, string?> { ["notAField"] = "x" }, reason: null);
 
         Assert.True(result.IsFailure);
         Assert.Contains("notAField", result.Error);
+        Assert.Empty(auditWriter.Written);
 
         using (tenantContext.BeginScope(tenantId))
         {
@@ -312,7 +356,8 @@ public sealed class ContractCorrectionServiceTests : IAsyncLifetime
         }
 
         await using var db = CreateAppContext(tenantContext);
-        var service = new ContractCorrectionService(db, tenantContext, new FixedClock(now));
+        var auditWriter = new RecordingAuditWriter();
+        var service = new ContractCorrectionService(db, tenantContext, new FixedClock(now), auditWriter);
 
         var result = await service.CorrectAsync(
             tenantId,
@@ -321,6 +366,7 @@ public sealed class ContractCorrectionServiceTests : IAsyncLifetime
             reason: null);
 
         Assert.True(result.IsFailure);
+        Assert.Empty(auditWriter.Written);
 
         using (tenantContext.BeginScope(tenantId))
         {
@@ -338,13 +384,15 @@ public sealed class ContractCorrectionServiceTests : IAsyncLifetime
         var tenantId = TenantId.New();
         var tenantContext = new TenantContext();
         await using var db = CreateAppContext(tenantContext);
-        var service = new ContractCorrectionService(db, tenantContext, new FixedClock(DateTimeOffset.UtcNow));
+        var auditWriter = new RecordingAuditWriter();
+        var service = new ContractCorrectionService(db, tenantContext, new FixedClock(DateTimeOffset.UtcNow), auditWriter);
 
         var result = await service.CorrectAsync(
             tenantId, EntityId.New(), new Dictionary<string, string?> { ["status"] = "active" }, reason: null);
 
         Assert.True(result.IsFailure);
         Assert.Equal(ContractCorrectionService.ContractNotFoundError, result.Error);
+        Assert.Empty(auditWriter.Written);
     }
 
     [Fact]
@@ -363,7 +411,8 @@ public sealed class ContractCorrectionServiceTests : IAsyncLifetime
         }
 
         await using var db = CreateAppContext(tenantContext);
-        var service = new ContractCorrectionService(db, tenantContext, new FixedClock(now));
+        var auditWriter = new RecordingAuditWriter();
+        var service = new ContractCorrectionService(db, tenantContext, new FixedClock(now), auditWriter);
 
         // ADR-009: tenant B's request scopes the connection to tenant B; tenant A's row genuinely
         // exists (seeded above) but must be invisible — both the app-level tenant predicate and
@@ -374,5 +423,6 @@ public sealed class ContractCorrectionServiceTests : IAsyncLifetime
 
         Assert.True(result.IsFailure);
         Assert.Equal(ContractCorrectionService.ContractNotFoundError, result.Error);
+        Assert.Empty(auditWriter.Written);
     }
 }

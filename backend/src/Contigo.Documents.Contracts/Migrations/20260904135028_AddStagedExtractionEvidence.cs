@@ -53,6 +53,23 @@ namespace Contigo.Documents.Contracts.Migrations
     /// `dotnet ef migrations script --idempotent` (was itself corrupted by the same merge —
     /// mismatched `IF`/`END IF` nesting from interleaving two independently-generated script
     /// halves).
+    /// Does <em>not</em> also add source-span/page/confidence evidence columns to the pre-existing
+    /// <c>risk</c>/<c>obligation</c>/<c>contract_line_item</c> tables, even though this task's own
+    /// domain-model change (<c>Domain.Risk</c>/<c>Domain.Obligation</c>/
+    /// <c>Domain.ContractLineItem</c>) added exactly those properties: the concurrently-developed
+    /// task E02/F02/US01/T02 (contract-evidence-schema) added the identical columns to the same
+    /// three tables one migration earlier, in <c>AddEvidenceConfidenceVersionColumns</c> — both
+    /// tasks branched before either's change existed, so each authored its own copy independently.
+    /// Fan-out merged both migration files (each is a distinct, uniquely-timestamped file, so
+    /// there was nothing for the merge itself to flag), which left this migration's <c>Up()</c>
+    /// re-issuing <c>AddColumn</c> for columns <c>AddEvidenceConfidenceVersionColumns</c> already
+    /// created — fatal ("column already exists") against any database that applies migrations in
+    /// order, i.e. every database, since EF Core never applies a later migration before an earlier
+    /// pending one. The de-duplicated result the domain model and
+    /// <c>DocumentsContractsDbContextModelSnapshot</c> already agree on (one <c>SourceSpan</c>/
+    /// <c>SourcePage</c>/<c>Confidence</c> per entity) is unaffected — removing the duplicate
+    /// <c>AddColumn</c> calls here does not change the final schema, only how many times it is
+    /// (attempted to be) created.
     /// </summary>
     public partial class AddStagedExtractionEvidence : Migration
     {
