@@ -15,6 +15,7 @@
     <Project Path="src/Contigo.Worker/Contigo.Worker.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Contigo.AiGateway.Tests/Contigo.AiGateway.Tests.csproj" />
     <Project Path="tests/Contigo.Api.Tests/Contigo.Api.Tests.csproj" />
     <Project Path="tests/Contigo.ArchitectureTests/Contigo.ArchitectureTests.csproj" />
     <Project Path="tests/Contigo.Audit.Tests/Contigo.Audit.Tests.csproj" />
