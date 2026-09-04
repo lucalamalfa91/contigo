@@ -13,12 +13,14 @@ on:
       - "web/**"
       - ".github/workflows/web.yml"
       - ".github/actions/azure-login/**"
+      - "scripts/write_web_runtime_config.py"
   push:
     branches: [main]
     paths:
       - "web/**"
       - ".github/workflows/web.yml"
       - ".github/actions/azure-login/**"
+      - "scripts/write_web_runtime_config.py"
   # us-03's demo promotion workflow (ADR-016) reuses this deploy job by
   # calling it with target_environment: demo, under the demo CI identity
   # and demo Static Web App (ADR-015). dev and demo never share a resource
@@ -132,17 +134,63 @@ jobs:
       - name: Ensure staticwebapp CLI extension
         run: az extension add --name staticwebapp --upgrade -y
 
+      # ADR-012 "config, not code": the build job uploads one web-dist for
+      # both envs. Overwrite dist/config.json here with this environment's
+      # live (non-secret) API origin + OIDC values before swa-cli deploy.
+      - name: Write per-environment config.json
+        env:
+          TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+        run: |
+          set -euo pipefail
+          RG="rg-contigo-${TARGET_ENVIRONMENT}"
+          SWA_NAME="swa-contigo-${TARGET_ENVIRONMENT}"
+          API_NAME="ca-contigo-${TARGET_ENVIRONMENT}-api"
+          UAI_NAME="id-contigo-${TARGET_ENVIRONMENT}-workload"
+          HCP_RUNS="https://app.terraform.io/app/contigo-platform/workspaces/contigo-${TARGET_ENVIRONMENT}/runs"
+          if [[ ! -f web/dist/config.json ]]; then
+            echo "::error::web/dist/config.json is missing from the web-dist artifact"
+            exit 1
+          fi
+          if [[ -z "${TENANT_ID}" ]]; then
+            echo "::error::GitHub Environment variable AZURE_TENANT_ID is empty"
+            exit 1
+          fi
+          if ! az staticwebapp show --name "$SWA_NAME" --resource-group "$RG" >/dev/null 2>&1; then
+            echo "::error::$SWA_NAME was not found in $RG. Confirm the HCP VCS apply for workspace contigo-${TARGET_ENVIRONMENT} at $HCP_RUNS, wait until it is CURRENT, then re-run this job."
+            exit 1
+          fi
+          SWA_HOST=$(az staticwebapp show --name "$SWA_NAME" --resource-group "$RG" --query properties.defaultHostname -o tsv)
+          API_FQDN=$(az containerapp show --name "$API_NAME" --resource-group "$RG" --query properties.configuration.ingress.fqdn -o tsv)
+          CLIENT_ID=$(az identity show --name "$UAI_NAME" --resource-group "$RG" --query tags.oidcPublicClientId -o tsv)
+          if [[ -z "$SWA_HOST" || -z "$API_FQDN" ]]; then
+            echo "::error::could not resolve SWA hostname or API ingress FQDN in $RG. Confirm the HCP VCS apply at $HCP_RUNS, then re-run this job."
+            exit 1
+          fi
+          if [[ -z "$CLIENT_ID" ]]; then
+            echo "::error::$UAI_NAME is missing tag oidcPublicClientId. Confirm the HCP VCS apply at $HCP_RUNS (modules/identity tags the workload identity with the public-client app id), then re-run this job."
+            exit 1
+          fi
+          python3 scripts/write_web_runtime_config.py \
+            --out web/dist/config.json \
+            --api-base-url "https://${API_FQDN}" \
+            --oidc-authority "https://login.microsoftonline.com/${TENANT_ID}" \
+            --oidc-client-id "$CLIENT_ID" \
+            --oidc-redirect-uri "https://${SWA_HOST}/" \
+            --oidc-api-scope "api://contigo-${TARGET_ENVIRONMENT}-api/Contigo.Read" \
+            --oidc-api-scope "api://contigo-${TARGET_ENVIRONMENT}-api/Contigo.Write"
+
       - name: Deploy to Azure Static Web Apps
         run: |
           set -euo pipefail
           RG="rg-contigo-${TARGET_ENVIRONMENT}"
           SWA_NAME="swa-contigo-${TARGET_ENVIRONMENT}"
+          HCP_RUNS="https://app.terraform.io/app/contigo-platform/workspaces/contigo-${TARGET_ENVIRONMENT}/runs"
           DEPLOY_TOKEN=$(az staticwebapp secrets list \
             --name "$SWA_NAME" \
             --resource-group "$RG" \
             --query "properties.apiKey" -o tsv)
           if [ -z "$DEPLOY_TOKEN" ]; then
-            echo "::error::no deploy token for $SWA_NAME in $RG — wait for the HCP VCS apply that creates infra/modules/staticwebapp, then re-run this job"
+            echo "::error::no deploy token for $SWA_NAME in $RG — confirm the HCP VCS apply at $HCP_RUNS, then re-run this job"
             exit 1
           fi
           echo "::add-mask::$DEPLOY_TOKEN"

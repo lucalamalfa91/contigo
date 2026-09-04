@@ -93,7 +93,7 @@ only on that path); the first demo apply is a HCP UI **New run** or a
 | Postgres | `psql-contigo-<env>` (SKU `B_Standard_B1ms`; `lifecycle.ignore_changes = [zone]`) |
 | Container Apps Environment | `cae-contigo-<env>` |
 | API / worker apps | `ca-contigo-<env>-api` / `-worker` |
-| Workload identity | `id-contigo-<env>-workload` |
+| Workload identity | `id-contigo-<env>-workload` (tag `oidcPublicClientId` = public-client app id; `web.yml` reads it over ARM) |
 | ACR | `acrcontigo<env><6-char suffix>` (suffix is state-held) |
 | Static Web App | `swa-contigo-<env>` (Free SKU; resource location **West US 2**) |
 

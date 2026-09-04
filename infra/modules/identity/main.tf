@@ -38,7 +38,11 @@ resource "azurerm_user_assigned_identity" "workload" {
   location            = var.location
   resource_group_name = var.resource_group_name
 
-  tags = local.tags
+  # oidcPublicClientId is not secret (PKCE public client). web.yml reads it
+  # over ARM so the deploy job does not need Microsoft Graph (ADR-015).
+  tags = merge(local.tags, {
+    oidcPublicClientId = azuread_application.public_client.client_id
+  })
 }
 
 # Stable scope ids: azuread requires `oauth2_permission_scope.id` up front

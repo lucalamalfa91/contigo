@@ -47,29 +47,28 @@ environment after the shared build.
 `public/config.json` in this repo is a **local-dev-only placeholder** with
 safe, non-secret values (`https://localhost:7109` — the API's dev
 `launchSettings.json` port — and `REPLACE_WITH_*` OIDC placeholders). None of
-the three config values are secret by design: `client_id` and the redirect
-URI are public for a PKCE public client (ADR-010); the API base URL is not
-sensitive.
+the values are secret by design: `client_id` and the redirect URI are public
+for a PKCE public client (ADR-010); the API base URL is not sensitive.
 
-### Known gap: per-environment config injection in CI
+### Per-environment config injection in CI
 
-`web.yml`'s `deploy` job does not yet overwrite `config.json` in the
-downloaded `web-dist/` artifact with that environment's real values before
-the Static Web Apps deploy step. Until that lands, a real `dev`/`demo`
-deploy of this bundle would serve the checked-in localhost placeholder.
-Closing this is CI work: after `download-artifact`, write real
-`apiBaseUrl` / `oidcAuthority` / `oidcClientId` / `oidcRedirectUri` /
-`oidcApiScopes` (all non-secret) into `web-dist/config.json` before
-`swa-cli deploy`. `oidcRedirectUri` should match the SWA origin
-(`https://<default_host_name>/` — trailing slash required by Entra for
-origin-only SPA redirect URIs), which Terraform already registers on the
-public client.
+`web.yml`'s `deploy` job overwrites `web/dist/config.json` after
+`download-artifact` and before `swa-cli deploy`, using live Azure lookups
+(no GitHub Environment variables beyond the existing `AZURE_*` trio):
 
-The Static Web App itself is `swa-contigo-<env>` in `rg-contigo-<env>`
-(`infra/modules/staticwebapp`). `web.yml` composes that name; it does not
-read a GitHub Environment variable. Deploy will 404 the resource until the
-HCP VCS apply that creates it has finished — re-run the web workflow after
-that apply is CURRENT.
+| Field | Source |
+|-------|--------|
+| `apiBaseUrl` | Ingress FQDN of `ca-contigo-<env>-api` |
+| `oidcAuthority` | `https://login.microsoftonline.com/<AZURE_TENANT_ID>` (MSAL; no `/v2.0` suffix) |
+| `oidcClientId` | Tag `oidcPublicClientId` on `id-contigo-<env>-workload` (set by `modules/identity`) |
+| `oidcRedirectUri` | `https://<swa defaultHostname>/` (trailing slash; matches Entra SPA redirect) |
+| `oidcApiScopes` | `api://contigo-<env>-api/Contigo.Read` and `.../Contigo.Write` (stable App ID URI) |
+
+`scripts/write_web_runtime_config.py` validates the payload and refuses
+localhost / `REPLACE_WITH_*` placeholders. The Static Web App itself is
+`swa-contigo-<env>` in `rg-contigo-<env>`. Deploy 404s until the HCP VCS
+apply that creates it (and the workload-identity tag) is CURRENT — re-run
+the web workflow after that apply.
 
 ## API client (ADR-012 "one generated TypeScript client, no hand-written divergent DTOs")
 

@@ -15,8 +15,8 @@
 // safe, non-secret localhost placeholder for local dev; per-environment
 // values are the deploy pipeline's responsibility to substitute into the
 // downloaded `web-dist/config.json` before the Static Web Apps deploy step
-// (tracked in this module's doc comment rather than reports/open-questions.md,
-// which this task does not own -- see web/README.md "Known gap").
+// (see web.yml "Write per-environment config.json" and web/README.md
+// "Runtime config injection").
 export interface AppConfig {
   /** Origin the SPA calls for every API request, e.g. "https://api.dev.contigo.example". */
   apiBaseUrl: string;

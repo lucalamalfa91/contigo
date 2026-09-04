@@ -1,5 +1,5 @@
 {
-  "_comment": "Local-dev placeholder only (ADR-012 'config, not code'). The deploy pipeline must overwrite this file per environment before the Azure Static Web Apps deploy step -- see web/README.md 'Known gap: per-environment config injection'. No secret belongs in this file; client_id and redirect URI are public by design (PKCE public client, ADR-010).",
+  "_comment": "Local-dev placeholder only (ADR-012 'config, not code'). web.yml overwrites this file per environment before the Azure Static Web Apps deploy step -- see web/README.md 'Per-environment config injection in CI'. No secret belongs in this file; client_id and redirect URI are public by design (PKCE public client, ADR-010).",
   "apiBaseUrl": "https://localhost:7109",
   "oidcAuthority": "https://login.microsoftonline.com/REPLACE_WITH_DEV_TENANT_ID",
   "oidcClientId": "REPLACE_WITH_DEV_PUBLIC_CLIENT_ID",
