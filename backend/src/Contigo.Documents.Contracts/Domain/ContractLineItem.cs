@@ -31,5 +31,14 @@ public sealed class ContractLineItem : TenantScopedEntity
     public decimal? AnnualCost { get; set; }
     public decimal? TotalCost { get; set; }
 
+    /// <summary>Page/section evidence pointer + confidence (Appendix C rule 2; spec §7.3 "every
+    /// extracted fact carries source span + confidence"). Added by task E02/F01/US02/T01
+    /// (us-02-staged-extraction, AC-2) — this task's `price/SKU` stage is the first writer of
+    /// this entity that needs it; the original contract-schema task (E02/F02/US01/T01) had no
+    /// extraction caller yet, matching <see cref="Clause"/>'s already-evidenced shape.</summary>
+    public string? SourceSpan { get; set; }
+    public int? SourcePage { get; set; }
+    public double? Confidence { get; set; }
+
     public required DateTimeOffset CreatedAt { get; set; }
 }

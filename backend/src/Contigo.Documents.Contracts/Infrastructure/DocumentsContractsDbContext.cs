@@ -24,6 +24,7 @@ public sealed class DocumentsContractsDbContext(DbContextOptions<DocumentsContra
     public DbSet<Risk> Risks => Set<Risk>();
     public DbSet<CorrectionHistory> CorrectionHistories => Set<CorrectionHistory>();
     public DbSet<Embedding> Embeddings => Set<Embedding>();
+    public DbSet<ExtractionEvidence> ExtractionEvidences => Set<ExtractionEvidence>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -41,6 +42,7 @@ public sealed class DocumentsContractsDbContext(DbContextOptions<DocumentsContra
         modelBuilder.ApplyConfiguration(new RiskConfiguration());
         modelBuilder.ApplyConfiguration(new CorrectionHistoryConfiguration());
         modelBuilder.ApplyConfiguration(new EmbeddingConfiguration());
+        modelBuilder.ApplyConfiguration(new ExtractionEvidenceConfiguration());
 
         base.OnModelCreating(modelBuilder);
     }

@@ -1,0 +1,403 @@
+using Contigo.AiGateway;
+using Contigo.AiGateway.Configuration;
+using Contigo.AiGateway.Contracts;
+using Contigo.AiGateway.Fixtures;
+using Contigo.Documents.Contracts.Application.Extraction;
+using Contigo.Documents.Contracts.Domain;
+using Contigo.Documents.Contracts.Infrastructure;
+using Contigo.SharedKernel;
+using Contigo.SharedKernel.Tenancy;
+using Microsoft.EntityFrameworkCore;
+using Testcontainers.PostgreSql;
+
+namespace Contigo.Documents.Contracts.Tests;
+
+/// <summary>
+/// Proves the Definition of Done for task E02/F01/US02/T01 (us-02-staged-extraction): AC-1 (all
+/// seven stages run, in order, each its own <see cref="ExtractionJob"/>), AC-2 (every persisted
+/// fact carries source span + confidence — both on the "one row = one fact" entities and via
+/// <see cref="ExtractionEvidence"/> for <see cref="Contract"/>'s own scalar fields), and that a
+/// stage which cannot be trusted (low confidence, unparseable payload, a failed gateway call)
+/// is recorded as such rather than silently treated as a clean success (product principle:
+/// "Human-in-the-loop for consequential decisions... low-confidence extraction... must be
+/// reviewable").
+///
+/// Runs against a real Postgres+pgvector Testcontainer (matching
+/// <see cref="ContractLineItemSchemaTests"/>'s pattern) rather than an in-memory provider —
+/// <see cref="StagedExtractionService"/> persists through <see cref="DocumentsContractsDbContext"/>
+/// exactly like every other application service in this module, so a fake provider would not
+/// prove the EF Core mappings (snake_case columns, FK ordering across a single
+/// <c>SaveChangesAsync</c> call, <c>vector</c> extension) actually work.
+/// </summary>
+public sealed class StagedExtractionServiceTests : IAsyncLifetime
+{
+    private static readonly DateTimeOffset Now = new(2026, 9, 4, 12, 0, 0, TimeSpan.Zero);
+
+    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("pgvector/pgvector:pg16")
+        .Build();
+
+    public async Task InitializeAsync()
+    {
+        await _postgres.StartAsync();
+
+        await using var db = CreateContext(new TenantContext());
+        await db.Database.MigrateAsync();
+    }
+
+    public Task DisposeAsync() => _postgres.DisposeAsync().AsTask();
+
+    private DocumentsContractsDbContext CreateContext(ITenantContext tenantContext)
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<DocumentsContractsDbContext>();
+        DocumentsContractsDbContextOptions.Configure(optionsBuilder, _postgres.GetConnectionString(), tenantContext);
+        return new DocumentsContractsDbContext(optionsBuilder.Options);
+    }
+
+    private sealed class FixedClock(DateTimeOffset now) : IClock
+    {
+        public DateTimeOffset UtcNow => now;
+    }
+
+    private sealed class RecordingAuditWriter : IAuditWriter
+    {
+        public List<AuditEntry> Written { get; } = [];
+
+        public Task WriteAsync(AuditEntry entry, CancellationToken cancellationToken = default)
+        {
+            Written.Add(entry);
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>Test-only <see cref="IAiGateway"/> that returns a scripted `extract` payload per
+    /// stage (keyed by <see cref="AiExtractionRequest.StageName"/>, i.e. <see cref="ExtractionStage"/>'s
+    /// own <c>ToString()</c>) — everything else this pipeline does not call.
+    /// <see cref="Contigo.AiGateway.Fixtures.FixtureAiGateway"/> already proves the real,
+    /// currently-registered gateway's own contract (always returns "{}" — see
+    /// <see cref="Fixture_ai_gateway_empty_payload_is_handled_without_throwing"/> below for that
+    /// case specifically); this fake exists to prove the pipeline's own parsing/persistence logic
+    /// against payload shapes a live structured-output model would actually return.</summary>
+    private sealed class ScriptedAiGateway(
+        IReadOnlyDictionary<string, string> payloadByStage,
+        IReadOnlySet<string>? failStages = null) : IAiGateway
+    {
+        public Task<Result<AiClassificationResult>> ClassifyAsync(
+            AiClassificationRequest request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("StagedExtractionService does not call ClassifyAsync.");
+
+        public Task<Result<AiExtractionResult>> ExtractAsync(
+            AiExtractionRequest request, CancellationToken cancellationToken = default)
+        {
+            if (failStages?.Contains(request.StageName) == true)
+            {
+                return Task.FromResult(Result<AiExtractionResult>.Failure(
+                    $"Simulated gateway failure for stage {request.StageName}."));
+            }
+
+            var payloadJson = payloadByStage.TryGetValue(request.StageName, out var payload) ? payload : "{}";
+            var metadata = new AiCallMetadata("test-extract-model", "1", "test-v1", Now, "test-input-hash");
+
+            return Task.FromResult(Result<AiExtractionResult>.Success(new AiExtractionResult(payloadJson, metadata)));
+        }
+
+        public Task<Result<AiEmbeddingResult>> EmbedAsync(
+            AiEmbeddingRequest request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("StagedExtractionService does not call EmbedAsync.");
+
+        public Task<Result<AiAnswerResult>> AnswerAsync(
+            AiAnswerRequest request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("StagedExtractionService does not call AnswerAsync.");
+    }
+
+    /// <summary>High-confidence payload for every AC-1 stage, used by the happy-path test.
+    /// Field/item shapes mirror <see cref="StagedExtractionJsonSchemas"/> exactly.</summary>
+    private static Dictionary<string, string> HighConfidencePayloads() => new()
+    {
+        ["Metadata"] = """
+            {"facts":[
+                {"field":"currency","value":"USD","sourcePage":1,"sourceSpan":"Currency: USD","confidence":0.95},
+                {"field":"governingLaw","value":"State of Delaware","sourcePage":1,"sourceSpan":"Governing law: Delaware","confidence":0.9},
+                {"field":"status","value":"Active","sourcePage":1,"sourceSpan":"Status: Active","confidence":0.9}
+            ]}
+            """,
+        ["CommercialTerms"] = """
+            {"facts":[
+                {"field":"annualSpend","value":"120000.50","sourcePage":2,"sourceSpan":"Annual spend: $120,000.50","confidence":0.92},
+                {"field":"totalContractValue","value":"360000","sourcePage":2,"sourceSpan":"TCV: $360,000","confidence":0.9},
+                {"field":"paymentTerms","value":"Net 30","sourcePage":2,"sourceSpan":"Payment terms: Net 30","confidence":0.88}
+            ]}
+            """,
+        ["DatesAndRenewalTerms"] = """
+            {"facts":[
+                {"field":"startDate","value":"2026-01-01","sourcePage":1,"confidence":0.95},
+                {"field":"endDate","value":"2027-01-01","sourcePage":1,"confidence":0.95},
+                {"field":"autoRenewal","value":"true","sourcePage":1,"confidence":0.9},
+                {"field":"renewalTermMonths","value":"12","sourcePage":1,"confidence":0.9}
+            ]}
+            """,
+        ["LineItems"] = """
+            {"items":[
+                {"sku":"SKU-1","description":"Enterprise seats","quantity":100,"unit":"seat","unitPrice":10.5,"sourcePage":3,"sourceSpan":"100 seats @ $10.50","confidence":0.9}
+            ]}
+            """,
+        ["LegalClauses"] = """
+            {"items":[
+                {"clauseType":"termination","rawText":"Either party may terminate for convenience with 90 days notice.","riskLevel":"Medium","sourcePage":4,"sourceSpan":"Termination clause","confidence":0.85}
+            ]}
+            """,
+        ["Obligations"] = """
+            {"items":[
+                {"party":"Customer","obligationType":"payment","description":"Pay invoice within 30 days of receipt","dueDate":"2026-02-01","sourcePage":2,"sourceSpan":"Payment obligation","confidence":0.8}
+            ]}
+            """,
+        ["Risk"] = """
+            {"items":[
+                {"riskType":"liability","severity":"High","description":"Uncapped liability clause","sourcePage":4,"sourceSpan":"Liability clause","confidence":0.75}
+            ]}
+            """,
+    };
+
+    private async Task<(TenantId TenantId, Document Document)> SeedDocumentAsync(DocumentsContractsDbContext db, TenantId tenantId)
+    {
+        var document = new Document
+        {
+            TenantId = tenantId,
+            FileName = "contract.pdf",
+            MimeType = "application/pdf",
+            StoragePath = $"{tenantId.Value:D}/documents/contract.pdf",
+            Checksum = "test-checksum",
+            ProcessingStatus = DocumentProcessingStatus.Uploaded,
+            CreatedAt = Now,
+        };
+
+        db.Documents.Add(document);
+        await db.SaveChangesAsync();
+
+        return (tenantId, document);
+    }
+
+    [Fact]
+    public async Task Staged_pipeline_runs_all_seven_stages_and_persists_evidenced_facts()
+    {
+        var tenantId = TenantId.New();
+        var tenantContext = new TenantContext();
+
+        await using var seedDb = CreateContext(tenantContext);
+        var (_, document) = await SeedDocumentAsync(seedDb, tenantId);
+
+        var gateway = new ScriptedAiGateway(HighConfidencePayloads());
+        var auditWriter = new RecordingAuditWriter();
+
+        await using var runDb = CreateContext(tenantContext);
+        var service = new StagedExtractionService(runDb, gateway, tenantContext, new FixedClock(Now), auditWriter);
+
+        IReadOnlyList<DocumentPageText> pages =
+        [
+            new DocumentPageText(1, "MSA header. Currency: USD. Governing law: Delaware."),
+            new DocumentPageText(2, "Commercial terms. Annual spend: $120,000.50."),
+            new DocumentPageText(3, "Order form line items."),
+            new DocumentPageText(4, "Termination and liability clauses."),
+        ];
+
+        var result = await service.RunAsync(tenantId, document.Id, pages);
+
+        Assert.True(result.IsSuccess);
+        var summary = result.Value;
+
+        // AC-1: every stage ran, in AC-1's own order, each Completed (every scripted fact above
+        // is at/above the pipeline's low-confidence threshold).
+        Assert.Equal(
+            [
+                ExtractionStage.Metadata, ExtractionStage.CommercialTerms, ExtractionStage.DatesAndRenewalTerms,
+                ExtractionStage.LineItems, ExtractionStage.LegalClauses, ExtractionStage.Obligations, ExtractionStage.Risk,
+            ],
+            summary.Stages.Select(s => s.Stage));
+        Assert.All(summary.Stages, s => Assert.Equal(ExtractionJobStatus.Completed, s.Status));
+        Assert.Equal(DocumentProcessingStatus.Completed, summary.DocumentProcessingStatus);
+
+        await using var readDb = CreateContext(tenantContext);
+        using var tenantScope = tenantContext.BeginScope(tenantId);
+
+        var storedDocument = await readDb.Documents.SingleAsync(d => d.Id == document.Id);
+        Assert.Equal(summary.ContractId, storedDocument.ContractId);
+        Assert.Equal(DocumentProcessingStatus.Completed, storedDocument.ProcessingStatus);
+
+        // Metadata + CommercialTerms + DatesAndRenewalTerms stages: applied onto Contract itself.
+        var contract = await readDb.Contracts.SingleAsync(c => c.Id == summary.ContractId);
+        Assert.Equal("USD", contract.Currency);
+        Assert.Equal("State of Delaware", contract.GoverningLaw);
+        Assert.Equal("Active", contract.Status);
+        Assert.Equal(120000.50m, contract.AnnualSpend);
+        Assert.Equal(360000m, contract.TotalContractValue);
+        Assert.Equal("Net 30", contract.PaymentTerms);
+        Assert.Equal(new DateOnly(2026, 1, 1), contract.StartDate);
+        Assert.Equal(new DateOnly(2027, 1, 1), contract.EndDate);
+        Assert.True(contract.AutoRenewal);
+        Assert.Equal(12, contract.RenewalTermMonths);
+
+        // AC-2: every Contract-level scalar fact has its own evidence row.
+        var evidence = await readDb.ExtractionEvidences
+            .Where(e => e.ContractId == summary.ContractId)
+            .ToListAsync();
+        Assert.Equal(10, evidence.Count); // 3 metadata + 3 commercial + 4 dates facts
+        var currencyEvidence = Assert.Single(evidence, e => e.FieldName == "currency");
+        Assert.Equal("USD", currencyEvidence.Value);
+        Assert.Equal(1, currencyEvidence.SourcePage);
+        Assert.Equal("Currency: USD", currencyEvidence.SourceSpan);
+        Assert.Equal(0.95, currencyEvidence.Confidence);
+        Assert.Equal(document.Id, currencyEvidence.SourceDocumentId);
+
+        // AC-2: LineItems/Clauses/Obligations/Risk each carry their own evidence directly.
+        var lineItem = await readDb.ContractLineItems.SingleAsync(li => li.ContractId == summary.ContractId);
+        Assert.Equal("SKU-1", lineItem.Sku);
+        Assert.Equal(100m, lineItem.Quantity);
+        Assert.Equal(3, lineItem.SourcePage);
+        Assert.Equal(0.9, lineItem.Confidence);
+
+        var clause = await readDb.Clauses.SingleAsync(c => c.ContractId == summary.ContractId);
+        Assert.Equal("termination", clause.ClauseType);
+        Assert.Equal(RiskSeverity.Medium, clause.RiskLevel);
+        Assert.Equal(4, clause.SourcePage);
+        Assert.Equal(0.85, clause.Confidence);
+
+        var obligation = await readDb.Obligations.SingleAsync(o => o.ContractId == summary.ContractId);
+        Assert.Equal("Customer", obligation.Party);
+        Assert.Equal(new DateOnly(2026, 2, 1), obligation.DueDate);
+        Assert.Equal(2, obligation.SourcePage);
+        Assert.Equal(0.8, obligation.Confidence);
+
+        var risk = await readDb.Risks.SingleAsync(r => r.ContractId == summary.ContractId);
+        Assert.Equal("liability", risk.RiskType);
+        Assert.Equal(RiskSeverity.High, risk.Severity);
+        Assert.Equal(4, risk.SourcePage);
+        Assert.Equal(0.75, risk.Confidence);
+
+        var auditEntry = Assert.Single(auditWriter.Written);
+        Assert.Equal("document.extraction.completed", auditEntry.Action);
+        Assert.Equal(tenantId, auditEntry.TenantId);
+    }
+
+    [Fact]
+    public async Task A_low_confidence_fact_marks_its_stage_and_the_document_as_needing_review()
+    {
+        var tenantId = TenantId.New();
+        var tenantContext = new TenantContext();
+
+        await using var seedDb = CreateContext(tenantContext);
+        var (_, document) = await SeedDocumentAsync(seedDb, tenantId);
+
+        var payloads = HighConfidencePayloads();
+        payloads["Metadata"] = """
+            {"facts":[{"field":"currency","value":"USD","sourcePage":1,"confidence":0.2}]}
+            """;
+
+        var gateway = new ScriptedAiGateway(payloads);
+
+        await using var runDb = CreateContext(tenantContext);
+        var service = new StagedExtractionService(
+            runDb, gateway, tenantContext, new FixedClock(Now), new RecordingAuditWriter());
+
+        var pages = new[] { new DocumentPageText(1, "some contract text") };
+
+        var result = await service.RunAsync(tenantId, document.Id, pages);
+
+        Assert.True(result.IsSuccess);
+        var metadataStage = result.Value.Stages.Single(s => s.Stage == ExtractionStage.Metadata);
+        Assert.Equal(ExtractionJobStatus.NeedsReview, metadataStage.Status);
+        Assert.Equal(1, metadataStage.ExtractedCount);
+        Assert.Equal(DocumentProcessingStatus.NeedsReview, result.Value.DocumentProcessingStatus);
+    }
+
+    [Fact]
+    public async Task A_gateway_failure_on_one_stage_is_recorded_and_does_not_abort_the_others()
+    {
+        var tenantId = TenantId.New();
+        var tenantContext = new TenantContext();
+
+        await using var seedDb = CreateContext(tenantContext);
+        var (_, document) = await SeedDocumentAsync(seedDb, tenantId);
+
+        var gateway = new ScriptedAiGateway(HighConfidencePayloads(), failStages: new HashSet<string> { "LegalClauses" });
+
+        await using var runDb = CreateContext(tenantContext);
+        var service = new StagedExtractionService(
+            runDb, gateway, tenantContext, new FixedClock(Now), new RecordingAuditWriter());
+
+        var pages = new[] { new DocumentPageText(1, "some contract text") };
+
+        var result = await service.RunAsync(tenantId, document.Id, pages);
+
+        Assert.True(result.IsSuccess);
+        var stages = result.Value.Stages.ToDictionary(s => s.Stage);
+
+        Assert.Equal(ExtractionJobStatus.Failed, stages[ExtractionStage.LegalClauses].Status);
+        Assert.NotNull(stages[ExtractionStage.LegalClauses].ErrorDetail);
+
+        // The other six stages still ran and completed — one stage's gateway failure did not
+        // abort the pipeline (ADR-017's "fail visibly, never silently truncate", per-stage).
+        Assert.Equal(ExtractionJobStatus.Completed, stages[ExtractionStage.Metadata].Status);
+        Assert.Equal(ExtractionJobStatus.Completed, stages[ExtractionStage.Risk].Status);
+
+        Assert.Equal(DocumentProcessingStatus.NeedsReview, result.Value.DocumentProcessingStatus);
+    }
+
+    [Fact]
+    public async Task Fixture_ai_gateway_empty_payload_is_handled_without_throwing()
+    {
+        // FixtureAiGateway.ExtractAsync always returns "{}" today (no live Foundry model behind
+        // it yet — see its own doc comment). This is the exact gateway AddAiGatewayModule
+        // registers, so the pipeline must run cleanly against it: zero facts is a fact in
+        // itself, not a crash.
+        var tenantId = TenantId.New();
+        var tenantContext = new TenantContext();
+
+        await using var seedDb = CreateContext(tenantContext);
+        var (_, document) = await SeedDocumentAsync(seedDb, tenantId);
+
+        var gateway = new FixtureAiGateway(new AiGatewayModelOptions(), new FixedClock(Now));
+
+        await using var runDb = CreateContext(tenantContext);
+        var service = new StagedExtractionService(
+            runDb, gateway, tenantContext, new FixedClock(Now), new RecordingAuditWriter());
+
+        var pages = new[] { new DocumentPageText(1, "some contract text") };
+
+        var result = await service.RunAsync(tenantId, document.Id, pages);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(7, result.Value.Stages.Count);
+        Assert.All(result.Value.Stages, s => Assert.Equal(ExtractionJobStatus.NeedsReview, s.Status));
+        Assert.All(result.Value.Stages, s => Assert.Equal(0, s.ExtractedCount));
+        Assert.Equal(DocumentProcessingStatus.NeedsReview, result.Value.DocumentProcessingStatus);
+    }
+
+    [Fact]
+    public async Task Unknown_document_fails_without_running_any_stage()
+    {
+        var tenantId = TenantId.New();
+        var tenantContext = new TenantContext();
+
+        await using var db = CreateContext(tenantContext);
+        var service = new StagedExtractionService(
+            db, new ScriptedAiGateway(HighConfidencePayloads()), tenantContext, new FixedClock(Now), new RecordingAuditWriter());
+
+        var result = await service.RunAsync(tenantId, EntityId.New(), [new DocumentPageText(1, "text")]);
+
+        Assert.True(result.IsFailure);
+    }
+
+    [Fact]
+    public async Task Empty_page_list_fails_fast_instead_of_running_an_empty_pipeline()
+    {
+        var tenantId = TenantId.New();
+        var tenantContext = new TenantContext();
+
+        await using var db = CreateContext(tenantContext);
+        var service = new StagedExtractionService(
+            db, new ScriptedAiGateway(HighConfidencePayloads()), tenantContext, new FixedClock(Now), new RecordingAuditWriter());
+
+        var result = await service.RunAsync(tenantId, EntityId.New(), []);
+
+        Assert.True(result.IsFailure);
+    }
+}

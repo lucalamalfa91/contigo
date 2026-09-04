@@ -1,4 +1,6 @@
+using Contigo.AiGateway;
 using Contigo.Documents.Contracts.Application;
+using Contigo.Documents.Contracts.Application.Extraction;
 using Contigo.SharedKernel;
 using Contigo.SharedKernel.Tenancy;
 using Microsoft.EntityFrameworkCore;
@@ -17,7 +19,15 @@ namespace Contigo.Documents.Contracts.Infrastructure;
 /// first endpoint is task E01/F06/US01/T01's <c>POST /api/documents</c>, wired via
 /// <see cref="DocumentUploadService"/>, registered here alongside the DbContext. Task
 /// E01/F06/US01/T02's <c>GET /api/documents/{id}</c> reuses the same DbContext registration and
-/// adds <see cref="DocumentQueryService"/> alongside it.
+/// adds <see cref="DocumentQueryService"/> alongside it. Task E02/F01/US02/T01
+/// (us-02-staged-extraction) adds <see cref="StagedExtractionService"/>, and with it this
+/// module's first real dependency on <c>Contigo.AiGateway</c> (already allow-listed for this
+/// module — <c>Contigo.ArchitectureTests.DependencyDirectionTests</c>) — see
+/// <see cref="Contigo.AiGateway.ServiceCollectionExtensions.AddAiGatewayModule"/>'s own doc
+/// comment for why calling it from here, rather than adding it to every host's own composition
+/// (<c>Contigo.Api/Program.cs</c>, <c>Contigo.Worker.WorkerServiceCollectionExtensions</c>),
+/// keeps <see cref="IAiGateway"/> resolvable everywhere this module already is without changing
+/// either host's code.
 /// </summary>
 public static class ServiceCollectionExtensions
 {
@@ -34,10 +44,14 @@ public static class ServiceCollectionExtensions
             (sp, options) => DocumentsContractsDbContextOptions.Configure(
                 options, connectionString, sp.GetRequiredService<ITenantContext>()));
 
+        // See the type doc comment: this module's own IAiGateway/AiGatewayModelOptions wiring.
+        services.AddAiGatewayModule();
+
         // Scoped: shares the request/job's own DbContext instance (also Scoped, via AddDbContext
         // above) rather than a second, independently-tracked context.
         services.AddScoped<DocumentUploadService>();
         services.AddScoped<DocumentQueryService>();
+        services.AddScoped<StagedExtractionService>();
 
         return services;
     }

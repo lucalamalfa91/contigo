@@ -24,6 +24,7 @@ public sealed class RiskConfiguration : IEntityTypeConfiguration<Risk>
         builder.Property(e => e.RiskType).HasMaxLength(100);
         builder.Property(e => e.Severity).HasConversion<string>().HasMaxLength(20);
         builder.Property(e => e.Status).HasMaxLength(30);
+        builder.Property(e => e.SourceSpan).HasMaxLength(500);
 
         builder.HasIndex(e => e.TenantId);
         builder.HasIndex(e => e.ContractId);
