@@ -20,7 +20,7 @@ backend/
     Contigo.Worker/              # thin worker composition root
     Contigo.SharedKernel/        # TenantId, EntityId, Result<T>, IClock, IAuditWriter, IDocumentStorage
     Contigo.Identity.Workspace/  # workspace, membership, roles (live)
-    Contigo.Documents.Contracts/ # upload, metadata, extraction job (live)
+    Contigo.Documents.Contracts/ # upload, metadata, extraction job, contract correction (live)
     Contigo.Audit/               # append-only audit events (live)
     Contigo.AiGateway/           # IAiGateway only — no Foundry SDK yet
     Contigo.Benchmark/           # IBenchmarkService only — fixture adapter is later (R3)
@@ -65,7 +65,7 @@ EF migrations live in each module that owns a DbContext
 `Contigo.Audit`). Apply them against the same database the hosts use;
 RLS policies are added in those migrations, not in Terraform.
 
-## HTTP surface today (R0)
+## HTTP surface today
 
 | Method | Path | Notes |
 |--------|------|-------|
@@ -74,11 +74,13 @@ RLS policies are added in those migrations, not in Terraform.
 | POST | `/api/workspaces/{tenantId}/invites` | invite; roles Admin / Procurement / Legal / Finance / ReadOnly |
 | POST | `/api/documents` | multipart `file` + `X-Tenant-Id` header |
 | GET | `/api/documents/{id}` | metadata/status; same header |
+| PATCH | `/api/contracts/{id}` | `{ corrections: { <field>: <string\|null> }, reason? }` + `X-Tenant-Id` header; versioned correction (ADR-003 `ContractVersion`/`CorrectionHistory`, ADR-009 RLS) — see `Contigo.Documents.Contracts.Application.ContractCorrectionService.CorrectableFieldNames` for the accepted field list |
 | GET | `/api/audit` | tenant-scoped; expects a claims principal (integration tests inject one) |
 
-**Interim auth:** document upload/read take the tenant from `X-Tenant-Id`,
-not from a validated JWT. ADR-010 (Entra ID / OIDC on the API) is not
-wired in the host yet. Do not treat the header as the long-term contract.
+**Interim auth:** document upload/read and the contract correction PATCH
+take the tenant from `X-Tenant-Id`, not from a validated JWT. ADR-010
+(Entra ID / OIDC on the API) is not wired in the host yet. Do not treat
+the header as the long-term contract.
 
 The web client generates TypeScript types from
 `web/openapi/contigo-api.v1.json`. The API does **not** yet self-publish
