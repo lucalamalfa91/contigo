@@ -7,10 +7,11 @@ namespace Contigo.Api;
 
 /// <summary>
 /// Maps `GET /api/contracts` (product spec API table row "Portfolio list/filter"; story
-/// us-01-portfolio-list-filters AC-1/AC-2/AC-3, task E02/F03/US01/T01). Thin composition per
-/// ADR-002 — the actual decisions are made by <see cref="PortfolioQueryService"/>; this file only
-/// parses the query string into a <see cref="PortfolioFilter"/> and maps each outcome to an HTTP
-/// status code.
+/// us-01-portfolio-list-filters AC-1/AC-2/AC-3, task E02/F03/US01/T01; pagination added by task
+/// E02/F03/US01/T02). Thin composition per ADR-002 — the actual decisions are made by
+/// <see cref="PortfolioQueryService"/>; this file only parses the query string into a
+/// <see cref="PortfolioFilter"/>/<see cref="PortfolioPageRequest"/> and maps each outcome to an
+/// HTTP status code.
 ///
 /// Same interim-authentication placeholder as <c>Program</c>'s document endpoints: ADR-010 is not
 /// in this task's "architecture decisions in force" list, so there is still no validated caller
@@ -43,27 +44,40 @@ public static class PortfolioEndpointExtensions
             return Results.BadRequest(error);
         }
 
-        var items = await portfolioQueryService
-            .GetPortfolioAsync(new TenantId(tenantGuid), filter, cancellationToken)
+        if (!TryParsePage(request.Query, out var page, out var pageError))
+        {
+            return Results.BadRequest(pageError);
+        }
+
+        var result = await portfolioQueryService
+            .GetPortfolioAsync(new TenantId(tenantGuid), filter, page, cancellationToken)
             .ConfigureAwait(false);
 
         // Enum members are projected to their string names for the wire contract — the same
         // convention Program.cs already uses for DocumentType/ProcessingStatus on
-        // GET /api/documents/{id} — rather than the JSON serializer's numeric default.
-        return Results.Ok(items.Select(item => new
+        // GET /api/documents/{id} — rather than the JSON serializer's numeric default. Items are
+        // wrapped with paging metadata (task E02/F03/US01/T02) instead of returned as a bare
+        // array, so a caller can render "showing X of Y" / know whether another page exists.
+        return Results.Ok(new
         {
-            contractId = item.ContractId,
-            supplierId = item.SupplierId,
-            type = item.Type.ToString(),
-            annualSpend = item.AnnualSpend,
-            startDate = item.StartDate,
-            endDate = item.EndDate,
-            renewalDate = item.RenewalDate,
-            cancellationDeadline = item.CancellationDeadline,
-            autoRenewal = item.AutoRenewal,
-            status = item.Status,
-            risk = item.Risk?.ToString(),
-        }));
+            items = result.Items.Select(item => new
+            {
+                contractId = item.ContractId,
+                supplierId = item.SupplierId,
+                type = item.Type.ToString(),
+                annualSpend = item.AnnualSpend,
+                startDate = item.StartDate,
+                endDate = item.EndDate,
+                renewalDate = item.RenewalDate,
+                cancellationDeadline = item.CancellationDeadline,
+                autoRenewal = item.AutoRenewal,
+                status = item.Status,
+                risk = item.Risk?.ToString(),
+            }),
+            page = result.Page,
+            pageSize = result.PageSize,
+            totalCount = result.TotalCount,
+        });
     }
 
     /// <summary>
@@ -134,6 +148,45 @@ public static class PortfolioEndpointExtensions
 
         filter = new PortfolioFilter(
             supplierId, status, risk, autoRenewal, minAnnualSpend, maxAnnualSpend, renewalFrom, renewalTo);
+        return true;
+    }
+
+    /// <summary>
+    /// Parses the task E02/F03/US01/T02 paging query parameters (<c>page</c>, <c>pageSize</c>).
+    /// Both are optional; an absent one takes <see cref="PortfolioPageRequest.Default"/>'s value.
+    /// Returns false with a caller-facing <paramref name="error"/> for a non-positive <c>page</c>
+    /// or a <c>pageSize</c> outside <c>[1, <see cref="PortfolioPageRequest.MaxPageSize"/>]</c> —
+    /// same "reject, don't clamp" convention as <see cref="TryParseFilter"/>.
+    /// </summary>
+    private static bool TryParsePage(IQueryCollection query, out PortfolioPageRequest page, out string error)
+    {
+        page = PortfolioPageRequest.Default;
+        error = string.Empty;
+
+        var pageNumber = PortfolioPageRequest.Default.Page;
+        if (query.TryGetValue("page", out var pageValues))
+        {
+            if (!int.TryParse(pageValues.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out pageNumber)
+                || pageNumber < 1)
+            {
+                error = "'page' must be a positive integer.";
+                return false;
+            }
+        }
+
+        var pageSize = PortfolioPageRequest.DefaultPageSize;
+        if (query.TryGetValue("pageSize", out var pageSizeValues))
+        {
+            if (!int.TryParse(pageSizeValues.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out pageSize)
+                || pageSize < 1
+                || pageSize > PortfolioPageRequest.MaxPageSize)
+            {
+                error = $"'pageSize' must be an integer between 1 and {PortfolioPageRequest.MaxPageSize}.";
+                return false;
+            }
+        }
+
+        page = new PortfolioPageRequest(pageNumber, pageSize);
         return true;
     }
 

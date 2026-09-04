@@ -8,11 +8,12 @@ namespace Contigo.Api.Tests;
 /// `GET /api/contracts` is actually mapped in <c>Program.cs</c> and enforces its request-shape
 /// guard clauses — mirrors <see cref="DocumentMetadataEndpointTests"/>'s own "not just a
 /// placeholder" purpose. Only exercises branches that return before any database call is made
-/// (the tenant-header check and the AC-2 filter parsing both run before
-/// <c>PortfolioQueryService</c> is ever called), so — like <see cref="DocumentMetadataEndpointTests"/>
-/// — this needs no running Postgres. The success path (real rows, real filtering, real tenant
-/// scoping) is proven by <c>Contigo.Documents.Contracts.Tests.PortfolioQueryServiceTests</c>
-/// instead, against a real Postgres+RLS Testcontainer.
+/// (the tenant-header check and the AC-2 filter parsing, plus task E02/F03/US01/T02's page/pageSize
+/// parsing, all run before <c>PortfolioQueryService</c> is ever called), so — like
+/// <see cref="DocumentMetadataEndpointTests"/> — this needs no running Postgres. The success path
+/// (real rows, real filtering, real tenant scoping, real paging) is proven by
+/// <c>Contigo.Documents.Contracts.Tests.PortfolioQueryServiceTests</c> instead, against a real
+/// Postgres+RLS Testcontainer.
 /// </summary>
 public sealed class PortfolioEndpointTests : IClassFixture<WebApplicationFactory<Program>>
 {
@@ -59,7 +60,13 @@ public sealed class PortfolioEndpointTests : IClassFixture<WebApplicationFactory
     [InlineData("maxAnnualSpend=not-a-number")]
     [InlineData("renewalFrom=not-a-date")]
     [InlineData("renewalTo=not-a-date")]
-    public async Task Malformed_filter_query_parameter_returns_400(string queryString)
+    [InlineData("page=0")]
+    [InlineData("page=-1")]
+    [InlineData("page=not-a-number")]
+    [InlineData("pageSize=0")]
+    [InlineData("pageSize=101")]
+    [InlineData("pageSize=not-a-number")]
+    public async Task Malformed_filter_or_page_query_parameter_returns_400(string queryString)
     {
         var client = _factory.CreateClient();
         using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/contracts?{queryString}");

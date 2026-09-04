@@ -16,7 +16,9 @@ namespace Contigo.Documents.Contracts.Tests;
 /// enforces tenant scoping — against a real Postgres+RLS database, mirroring
 /// <see cref="DocumentQueryServiceTests"/>'s own unprivileged-role rationale so a passing
 /// "a different tenant gets nothing back" assertion is a real RLS proof, not a tautology from a
-/// superuser connection that unconditionally bypasses row security.
+/// superuser connection that unconditionally bypasses row security. Task E02/F03/US01/T02 adds
+/// pagination coverage: <see cref="Pagination_slices_results_and_reports_total_count"/> and
+/// <see cref="Pagination_total_count_reflects_risk_filter_not_unfiltered_set"/>.
 ///
 /// There is no "ContractUploadService" yet (contract rows are populated by the extraction
 /// pipeline, a different, not-yet-built module) — unlike
@@ -147,9 +149,11 @@ public sealed class PortfolioQueryServiceTests : IAsyncLifetime
         await using var db = CreateAppContext(tenantContext);
         var service = new PortfolioQueryService(db, tenantContext);
 
-        var items = await service.GetPortfolioAsync(tenantId, PortfolioFilter.None);
+        var result = await service.GetPortfolioAsync(tenantId, PortfolioFilter.None);
+        var items = result.Items;
 
         Assert.Equal(2, items.Count);
+        Assert.Equal(2, result.TotalCount);
 
         var autoRenewingRow = Assert.Single(items, i => i.ContractId == autoRenewing.Id.Value);
         Assert.Equal(supplierId.Value, autoRenewingRow.SupplierId);
@@ -182,9 +186,10 @@ public sealed class PortfolioQueryServiceTests : IAsyncLifetime
 
         // AC-3: RLS and the app-level tenant predicate both independently deny a cross-tenant
         // read, even though the row genuinely exists (seeded above) for tenant A.
-        var items = await service.GetPortfolioAsync(tenantB, PortfolioFilter.None);
+        var result = await service.GetPortfolioAsync(tenantB, PortfolioFilter.None);
 
-        Assert.Empty(items);
+        Assert.Empty(result.Items);
+        Assert.Equal(0, result.TotalCount);
     }
 
     [Fact]
@@ -214,9 +219,11 @@ public sealed class PortfolioQueryServiceTests : IAsyncLifetime
         var service = new PortfolioQueryService(db, tenantContext);
 
         // Assert.Equivalent (not Assert.Equal) throughout: it compares collections as unordered
-        // bags, and GetPortfolioAsync makes no ordering guarantee to rely on here.
+        // bags, and GetPortfolioAsync makes no ordering guarantee to rely on here. The default
+        // page size (25) comfortably covers this 3-row fixture, so every match always lands on
+        // page 1 — pagination itself is covered separately below.
         async Task<List<Guid>> IdsFor(PortfolioFilter filter) =>
-            (await service.GetPortfolioAsync(tenantId, filter)).Select(i => i.ContractId).ToList();
+            (await service.GetPortfolioAsync(tenantId, filter)).Items.Select(i => i.ContractId).ToList();
 
         Assert.Equivalent(new[] { c1.Id.Value, c3.Id.Value }, await IdsFor(new PortfolioFilter(SupplierId: supplierA)));
         Assert.Equivalent(new[] { c2.Id.Value }, await IdsFor(new PortfolioFilter(Status: "Expired")));
@@ -239,5 +246,84 @@ public sealed class PortfolioQueryServiceTests : IAsyncLifetime
         // Unfiltered still returns all three (sanity check that none of the above filters leak).
         Assert.Equivalent(
             new[] { c1.Id.Value, c2.Id.Value, c3.Id.Value }, await IdsFor(PortfolioFilter.None));
+    }
+
+    [Fact]
+    public async Task Pagination_slices_results_and_reports_total_count()
+    {
+        var tenantId = TenantId.New();
+        var tenantContext = new TenantContext();
+
+        var contracts = Enumerable.Range(0, 5)
+            .Select(_ => NewContract(tenantId, endDate: new DateOnly(2026, 12, 31)))
+            .ToList();
+        foreach (var contract in contracts)
+        {
+            await SeedContractAsync(tenantContext, contract);
+        }
+
+        await using var db = CreateAppContext(tenantContext);
+        var service = new PortfolioQueryService(db, tenantContext);
+
+        var firstPage = await service.GetPortfolioAsync(
+            tenantId, PortfolioFilter.None, new PortfolioPageRequest(Page: 1, PageSize: 2));
+        var secondPage = await service.GetPortfolioAsync(
+            tenantId, PortfolioFilter.None, new PortfolioPageRequest(Page: 2, PageSize: 2));
+        var thirdPage = await service.GetPortfolioAsync(
+            tenantId, PortfolioFilter.None, new PortfolioPageRequest(Page: 3, PageSize: 2));
+        var pastLastPage = await service.GetPortfolioAsync(
+            tenantId, PortfolioFilter.None, new PortfolioPageRequest(Page: 4, PageSize: 2));
+
+        // 5 rows at page size 2 -> pages of 2, 2, 1, then an empty page past the end.
+        Assert.Equal(2, firstPage.Items.Count);
+        Assert.Equal(2, secondPage.Items.Count);
+        Assert.Single(thirdPage.Items);
+        Assert.Empty(pastLastPage.Items);
+
+        // TotalCount is the same for every page — it counts the whole filtered set, not the slice.
+        foreach (var page in new[] { firstPage, secondPage, thirdPage, pastLastPage })
+        {
+            Assert.Equal(5, page.TotalCount);
+        }
+
+        // Page/PageSize on the result echo back exactly what was requested.
+        Assert.Equal((1, 2), (firstPage.Page, firstPage.PageSize));
+        Assert.Equal((4, 2), (pastLastPage.Page, pastLastPage.PageSize));
+
+        // Every contract appears on exactly one page — pagination neither drops nor duplicates rows.
+        var allIds = firstPage.Items.Concat(secondPage.Items).Concat(thirdPage.Items)
+            .Select(i => i.ContractId)
+            .ToList();
+        Assert.Equal(5, allIds.Distinct().Count());
+        Assert.Equivalent(contracts.Select(c => c.Id.Value).ToList(), allIds);
+    }
+
+    [Fact]
+    public async Task Pagination_total_count_reflects_risk_filter_not_unfiltered_set()
+    {
+        var tenantId = TenantId.New();
+        var tenantContext = new TenantContext();
+
+        var highRisk1 = NewContract(tenantId);
+        var highRisk2 = NewContract(tenantId);
+        var noRisk = NewContract(tenantId);
+
+        await SeedContractAsync(tenantContext, highRisk1, RiskSeverity.High);
+        await SeedContractAsync(tenantContext, highRisk2, RiskSeverity.High);
+        await SeedContractAsync(tenantContext, noRisk); // excluded by the Risk filter below
+
+        await using var db = CreateAppContext(tenantContext);
+        var service = new PortfolioQueryService(db, tenantContext);
+
+        // Risk is computed and filtered in memory, after the SQL-pushable filters run (see
+        // PortfolioQueryService's own doc comment on why) — this pins that paging is computed
+        // from *that* filtered set (2 rows), not the 3 rows the tenant/no-filter query itself
+        // would have matched before Risk was applied.
+        var page = await service.GetPortfolioAsync(
+            tenantId, new PortfolioFilter(Risk: RiskSeverity.High), new PortfolioPageRequest(Page: 1, PageSize: 1));
+
+        Assert.Equal(2, page.TotalCount);
+        Assert.Single(page.Items);
+        Assert.Equal(RiskSeverity.High, page.Items[0].Risk);
     }
 }
