@@ -12,7 +12,8 @@ namespace Contigo.Renewals.Tests;
 /// resolvable from a container that only has <see cref="ServiceCollectionExtensions.AddRenewalsModule"/>
 /// registered — no external dependency needed, unlike the Chat module's own equivalent test — the
 /// shape a future host wiring (<c>Contigo.Api.Program</c> / <c>Contigo.Worker.Program</c>) will
-/// rely on once a task adds the first real caller.
+/// rely on once a task adds the first real caller. Task E03/F01/US02/T01 (priority-score) extends
+/// this same proof to <see cref="PriorityScoreCalculator"/>.
 /// </summary>
 public sealed class ServiceCollectionExtensionsTests
 {
@@ -29,6 +30,20 @@ public sealed class ServiceCollectionExtensionsTests
 
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<RenewalEngine>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IClock>());
+    }
+
+    [Fact]
+    public void AddRenewalsModule_resolves_PriorityScoreCalculator_with_no_captive_dependency()
+    {
+        var services = new ServiceCollection();
+
+        services.AddRenewalsModule();
+
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
+        using var scope = provider.CreateScope();
+
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<PriorityScoreCalculator>());
     }
 
     [Fact]
