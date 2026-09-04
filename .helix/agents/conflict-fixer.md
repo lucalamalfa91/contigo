@@ -34,8 +34,8 @@ side is a process defect.
 
 ## 2. Resolve every unmerged **product** path
 
-For each unmerged file under product roots (`infra/`, `backend/`, `web/`,
-`mobile/`, `.github/`, `scripts/`, `workspace/`):
+For each unmerged file under product roots (`README.md`, `infra/`,
+`backend/`, `web/`, `mobile/`, `.github/`, `scripts/`, `workspace/`):
 
 - Text with git conflict marker lines (HEAD / separator / branch): edit to a
   coherent result, then remove every marker. Honour both sides. Do not keep
@@ -67,6 +67,15 @@ Rules:
   keep every existing OQ block from ours, append new blocks from theirs, dedupe
   by OQ id. Never pick one side only.
 - **Never** `git add -A`. Stage resolved product paths explicitly (see §3).
+
+### 2e. Domain README collisions (`infra/README.md`, `backend/README.md`, …)
+
+Parallel tasks will both edit the same domain README (standing hygiene,
+not a wave-spec file claim). **Union both sides' factual updates**: a new
+command, route, module, identity warning, or known gap from either side
+stays. Rewrite into one coherent page; do not keep conflict markers and
+do not drop a newly documented operator-facing fact from ours or theirs.
+Root `README.md` is the same rule when it is unmerged.
 
 ### 2b. Shared-kernel / doc-only conflicts (example: `SystemClock.cs`)
 
@@ -133,7 +142,7 @@ richer assumption text. No conflict marker lines left in the file.
 git restore --source=HEAD --staged --worktree -- .helix || true
 
 # 2) stage ONLY product paths — this is the EXACT allowlist, do not add other paths
-git add -- infra backend web mobile workspace .github scripts
+git add -- README.md infra backend web mobile workspace .github scripts
 
 # 3) if open-questions was unmerged and you unioned it (§2d):
 # git add -- .helix/reports/open-questions.md

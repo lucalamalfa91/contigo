@@ -23,10 +23,16 @@ target_repo: contigo-backend
 ## Files to create or modify
 | Path | Change |
 |------|--------|
-| workspace/contigo-backend/… | … |
+| backend/src/… | … |
 
-Passata 2 cwd is the per-task worktree (a copy of this artifact). Product code
-goes under `workspace/<repo>/`. That folder is not the GitHub remote.
+Passata 2 cwd is the per-task git worktree of the product clone. Product
+code goes under `infra/`, `backend/`, `web/`, `mobile/` at the worktree
+root — not `workspace/<repo>/` (PROCESS.md D1).
+
+Do **not** list `infra/README.md`, `backend/README.md`, `web/README.md`,
+`mobile/README.md`, or root `README.md` here. README hygiene is standing
+implementer/reviewer scope (`skills/readme-hygiene.md`); putting those
+paths on every task violates single-writer-per-file in the same phase.
 
 ## Context the implementer needs
 - **Architecture decisions in force**: ADR-NNN (<the constraint>)

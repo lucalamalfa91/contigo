@@ -71,8 +71,19 @@ callers/imports as the skill says. Never guess a function-ref.
 
 ## 4. Implement
 
-Stay inside `## Files to create or modify`. Honour named ADRs. Write the tests
-listed. Do not re-decide council-owned stacks.
+Stay inside `## Files to create or modify`, except README hygiene below.
+Honour named ADRs. Write the tests listed. Do not re-decide council-owned
+stacks.
+
+**README hygiene (standing scope, not a new file claim):** follow the
+`readme-hygiene` skill. If this task changes operator-visible surface
+(commands, layout, routes, modules, deploy path, identities, a gap an
+operator will hit), update that domain's README (`infra/`, `backend/`,
+`web/`, `mobile/`) in **this same commit**. Update root `README.md` when
+the change is cross-cutting. Do **not** add those README paths to the
+task's Files table — two same-phase tasks listing one markdown file
+violates single-writer. A missing domain README when you touched that
+domain: create it.
 
 ## 5. Prove it
 
@@ -92,7 +103,7 @@ Read open-questions; do not edit or commit it.
 
 ```bash
 git restore --source=HEAD --staged --worktree -- .helix || true
-git add -- infra backend web mobile workspace .github scripts
+git add -- README.md infra backend web mobile workspace .github scripts
 git commit -m "<task-id>: <what changed, one line>"
 ```
 

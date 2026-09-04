@@ -93,3 +93,9 @@ any wave's integration story is a gap.
 ## Single writer per file, per wave-spec phase
 
 Two tasks in the same phase must not modify the same file. Chain `depends_on`.
+
+Do **not** put domain `README.md` paths (or root `README.md`) in a task's
+`## Files to create or modify`. README updates are standing implementer
+scope (`skills/readme-hygiene.md`); listing them would make every
+same-phase task in that layer a collision. The reviewer still blocks if
+public surface changed and the README did not.

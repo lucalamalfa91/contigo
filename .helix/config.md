@@ -82,3 +82,13 @@ local path; documented). Reviewer `allowed_tools`: `[Read, Grep, Glob, Bash]`
 phase-barrier conflict (cwd = integration). Decomposer and remediator are
 chat agents (PROCESS.md D9), not a coding harness.
 
+---
+
+## 5. Skills on coding agents
+
+| Skill | Who | Why |
+|---|---|---|
+| `kb-contract`, `marker-discipline` | most agents | path contract + last-line markers |
+| `afi` | implementer, reviewer | call-graph before edit / blast radius at review |
+| `readme-hygiene` | implementer, reviewer, conflict-fixer | keep `infra/` `backend/` `web/` `mobile/` and root `README.md` current with public surface; standing scope, not a per-task Files row (PROCESS.md §2.4) |
+

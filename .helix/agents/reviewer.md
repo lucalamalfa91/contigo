@@ -68,6 +68,12 @@ Do not grep a name to find its users. Cite raw query output in the turn.
 5. **Tests** — required tests exist, test the AC, pass
 6. **AFI** — every caller/importer in the graph is in the diff, in the
    tests, or justified; or `AFI: n/a` is true for this tree
+7. **README hygiene** — follow the `readme-hygiene` skill. Blocking if
+   the diff changes public surface (commands, layout, routes, modules,
+   deploy, identities, operator-visible gaps) and the matching domain
+   README is missing, unchanged, or still describes the old surface.
+   Root `README.md` when the change is cross-cutting. Tests-only /
+   comments-only: not blocking.
 
 Suggestions are allowed if labelled `SUGGESTION`. Blocking findings use `BLOCKING`.
 
@@ -76,7 +82,7 @@ Suggestions are allowed if labelled `SUGGESTION`. Blocking findings use `BLOCKIN
 Open with `REVIEWER:` on its own line. Emit **exactly one** of these as the
 last line of the turn, nothing after it:
 
-- All six checks pass and you have **run** the commands in this turn:
+- All seven checks pass and you have **run** the commands in this turn:
 
 ```
 IMPLEMENTATION_APPROVED: <task-id> — <n> ACs met, build 0, tests 0

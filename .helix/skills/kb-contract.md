@@ -53,6 +53,13 @@ reports/audit/                               # hook jsonl — never hand-edited
 Passata 2 implementer/reviewer also mount the `afi` skill. Relationship
 queries (callers, imports, blast radius) go through AFI, not grep.
 
+Passata 2 also mounts `readme-hygiene`. Product READMEs live at the
+**worktree root** (not under this artefact): `README.md`,
+`infra/README.md`, `backend/README.md`, `web/README.md`,
+`mobile/README.md`. They are operator-facing; update them in the same
+commit as public-surface code. They are **not** a kb-contract I/O-chain
+file — later phases do not read them to decide routing.
+
 ## Passata 2 — code sandbox (declared, not GitHub)
 
 Application code, if written, lives under `workspace/<repo>/` inside this
