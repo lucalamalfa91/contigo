@@ -40,6 +40,15 @@ namespace Contigo.Renewals.Infrastructure;
 /// service can resolve <see cref="RenewalThresholdScheduler"/> — the same "wiring lands with the
 /// first real caller" sequencing <c>Contigo.Chat.Infrastructure.ServiceCollectionExtensions</c>'s
 /// own doc comment describes for that module.
+/// directly). Task E03/F01/US01/T01 (deterministic-dates) added <see cref="RenewalEngine"/>;
+/// task E03/F03/US01/T01 (renewal-dashboard, this task) adds <see cref="RenewalPipelineBuilder"/>
+/// and is the first real caller — <c>Contigo.Api.Program</c> now calls
+/// <see cref="AddRenewalsModule"/> and maps <c>GET /api/renewals</c>
+/// (<c>Contigo.Api.RenewalsEndpointExtensions</c>), the same "wiring lands with the first real
+/// caller" sequencing <c>Contigo.Chat.Infrastructure.ServiceCollectionExtensions</c>'s own doc
+/// comment describes for that module. <c>Contigo.Worker.csproj</c> still only carries a
+/// <c>ProjectReference</c> to <c>Contigo.Renewals.csproj</c> in anticipation — no worker job calls
+/// this module yet (the threshold scheduler remains a follow-up task).
 /// </summary>
 public static class ServiceCollectionExtensions
 {
@@ -111,6 +120,9 @@ public static class ServiceCollectionExtensions
         // the exact same landmine Contigo.Worker.WorkerServiceCollectionExtensions.AddWorkerHost's
         // own doc comment already flags for Contigo.Documents.Contracts's DocumentUploadService.
         services.AddScoped<RenewalThresholdScheduler>();
+        // RenewalPipelineBuilder (task E03/F03/US01/T01) only depends on RenewalEngine + IClock,
+        // both already registered above — same Scoped lifetime for the same reason.
+        services.AddScoped<RenewalPipelineBuilder>();
 
         return services;
     }

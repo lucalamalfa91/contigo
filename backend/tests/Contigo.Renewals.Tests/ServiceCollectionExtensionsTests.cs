@@ -99,6 +99,25 @@ public sealed class ServiceCollectionExtensionsTests
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<PriorityScoreCalculator>());
     }
 
+    /// <summary>
+    /// Task E03/F03/US01/T01 (renewal-dashboard): <see cref="RenewalPipelineBuilder"/> must resolve
+    /// from the same container — <c>Contigo.Api.RenewalsEndpointExtensions</c> takes it as a
+    /// minimal-API handler parameter, which only works if DI can construct it.
+    /// </summary>
+    [Fact]
+    public void AddRenewalsModule_resolves_RenewalPipelineBuilder_with_no_captive_dependency()
+    {
+        var services = new ServiceCollection();
+
+        services.AddRenewalsModule();
+
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
+        using var scope = provider.CreateScope();
+
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<RenewalPipelineBuilder>());
+    }
+
     [Fact]
     public void AddRenewalsModule_does_not_override_an_already_registered_IClock()
     {
