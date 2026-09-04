@@ -114,7 +114,9 @@ jobs:
   apply:
     name: terraform apply skipped (${{ inputs.target_environment || 'dev' }})
     needs: plan
-    if: github.event_name == 'workflow_call' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    # Reusable workflows inherit the caller's event (a demo-v* tag push is
+    # still `push` + `refs/tags/demo-v*`, not `workflow_call` + `main`).
+    if: github.event_name == 'workflow_call' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/demo-v')))
     runs-on: ubuntu-latest
     environment: ${{ inputs.target_environment || 'dev' }}
     steps:
