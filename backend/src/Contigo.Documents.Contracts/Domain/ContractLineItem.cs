@@ -58,6 +58,9 @@ public sealed class ContractLineItem : TenantScopedEntity
 
     public required DateTimeOffset CreatedAt { get; set; }
 
+    /// <summary>Evidence pointer (Appendix C rule 2), mirroring <see cref="Clause.SourceDocumentId"/>.</summary>
+    public EntityId? SourceDocumentId { get; set; }
+
     /// <summary>Optimistic-concurrency guard — see <see cref="Contract.Version"/>.</summary>
     public int Version { get; set; } = 1;
 }

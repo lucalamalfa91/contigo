@@ -42,6 +42,15 @@ namespace Contigo.Documents.Contracts.Migrations
             // just this task's own. The extraction_evidence table below — the actual new schema
             // this migration introduces — is unaffected. Migrations/Scripts/documents-contracts.sql
             // was regenerated in the same commit via `dotnet ef migrations script --idempotent`.
+            // columns migration 20260904133500_AddEvidenceConfidenceVersionColumns already adds
+            // earlier in the migration history (both migrations were scaffolded independently, on
+            // separate task branches, against a model that had not yet seen the other branch's
+            // column — see that migration's own AddColumn calls for risk/obligation/
+            // contract_line_item). Applying both in sequence failed with Postgres 42701 ("column
+            // ... already exists"). Removed here (task E02/F02/US02/T02) rather than left for a
+            // later task, since it blocked every migration-dependent build in this module, not
+            // just this task's own. The extraction_evidence table below — the actual new schema
+            // this migration introduces — is unaffected.
             migrationBuilder.CreateTable(
                 name: "extraction_evidence",
                 columns: table => new

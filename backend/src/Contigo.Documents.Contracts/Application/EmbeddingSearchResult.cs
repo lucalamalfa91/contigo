@@ -1,0 +1,23 @@
+using Contigo.SharedKernel;
+
+namespace Contigo.Documents.Contracts.Application;
+
+/// <summary>
+/// One tenant-scoped nearest-neighbour hit returned by <see cref="EmbeddingRetrievalService.SearchAsync"/>.
+/// </summary>
+/// <param name="EmbeddingId">Id of the matched <see cref="Domain.Embedding"/> row.</param>
+/// <param name="SourceType">The polymorphic source discriminator (e.g. "Document", "Clause") — see
+/// <see cref="Domain.Embedding.SourceType"/>.</param>
+/// <param name="SourceId">Id of the source row within <paramref name="SourceType"/>.</param>
+/// <param name="ChunkIndex">Position of this chunk within its source.</param>
+/// <param name="ChunkText">The literal embedded text, so a caller (e.g. Ask Contigo grounded Q&amp;A,
+/// <c>IAiGateway.AnswerAsync</c>) can cite it without a second lookup.</param>
+/// <param name="Distance">Cosine distance to the query vector — smaller is more similar (0 = identical
+/// direction). Not a similarity score; callers wanting a 0-1 similarity can compute <c>1 - Distance</c>.</param>
+public sealed record EmbeddingSearchResult(
+    EntityId EmbeddingId,
+    string SourceType,
+    EntityId SourceId,
+    int ChunkIndex,
+    string ChunkText,
+    double Distance);
