@@ -12,7 +12,7 @@ seat's draft folder.
 | ADR-003 | Relational store | software-architect | PostgreSQL Flexible Server + pgvector via EF Core/npgsql; RLS tenancy; single system of record. |
 | ADR-004 | Foundry model roles | software-architect | Role-split (ocr/classify/extract/embed/answer) behind AI Gateway, config-selected cheapest IDs. |
 | ADR-005 | Azure services + SKUs | cloud-architect | Container Apps (consumption) + Postgres Burstable + Storage + Service Bus Standard + Key Vault + Entra ID Free. |
-| ADR-006 | Region | cloud-architect | West Europe (`westeurope`) for both `dev` and `demo`. |
+| ADR-006 | Region | cloud-architect | North Europe (`northeurope`) for both `dev` and `demo` (West Europe ineligible for new customers on this tenant). |
 | ADR-007 | Terraform layout | cloud-architect | Reusable modules + two env roots; remote state per env; no secrets in source. |
 | ADR-008 | Foundry account shape | cloud-architect | One hub, two projects (`dev`/`demo`), one pay-as-you-go AI services account. |
 | ADR-009 | Tenancy / RLS | security-architect | Postgres RLS on every tenant table; app passes `tenant_id`; RLS is the non-bypassable backstop. |

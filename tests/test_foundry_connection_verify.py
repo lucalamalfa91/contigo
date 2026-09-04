@@ -65,7 +65,7 @@ WRONG_VALUE_IDENTITY_OUTPUTS_TF = (
     "}\n"
 )
 
-GOOD_LOCATION_VARIABLES_TF = 'variable "location" {\n  type    = string\n  default = "West Europe"\n}\n'
+GOOD_LOCATION_VARIABLES_TF = 'variable "location" {\n  type    = string\n  default = "North Europe"\n}\n'
 BAD_LOCATION_VARIABLES_TF = 'variable "location" {\n  type    = string\n  default = "East US"\n}\n'
 
 GOOD_PROJECTS = (
@@ -94,12 +94,13 @@ def _write_environments_fixture(root: Path, dev_location: str, demo_location: st
 
 class NormalizeRegionTests(unittest.TestCase):
     def test_strips_spaces_and_lowercases(self) -> None:
+        self.assertEqual(fcv._normalize_region("North Europe"), "northeurope")
+        self.assertEqual(fcv._normalize_region("northeurope"), "northeurope")
+        self.assertEqual(fcv._normalize_region("  North   Europe "), "northeurope")
         self.assertEqual(fcv._normalize_region("West Europe"), "westeurope")
-        self.assertEqual(fcv._normalize_region("westeurope"), "westeurope")
-        self.assertEqual(fcv._normalize_region("  West   Europe "), "westeurope")
 
-    def test_west_europe_and_westeurope_are_the_same_region(self) -> None:
-        self.assertEqual(fcv._normalize_region("West Europe"), fcv._normalize_region(fcv.FOUNDRY_REGION))
+    def test_north_europe_and_northeurope_are_the_same_region(self) -> None:
+        self.assertEqual(fcv._normalize_region("North Europe"), fcv._normalize_region(fcv.FOUNDRY_REGION))
 
 
 class BuildFoundryConnectionsTests(unittest.TestCase):
@@ -107,7 +108,7 @@ class BuildFoundryConnectionsTests(unittest.TestCase):
         connections = fcv.build_foundry_connections()
         self.assertEqual({c["project"] for c in connections}, {"contigo-dev", "contigo-demo"})
         for c in connections:
-            self.assertEqual(c["region"], "westeurope")
+            self.assertEqual(c["region"], "northeurope")
             self.assertIn(fcv.hcp.AI_SERVICES_ACCOUNT_NAME, c["connection_id"])
             self.assertIn(c["project"], c["connection_id"])
             self.assertIn(c["document_intelligence_connection"], c["connection_id"])
@@ -138,19 +139,19 @@ class CheckFoundryAccountShapeStillRecordedTests(unittest.TestCase):
 class CheckRegionPinnedToWesteuropeTests(unittest.TestCase):
     def test_good_fixture_passes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            environments_root = _write_environments_fixture(Path(tmp), "West Europe", "West Europe")
+            environments_root = _write_environments_fixture(Path(tmp), "North Europe", "North Europe")
             passed, detail = fcv.check_region_pinned_to_westeurope(environments_root)
             self.assertTrue(passed, detail)
 
     def test_dev_drifted_to_another_region_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            environments_root = _write_environments_fixture(Path(tmp), "East US", "West Europe")
+            environments_root = _write_environments_fixture(Path(tmp), "East US", "North Europe")
             passed, detail = fcv.check_region_pinned_to_westeurope(environments_root)
             self.assertFalse(passed, detail)
 
     def test_demo_drifted_to_another_region_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            environments_root = _write_environments_fixture(Path(tmp), "West Europe", "North Europe")
+            environments_root = _write_environments_fixture(Path(tmp), "North Europe", "West Europe")
             passed, detail = fcv.check_region_pinned_to_westeurope(environments_root)
             self.assertFalse(passed, detail)
 

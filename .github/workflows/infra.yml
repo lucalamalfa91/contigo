@@ -16,8 +16,9 @@ on:
     paths:
       - "infra/**"
       - ".github/workflows/infra.yml"
-  # us-03's demo promotion workflow (ADR-016) reuses this same plan/apply
-  # job by calling it with target_environment: demo. dev and demo never
+  # us-03's demo promotion workflow (ADR-016) reuses this same plan
+  # (and the VCS-apply pointer job) by calling it with
+  # target_environment: demo. dev and demo never
   # share state or backend (ADR-007) -- only the job *definition* is
   # shared; TF_ROOT below resolves to a different environment root/HCP
   # workspace per call.
@@ -32,14 +33,14 @@ on:
         default: dev
 
 # Least privilege by default. Neither job below requests `id-token`: see
-# the comment on the plan/apply job for why Azure OIDC is not part of this
+# the comment on the plan job for why Azure OIDC is not part of this
 # workflow.
 permissions:
   contents: read
 
 concurrency:
   group: infra-${{ inputs.target_environment || 'dev' }}-${{ github.ref }}
-  cancel-in-progress: false # never cancel a run mid-apply
+  cancel-in-progress: false # never cancel a run mid-plan; HCP owns apply
 
 env:
   TF_ENVIRONMENT: ${{ inputs.target_environment || 'dev' }}
@@ -100,36 +101,33 @@ jobs:
         working-directory: ${{ env.TF_ROOT }}
         run: terraform plan -input=false
 
-  # Applies on merge to main (AC-2) or when reused by the demo promotion
-  # workflow. Both contigo-dev and contigo-demo HCP Terraform workspaces
-  # run in execution-mode "remote" (scripts/hcp_vcs_wiring.py,
-  # ADR-007's chosen operating model: "HCP Terraform itself runs plan/apply
-  # and owns the run"). The CLI invoked below only creates/confirms that
-  # run over the HCP Terraform API from this GitHub Actions runner; the
-  # plan/apply itself executes on HCP's own infrastructure, authenticating
-  # to Azure using the ARM_* credentials configured as that HCP workspace's
-  # own workspace variables (out of this workflow's, and this task's,
-  # scope). That is why this job requests no `id-token: write` / azure-login
-  # step: the GitHub Actions runner never talks to Azure directly for
-  # infra, only to the HCP Terraform API via TF_API_TOKEN above.
+  # Merge-to-main / demo-promote gate only. Both HCP workspaces are
+  # VCS-connected (scripts/hcp_vcs_wiring.py, ADR-007): HCP itself runs
+  # plan/apply from the GitHub repo. A CLI `terraform apply` from this
+  # runner is rejected ("Apply not allowed for workspaces with a VCS
+  # connection"), so this job does not invoke Terraform. Confirm the
+  # VCS-triggered run in the HCP UI (or enable workspace auto-apply).
+  # The job is still gated on push to main / workflow_call and still
+  # sets `environment:` so AC-2 and demo-promote's environment: demo
+  # approval keep working. Azure OIDC is not used here: ARM_* live on
+  # the HCP workspace.
   apply:
-    name: terraform apply (${{ inputs.target_environment || 'dev' }})
+    name: terraform apply skipped (${{ inputs.target_environment || 'dev' }})
     needs: plan
     if: github.event_name == 'workflow_call' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     environment: ${{ inputs.target_environment || 'dev' }}
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_wrapper: false
-          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
-
-      - name: terraform init
-        working-directory: ${{ env.TF_ROOT }}
-        run: terraform init -input=false
-
-      - name: terraform apply
-        working-directory: ${{ env.TF_ROOT }}
-        run: terraform apply -input=false -auto-approve
+      - name: HCP VCS owns apply
+        env:
+          TF_WORKSPACE: contigo-${{ env.TF_ENVIRONMENT }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### Infra apply is owned by HCP Terraform (VCS)"
+            echo ""
+            echo "Workspace \`$TF_WORKSPACE\` is VCS-connected. Confirm the run at:"
+            echo "https://app.terraform.io/app/contigo-platform/workspaces/$TF_WORKSPACE/runs"
+            echo ""
+            echo "Do not run \`terraform apply\` from GitHub Actions against a VCS-connected workspace."
+          } >> "$GITHUB_STEP_SUMMARY"

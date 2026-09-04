@@ -41,8 +41,8 @@ name: demo-promote
 # mobile.yml's own header comment).
 #
 # Promotion moves code/artifacts only (ADR-016, ADR-001): this workflow,
-# and everything it calls, only ever build/push container images, run a
-# Terraform apply of the *stateless* infra module definitions, and deploy
+# and everything it calls, only ever build/push container images, plan
+# (HCP VCS apply) the *stateless* infra module definitions, and deploy
 # a static web bundle. `dev` and `demo` own separate Terraform state and
 # separate data stores from the day each was provisioned (ADR-007,
 # ADR-016); no step here or in infra.yml/backend.yml/web.yml copies a
@@ -121,8 +121,10 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   # infra first: backend/web deploy *into* resources (resource group, ACR,
-  # Container Apps, Static Web App) that infra's apply job owns, so they
-  # depend on promote-infra rather than only on verify-tag-on-main.
+  # Container Apps, Static Web App) that HCP Terraform apply owns. This
+  # reusable workflow still plans (and records the VCS apply pointer);
+  # it does not CLI-apply. Keep the dependency so promotion waits on a
+  # green infra plan before rolling apps.
   promote-infra:
     name: promote infra
     needs: verify-tag-on-main

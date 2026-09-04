@@ -133,7 +133,7 @@ def _good_backend_tf(workspace: str, organization: str = "contigo-platform") -> 
 
 
 def _good_variables_tf(*, environment_default: str | None = None) -> str:
-    body = 'variable "location" {\n  type    = string\n  default = "West Europe"\n}\n'
+    body = 'variable "location" {\n  type    = string\n  default = "North Europe"\n}\n'
     if environment_default is not None:
         body += f'''
 variable "environment" {{

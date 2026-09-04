@@ -50,7 +50,7 @@ GOOD_TERRAFORM_BLOCK = """terraform {
 GOOD_VARIABLES_TF = """variable "location" {
   description = "Azure region."
   type        = string
-  default     = "West Europe"
+  default     = "North Europe"
 }
 """
 
@@ -208,7 +208,7 @@ class ResolveEnvironmentValueTests(unittest.TestCase):
 
     def test_resolves_matching_variable_reference(self) -> None:
         main_tf = "locals {\n  environment = var.environment\n}\n"
-        variables_tf = GOOD_VARIABLES_TF.replace("location", "environment").replace("West Europe", "dev")
+        variables_tf = GOOD_VARIABLES_TF.replace("location", "environment").replace("North Europe", "dev")
         self.assertEqual(tfr.resolve_environment_value(main_tf, variables_tf), "dev")
 
     def test_variable_reference_with_no_matching_default_returns_none(self) -> None:
@@ -275,7 +275,7 @@ class ParseVersionPinsTests(unittest.TestCase):
 
 class FindVariableDefaultTests(unittest.TestCase):
     def test_finds_default(self) -> None:
-        self.assertEqual(tfr.find_variable_default(GOOD_VARIABLES_TF, "location"), "West Europe")
+        self.assertEqual(tfr.find_variable_default(GOOD_VARIABLES_TF, "location"), "North Europe")
 
     def test_missing_variable_returns_none(self) -> None:
         self.assertIsNone(tfr.find_variable_default(GOOD_VARIABLES_TF, "nonexistent"))
@@ -369,11 +369,11 @@ class BrokenFixtureTreeTests(unittest.TestCase):
         self.assertFalse(passed, detail)
 
     def test_wrong_location_default_fails_location_pin(self) -> None:
-        bad_vars = GOOD_VARIABLES_TF.replace("West Europe", "North Europe")
+        bad_vars = GOOD_VARIABLES_TF.replace("North Europe", "West Europe")
         infra_root, envs_root = self._tree(variables_tf_overrides={"dev": bad_vars})
         passed, detail = tfr.check_location_pin("dev", envs_root)
         self.assertFalse(passed, detail)
-        self.assertIn("North Europe", detail)
+        self.assertIn("West Europe", detail)
 
     def test_drifted_provider_version_fails_version_pin_parity(self) -> None:
         drifted_block = GOOD_TERRAFORM_BLOCK.replace('version = "~> 4.0"', 'version = "~> 5.0"')

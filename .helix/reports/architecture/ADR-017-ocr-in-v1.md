@@ -41,7 +41,7 @@ The AI Gateway (ADR-004) gains a fifth role, **`ocr`**, bound through configurat
 | --- | --- | --- |
 | `ocr` | Azure AI Document Intelligence on the ADR-008 AI services account (`prebuilt-read`, `prebuilt-layout`) | Full-document text + page map + layout/tables; cheapest Read/Layout that meets evidence (page/section) |
 
-Exact model IDs and per-page prices are confirmed in `westeurope` at implementation time (same rule as ADR-004 / ADR-006) and recorded next to the other Foundry IDs. Until the live endpoint is wired, a fixture OCR adapter is acceptable for R0 scaffolding only — **R1 extraction on `demo` must use the real OCR path for at least one scanned/image fixture.**
+Exact model IDs and per-page prices are confirmed in `northeurope` at implementation time (same rule as ADR-004 / ADR-006) and recorded next to the other Foundry IDs. Until the live endpoint is wired, a fixture OCR adapter is acceptable for R0 scaffolding only — **R1 extraction on `demo` must use the real OCR path for at least one scanned/image fixture.**
 
 ### Placement vs Foundry models
 
@@ -80,6 +80,6 @@ OCR is not a chat/completions model. It still counts as AI I/O: it rides the sam
 
 ## Assumptions
 
-- Azure AI Document Intelligence Read and Layout (`prebuilt-read`, `prebuilt-layout`) are available in `westeurope` on the same AI services account as Foundry (ADR-006, ADR-008). Confirm ID/price at implementation time.
+- Azure AI Document Intelligence Read and Layout (`prebuilt-read`, `prebuilt-layout`) are available in `northeurope` on the same AI services account as Foundry (ADR-006, ADR-008). Confirm ID/price at implementation time.
 - S0 / pay-per-page is the cheapest SKU that can process a 100-contract Day-1 portfolio; F0 free-tier page caps are insufficient for `demo` and are not the V1 SKU.
 - Native libraries for PDF/DOCX/XLSX text exist for the ASP.NET worker and are good enough for born-digital files; OCR is the backstop, not a replacement for those formats.

@@ -35,7 +35,7 @@ Checks, all read-only, no network, no `terraform` binary required:
      -- and the root's `azurerm_resource_group.this` is tagged
      `project = "contigo"` / `env = local.environment` (AC-3's tagging rule,
      applied at the root level).
-  6. each variables.tf pins `location` to "West Europe" (ADR-006).
+  6. each variables.tf pins `location` to "North Europe" (ADR-006).
   7. each root's own embedded `terraform{}` block (required_version + the
      three provider pins) matches the shared `infra/versions.tf` exactly --
      Terraform has no cross-directory include, so infra/versions.tf's
@@ -77,7 +77,7 @@ REQUIRED_PROVIDERS = ("azurerm", "azuread", "random")
 
 EXPECTED_ORGANIZATION = "contigo-platform"
 EXPECTED_WORKSPACE_BY_ENV = {"dev": "contigo-dev", "demo": "contigo-demo"}
-EXPECTED_LOCATION_DEFAULT = "West Europe"
+EXPECTED_LOCATION_DEFAULT = "North Europe"
 
 
 # ---------------------------------------------------------------------------
