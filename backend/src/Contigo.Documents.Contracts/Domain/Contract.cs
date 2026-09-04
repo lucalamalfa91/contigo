@@ -35,4 +35,14 @@ public sealed class Contract : TenantScopedEntity
     public string? GoverningLaw { get; set; }
 
     public required DateTimeOffset CreatedAt { get; set; }
+
+    /// <summary>Optimistic-concurrency guard (Appendix C rule 5 — never destructively overwrite
+    /// contract history or human corrections). EF Core includes this in the WHERE clause of
+    /// every UPDATE/DELETE (<see cref="Infrastructure.Configurations.ContractConfiguration"/>),
+    /// so a write against a stale read fails with
+    /// <see cref="Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException"/> instead of
+    /// silently clobbering a concurrent re-extraction or human correction. The correction
+    /// write-path increments it on every accepted change; this schema only carries the guard.
+    /// </summary>
+    public int Version { get; set; } = 1;
 }

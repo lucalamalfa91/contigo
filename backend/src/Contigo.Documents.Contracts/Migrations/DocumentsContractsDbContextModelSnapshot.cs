@@ -79,6 +79,13 @@ namespace Contigo.Documents.Contracts.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("tenant_id");
 
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("version");
+
                     b.HasKey("Id")
                         .HasName("pk_clause");
 
@@ -178,6 +185,13 @@ namespace Contigo.Documents.Contracts.Migrations
                         .HasColumnType("character varying(50)")
                         .HasColumnName("type");
 
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("version");
+
                     b.HasKey("Id")
                         .HasName("pk_contract");
 
@@ -191,6 +205,121 @@ namespace Contigo.Documents.Contracts.Migrations
                         .HasDatabaseName("ix_contract_tenant_id");
 
                     b.ToTable("contract", (string)null);
+                });
+
+            modelBuilder.Entity("Contigo.Documents.Contracts.Domain.ContractLineItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal?>("AnnualCost")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("annual_cost");
+
+                    b.Property<string>("BillingPeriod")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("billing_period");
+
+                    b.Property<double?>("Confidence")
+                        .HasColumnType("double precision")
+                        .HasColumnName("confidence");
+
+                    b.Property<Guid>("ContractId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("contract_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("description");
+
+                    b.Property<decimal?>("Discount")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("discount");
+
+                    b.Property<decimal?>("ListPrice")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("list_price");
+
+                    b.Property<Guid?>("ProductId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("product_id");
+
+                    b.Property<decimal?>("Quantity")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("quantity");
+
+                    b.Property<string>("Sku")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("sku");
+
+                    b.Property<Guid?>("SourceDocumentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_document_id");
+
+                    b.Property<int?>("SourcePage")
+                        .HasColumnType("integer")
+                        .HasColumnName("source_page");
+
+                    b.Property<string>("SourceSpan")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("source_span");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<decimal?>("TotalCost")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("total_cost");
+
+                    b.Property<string>("Unit")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("unit");
+
+                    b.Property<decimal?>("UnitPrice")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("unit_price");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("version");
+
+                    b.HasKey("Id")
+                        .HasName("pk_contract_line_item");
+
+                    b.HasIndex("ContractId")
+                        .HasDatabaseName("ix_contract_line_item_contract_id");
+
+                    b.HasIndex("ProductId")
+                        .HasDatabaseName("ix_contract_line_item_product_id");
+
+                    b.HasIndex("SourceDocumentId")
+                        .HasDatabaseName("ix_contract_line_item_source_document_id");
+
+                    b.HasIndex("TenantId")
+                        .HasDatabaseName("ix_contract_line_item_tenant_id");
+
+                    b.ToTable("contract_line_item", (string)null);
                 });
 
             modelBuilder.Entity("Contigo.Documents.Contracts.Domain.ContractVersion", b =>
@@ -480,6 +609,73 @@ namespace Contigo.Documents.Contracts.Migrations
                     b.ToTable("embedding", (string)null);
                 });
 
+            modelBuilder.Entity("Contigo.Documents.Contracts.Domain.ExtractionEvidence", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<double?>("Confidence")
+                        .HasColumnType("double precision")
+                        .HasColumnName("confidence");
+
+                    b.Property<Guid>("ContractId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("contract_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("ExtractionJobId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("extraction_job_id");
+
+                    b.Property<string>("FieldName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("field_name");
+
+                    b.Property<Guid?>("SourceDocumentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_document_id");
+
+                    b.Property<int?>("SourcePage")
+                        .HasColumnType("integer")
+                        .HasColumnName("source_page");
+
+                    b.Property<string>("SourceSpan")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("source_span");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_id");
+
+                    b.Property<string>("Value")
+                        .HasColumnType("text")
+                        .HasColumnName("value");
+
+                    b.HasKey("Id")
+                        .HasName("pk_extraction_evidence");
+
+                    b.HasIndex("ExtractionJobId")
+                        .HasDatabaseName("ix_extraction_evidence_extraction_job_id");
+
+                    b.HasIndex("SourceDocumentId")
+                        .HasDatabaseName("ix_extraction_evidence_source_document_id");
+
+                    b.HasIndex("TenantId")
+                        .HasDatabaseName("ix_extraction_evidence_tenant_id");
+
+                    b.HasIndex("ContractId", "FieldName")
+                        .HasDatabaseName("ix_extraction_evidence_contract_id_field_name");
+
+                    b.ToTable("extraction_evidence", (string)null);
+                });
+
             modelBuilder.Entity("Contigo.Documents.Contracts.Domain.ExtractionJob", b =>
                 {
                     b.Property<Guid>("Id")
@@ -594,6 +790,15 @@ namespace Contigo.Documents.Contracts.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("source_document_id");
 
+                    b.Property<int?>("SourcePage")
+                        .HasColumnType("integer")
+                        .HasColumnName("source_page");
+
+                    b.Property<string>("SourceSpan")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("source_span");
+
                     b.Property<string>("Status")
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)")
@@ -602,6 +807,13 @@ namespace Contigo.Documents.Contracts.Migrations
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid")
                         .HasColumnName("tenant_id");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("version");
 
                     b.HasKey("Id")
                         .HasName("pk_obligation");
@@ -660,6 +872,19 @@ namespace Contigo.Documents.Contracts.Migrations
                         .HasColumnType("character varying(20)")
                         .HasColumnName("severity");
 
+                    b.Property<Guid?>("SourceDocumentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_document_id");
+
+                    b.Property<int?>("SourcePage")
+                        .HasColumnType("integer")
+                        .HasColumnName("source_page");
+
+                    b.Property<string>("SourceSpan")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("source_span");
+
                     b.Property<string>("Status")
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)")
@@ -669,6 +894,13 @@ namespace Contigo.Documents.Contracts.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("tenant_id");
 
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("version");
+
                     b.HasKey("Id")
                         .HasName("pk_risk");
 
@@ -677,6 +909,9 @@ namespace Contigo.Documents.Contracts.Migrations
 
                     b.HasIndex("ContractId")
                         .HasDatabaseName("ix_risk_contract_id");
+
+                    b.HasIndex("SourceDocumentId")
+                        .HasDatabaseName("ix_risk_source_document_id");
 
                     b.HasIndex("TenantId")
                         .HasDatabaseName("ix_risk_tenant_id");
@@ -709,6 +944,22 @@ namespace Contigo.Documents.Contracts.Migrations
                         .HasConstraintName("fk_contract_contract_parent_contract_id");
                 });
 
+            modelBuilder.Entity("Contigo.Documents.Contracts.Domain.ContractLineItem", b =>
+                {
+                    b.HasOne("Contigo.Documents.Contracts.Domain.Contract", null)
+                        .WithMany()
+                        .HasForeignKey("ContractId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_contract_line_item_contract_contract_id");
+
+                    b.HasOne("Contigo.Documents.Contracts.Domain.Document", null)
+                        .WithMany()
+                        .HasForeignKey("SourceDocumentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_contract_line_item_document_source_document_id");
+                });
+
             modelBuilder.Entity("Contigo.Documents.Contracts.Domain.ContractVersion", b =>
                 {
                     b.HasOne("Contigo.Documents.Contracts.Domain.Contract", null)
@@ -736,6 +987,28 @@ namespace Contigo.Documents.Contracts.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_document_version_document_document_id");
+                });
+
+            modelBuilder.Entity("Contigo.Documents.Contracts.Domain.ExtractionEvidence", b =>
+                {
+                    b.HasOne("Contigo.Documents.Contracts.Domain.Contract", null)
+                        .WithMany()
+                        .HasForeignKey("ContractId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_extraction_evidence_contract_contract_id");
+
+                    b.HasOne("Contigo.Documents.Contracts.Domain.ExtractionJob", null)
+                        .WithMany()
+                        .HasForeignKey("ExtractionJobId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_extraction_evidence_extraction_job_extraction_job_id");
+
+                    b.HasOne("Contigo.Documents.Contracts.Domain.Document", null)
+                        .WithMany()
+                        .HasForeignKey("SourceDocumentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_extraction_evidence_document_source_document_id");
                 });
 
             modelBuilder.Entity("Contigo.Documents.Contracts.Domain.ExtractionJob", b =>
@@ -778,6 +1051,12 @@ namespace Contigo.Documents.Contracts.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_risk_contract_contract_id");
+
+                    b.HasOne("Contigo.Documents.Contracts.Domain.Document", null)
+                        .WithMany()
+                        .HasForeignKey("SourceDocumentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_risk_document_source_document_id");
                 });
 #pragma warning restore 612, 618
         }

@@ -25,6 +25,10 @@ public sealed class ObligationConfiguration : IEntityTypeConfiguration<Obligatio
         builder.Property(e => e.ObligationType).HasMaxLength(100);
         builder.Property(e => e.Criticality).HasMaxLength(30);
         builder.Property(e => e.Status).HasMaxLength(30);
+        builder.Property(e => e.SourceSpan).HasMaxLength(500);
+
+        // Optimistic-concurrency guard (Appendix C rule 5) — see Contract.Version.
+        builder.Property(e => e.Version).HasDefaultValue(1).IsConcurrencyToken();
 
         builder.HasIndex(e => e.TenantId);
         builder.HasIndex(e => e.ContractId);

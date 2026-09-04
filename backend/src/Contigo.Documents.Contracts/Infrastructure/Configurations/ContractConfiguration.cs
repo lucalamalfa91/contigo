@@ -33,6 +33,9 @@ public sealed class ContractConfiguration : IEntityTypeConfiguration<Contract>
         builder.Property(e => e.AnnualSpend).HasPrecision(18, 2);
         builder.Property(e => e.TotalContractValue).HasPrecision(18, 2);
 
+        // Optimistic-concurrency guard (Appendix C rule 5) — see Contract.Version.
+        builder.Property(e => e.Version).HasDefaultValue(1).IsConcurrencyToken();
+
         builder.HasIndex(e => e.TenantId);
         builder.HasIndex(e => e.SupplierId);
         builder.HasIndex(e => e.ParentContractId);

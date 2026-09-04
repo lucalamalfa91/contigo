@@ -3,7 +3,9 @@
 using Contigo.Api;
 using Contigo.Api.Infrastructure;
 using Contigo.Audit.Infrastructure;
+using Contigo.Chat.Infrastructure;
 using Contigo.Documents.Contracts.Application;
+using Contigo.Documents.Contracts.Application.Extraction;
 using Contigo.Documents.Contracts.Infrastructure;
 using Contigo.Identity.Workspace.Infrastructure;
 using Contigo.SharedKernel;
@@ -54,6 +56,16 @@ var auditConnectionString = builder.Configuration.GetConnectionString("Audit")
 
 builder.Services.AddAuditModule(auditConnectionString);
 
+// Task E02/F04/US02/T01 (rag-citations, POST /api/chat/query): the Chat module's own
+// AddChatModule(IServiceCollection) (ADR-002) — nothing called it before this task, though
+// Contigo.Api.csproj already carried a ProjectReference to Contigo.Chat.csproj in anticipation.
+// Depends on IAuditWriter (just registered by AddAuditModule above) and IAiGateway (registered
+// transitively by AddDocumentsContractsModule above, via its own AddAiGatewayModule call) — both
+// already resolvable in this container by the time RagAnswerService is first requested; DI
+// registration order does not matter, only that every AddXxxModule call below happens before
+// builder.Build().
+builder.Services.AddChatModule();
+
 builder.Services.AddHealthChecks();
 
 var app = builder.Build();
@@ -69,6 +81,19 @@ app.MapWorkspaceEndpoints();
 // (DocumentUploadService owns the actual business logic; this delegate only translates
 // HTTP <-> the service call, per ADR-002's "host is a thin composition root").
 //
+// Task E02/F06/US01/T01 (r1-integration, AC-1 "upload -> parse/OCR -> classify -> extract"):
+// once the upload itself is durable, this handler also runs DocumentProcessingPipeline —
+// hybrid parse -> classify -> staged extraction -> Ask Contigo indexing — synchronously, in
+// this same request, before responding. See DocumentProcessingPipeline's own doc comment for
+// why synchronous/in-request is this task's deliberate interim choice (nothing in this
+// codebase dispatches the queued Classification job to a handler off a durable queue yet). The
+// file bytes are read into memory once, up front: DocumentUploadService needs a stream for
+// storage and DocumentProcessingPipeline needs the same bytes again afterward, and an
+// IFormFile's own stream is not guaranteed re-readable after the first copy. A pipeline
+// failure is reported honestly in the response (processingStatus/contractId fall back to the
+// just-uploaded, pre-processing values) but never turns an already-successful upload into an
+// HTTP error — the bytes are safely stored and the document row already exists either way.
+//
 // ADR-010 (Entra ID/OIDC) is not in the "architecture decisions in force" list for this task,
 // so there is no validated caller identity/JWT yet. The tenant is taken from an explicit
 // X-Tenant-Id header instead of a token claim — a deliberate interim placeholder (paired with
@@ -81,6 +106,7 @@ app.MapWorkspaceEndpoints();
 app.MapPost("/api/documents", async Task<IResult> (
     HttpRequest request,
     DocumentUploadService uploadService,
+    DocumentProcessingPipeline processingPipeline,
     CancellationToken cancellationToken) =>
 {
     if (!request.Headers.TryGetValue("X-Tenant-Id", out var tenantHeaderValues)
@@ -101,9 +127,19 @@ app.MapPost("/api/documents", async Task<IResult> (
         return Results.BadRequest("A non-empty 'file' form field is required.");
     }
 
-    await using var content = file.OpenReadStream();
+    byte[] fileBytes;
+    await using (var uploadStream = file.OpenReadStream())
+    await using (var buffer = new MemoryStream())
+    {
+        await uploadStream.CopyToAsync(buffer, cancellationToken);
+        fileBytes = buffer.ToArray();
+    }
+
+    var tenantId = new TenantId(tenantGuid);
+
+    using var storageContent = new MemoryStream(fileBytes);
     var result = await uploadService.UploadAsync(
-        new TenantId(tenantGuid), file.FileName, file.ContentType, content, cancellationToken);
+        tenantId, file.FileName, file.ContentType, storageContent, cancellationToken);
 
     if (result.IsFailure)
     {
@@ -111,12 +147,22 @@ app.MapPost("/api/documents", async Task<IResult> (
     }
 
     var uploaded = result.Value;
+
+    var processingResult = await processingPipeline.ProcessAsync(
+        tenantId, uploaded.DocumentId, uploaded.FileName, uploaded.MimeType, fileBytes, cancellationToken);
+
+    var processingStatus = processingResult.IsSuccess
+        ? processingResult.Value.ProcessingStatus
+        : uploaded.ProcessingStatus;
+    var contractId = processingResult.IsSuccess ? processingResult.Value.ContractId.Value : (Guid?)null;
+
     return Results.Created($"/api/documents/{uploaded.DocumentId}", new
     {
         id = uploaded.DocumentId.Value,
+        contractId,
         fileName = uploaded.FileName,
         mimeType = uploaded.MimeType,
-        processingStatus = uploaded.ProcessingStatus.ToString(),
+        processingStatus = processingStatus.ToString(),
         createdAt = uploaded.CreatedAt,
     });
 });
@@ -164,10 +210,33 @@ app.MapGet("/api/documents/{id}", async Task<IResult> (
     });
 });
 
+// Task E02/F05/US01/T01 (us-01-correction-history, AC-1): versioned PATCH /api/contracts/{id}.
+// Task E02/F03/US02/T01 (us-02-contract-360-aggregate, AC-1/AC-2/AC-3): GET /api/contracts/{id},
+// the spec §8.2 header + tab aggregate. See ContractsEndpointExtensions for both endpoints —
+// ContractCorrectionService owns the versioning/history decisions for the PATCH (never a
+// destructive overwrite — Appendix C rule 5); Contract360QueryService owns the tenant-scoped
+// aggregation for the GET (ADR-009).
+app.MapContractsEndpoints();
+
 // Task E01/F06/US02/T02 (us-02-audit-baseline, AC-2): authorized, tenant-scoped GET /api/audit.
 // See AuditEndpointExtensions for the endpoint itself and WorkspacePrincipalAuthorization for
 // the authorization decision (401 vs 403 vs the tenant-scoped read).
 app.MapAuditEndpoints();
+
+// Task E02/F03/US01/T01 (us-01-portfolio-list-filters, AC-1/AC-2/AC-3): GET /api/contracts, the
+// spec §8.1 portfolio columns + filters, tenant-scoped (ADR-009). Same interim X-Tenant-Id
+// placeholder as the document endpoints above (ADR-010 is not in force for this task either) —
+// see PortfolioEndpointExtensions and those endpoints' own comments for why this gap is not
+// promoted to reports/open-questions.md by this task.
+app.MapPortfolioEndpoints();
+
+// Task E02/F04/US02/T01 (us-02-rag-citations, AC-1/AC-2/AC-3): POST /api/chat/query — the RAG
+// retrieval + grounded-answer-with-citations path for Ask Contigo semantic questions (spec §8.3).
+// See ChatEndpointExtensions for the endpoint itself; AskContigoQueryRouter (task
+// E02/F04/US01/T01) decides Structured vs Semantic, EmbeddingRetrievalService (task
+// E02/F02/US02/T02) performs the tenant-scoped retrieval, and RagAnswerService (this task) turns
+// the two into a grounded answer with citations or an explicit "cannot determine".
+app.MapChatEndpoints();
 
 app.Run();
 
