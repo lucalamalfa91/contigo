@@ -114,6 +114,12 @@ public sealed class EmbeddingRetrievalServiceTests : IAsyncLifetime
         public Task<Result<AiAnswerResult>> AnswerAsync(
             AiAnswerRequest request, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException("Not exercised by EmbeddingRetrievalService.");
+
+        // IAiGateway grew this 5th role after this stub was written (task E02/F01/US02/T02,
+        // hybrid-ocr, ADR-017) — not exercised by EmbeddingRetrievalService either.
+        public Task<Result<AiOcrResult>> OcrAsync(
+            AiOcrRequest request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("Not exercised by EmbeddingRetrievalService.");
     }
 
     /// <summary>

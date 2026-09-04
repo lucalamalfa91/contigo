@@ -1,0 +1,101 @@
+using Contigo.AiGateway;
+using Contigo.AiGateway.Contracts;
+using Contigo.Chat.Application;
+using Contigo.Chat.Infrastructure;
+using Contigo.SharedKernel;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Contigo.Chat.Tests;
+
+/// <summary>
+/// Proves task E02/F04/US02/T01's own wiring claim (mirrors
+/// <c>Contigo.AiGateway.Tests.ServiceCollectionExtensionsTests</c>): <see cref="AskContigoQueryRouter"/>,
+/// <see cref="DeterministicQueryPlanner"/>, <see cref="DeterministicQueryHandler"/> and
+/// <see cref="RagAnswerService"/> are all resolvable from a container that has
+/// <see cref="AddChatModule"/> plus this module's two external dependencies
+/// (<see cref="IAiGateway"/>, <see cref="IAuditWriter"/>) registered — the shape
+/// <c>Contigo.Api.Program</c>'s real composition already provides via
+/// <c>AddDocumentsContractsModule</c>/<c>AddAuditModule</c>.
+///
+/// <see cref="ServiceProviderOptions.ValidateOnBuild"/> + <see cref="ServiceProviderOptions.ValidateScopes"/>
+/// (both <see langword="true"/> below) is the actual proof behind
+/// <c>Infrastructure.ServiceCollectionExtensions</c>'s own doc comment: if
+/// <see cref="RagAnswerService"/> had been registered Singleton instead of Scoped, building this
+/// provider would throw ("Cannot consume scoped service ... from singleton ...") because it
+/// depends on a Scoped <see cref="IAuditWriter"/> — this test fails loudly if that regresses.
+/// </summary>
+public sealed class ServiceCollectionExtensionsTests
+{
+    [Fact]
+    public void AddChatModule_resolves_every_module_service_with_no_captive_dependency()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IAiGateway, NotExercisedGateway>();
+        services.AddScoped<IAuditWriter, NoOpAuditWriter>();
+
+        services.AddChatModule();
+
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
+        using var scope = provider.CreateScope();
+
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<AskContigoQueryRouter>());
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<DeterministicQueryPlanner>());
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<DeterministicQueryHandler>());
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<RagAnswerService>());
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<IClock>());
+    }
+
+    [Fact]
+    public void AddChatModule_does_not_override_an_already_registered_IClock()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IAiGateway, NotExercisedGateway>();
+        services.AddScoped<IAuditWriter, NoOpAuditWriter>();
+        var preRegisteredClock = new FixedTimeClock();
+        services.AddSingleton<IClock>(preRegisteredClock);
+
+        services.AddChatModule();
+
+        using var provider = services.BuildServiceProvider();
+
+        // TryAddSingleton: the first registration wins — same defensive convention every other
+        // module's own AddXxxModule already uses.
+        Assert.Same(preRegisteredClock, provider.GetRequiredService<IClock>());
+    }
+
+    private sealed class FixedTimeClock : IClock
+    {
+        public DateTimeOffset UtcNow => new(2026, 9, 4, 0, 0, 0, TimeSpan.Zero);
+    }
+
+    private sealed class NoOpAuditWriter : IAuditWriter
+    {
+        public Task WriteAsync(AuditEntry entry, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    /// <summary>Never actually invoked by this test — only its resolvability matters — so every
+    /// method throws rather than returning a plausible-looking default.</summary>
+    private sealed class NotExercisedGateway : IAiGateway
+    {
+        public Task<Result<AiClassificationResult>> ClassifyAsync(
+            AiClassificationRequest request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<Result<AiExtractionResult>> ExtractAsync(
+            AiExtractionRequest request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<Result<AiEmbeddingResult>> EmbedAsync(
+            AiEmbeddingRequest request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<Result<AiAnswerResult>> AnswerAsync(
+            AiAnswerRequest request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<Result<AiOcrResult>> OcrAsync(
+            AiOcrRequest request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+}

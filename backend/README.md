@@ -36,7 +36,7 @@ backend/
     Contigo.Renewals/            # scaffold (R2)
     Contigo.Savings/             # scaffold (R3)
     Contigo.Quotes/              # scaffold (R4)
-    Contigo.Chat/                # Ask Contigo structured-vs-semantic query router (R1, task E02/F04/US01/T01) + deterministic dates/spend query handlers (task E02/F04/US01/T02)
+    Contigo.Chat/                # Ask Contigo structured-vs-semantic query router (R1, task E02/F04/US01/T01) + deterministic dates/spend query handlers (task E02/F04/US01/T02) + RagAnswerService (task E02/F04/US02/T01); AddChatModule wired into Contigo.Api by this last task
   tests/                         # per-module + architecture + R0 integration
 ```
 
@@ -86,18 +86,14 @@ RLS policies are added in those migrations, not in Terraform.
 | GET | `/api/contracts/{id}/corrections` | `X-Tenant-Id` header; field-level correction history for one contract, newest first (`Contigo.Documents.Contracts.Application.ContractCorrectionHistoryQueryService`) — 404 if the contract does not exist for the tenant, `[]` if it exists but was never corrected |
 | GET | `/api/audit` | tenant-scoped; expects a claims principal (integration tests inject one) |
 | GET | `/api/contracts` | portfolio list; spec §8.1 columns; `X-Tenant-Id` header; optional filters `supplierId`, `status`, `risk` (Low/Medium/High/Critical), `autoRenewal`, `minAnnualSpend`, `maxAnnualSpend`, `renewalFrom`/`renewalTo` (yyyy-MM-dd) — no `category` filter yet, see `PortfolioFilter`'s doc comment; optional paging `page` (default 1), `pageSize` (default 25, max 100); response is `{ items, page, pageSize, totalCount }`, not a bare array |
-| GET | `/api/contracts` | portfolio list; spec §8.1 columns; `X-Tenant-Id` header; optional filters `supplierId`, `status`, `risk` (Low/Medium/High/Critical), `autoRenewal`, `minAnnualSpend`, `maxAnnualSpend`, `renewalFrom`/`renewalTo` (yyyy-MM-dd) — no `category` filter yet, see `PortfolioFilter`'s doc comment |
 | GET | `/api/contracts/{id}` | Contract 360 aggregate; spec §8.2 header + tabs (overview, commercials, products, clauses, obligations, risks, documents, benchmark, renewal, activity); `X-Tenant-Id` header; 404 when the contract does not exist or belongs to another tenant; `benchmark`/`activity` are always empty arrays until R3/R4 — see `Contract360Result`'s doc comment |
+| POST | `/api/chat/query` | Ask Contigo (spec §8.3); `{ question: string }` + `X-Tenant-Id` header; routes via `AskContigoQueryRouter`. `Semantic` questions run the real RAG pipeline (`EmbeddingRetrievalService.SearchAsync` tenant-scoped retrieval → `RagAnswerService` → `IAiGateway.AnswerAsync`) and respond `{ question, intent, canDetermine, answer, citations: [{documentId, page, section}], message }` — `citations` empty and `canDetermine: false` when authorized retrieval finds nothing (spec §8.4 "no evidence, no claim"), never a fabricated answer. `Structured` questions get an honest `canDetermine: false` + explanatory `message` — no task has yet mapped a real, tenant-scoped `Contract` row into `Contigo.Chat.Application.ContractFact` for `DeterministicQueryHandler` to run against, see that type's own doc comment |
 
-**Interim auth:** document upload/read, the portfolio list, the contract
-correction PATCH, and the Contract 360 GET all take the tenant from
-`X-Tenant-Id`, not from a validated JWT. ADR-010 (Entra ID / OIDC on the
-API) is not wired in the host yet. Do not treat the header as the
-long-term contract.
-**Interim auth:** document upload/read, the portfolio list, and the
-contract correction PATCH/GET take the tenant from `X-Tenant-Id`, not
-from a validated JWT. ADR-010 (Entra ID / OIDC on the API) is not wired
-in the host yet. Do not treat the header as the long-term contract.
+**Interim auth:** every endpoint above that takes an `X-Tenant-Id` header
+(all except `GET /api/audit`, which already expects a claims principal)
+takes the tenant from that header, not from a validated JWT. ADR-010
+(Entra ID / OIDC on the API) is not wired in the host yet. Do not treat
+the header as the long-term contract.
 
 The web client generates TypeScript types from
 `web/openapi/contigo-api.v1.json`. The API does **not** yet self-publish
@@ -151,11 +147,14 @@ persists it to the `embedding` table; `SearchAsync` embeds a query the
 same way and returns the tenant's nearest chunks by cosine distance
 (`Vector.CosineDistance`), explicitly filtered by `tenant_id` on top of
 that table's own RLS policy. Embedding generation never touches a
-provider SDK directly — always through `IAiGateway`. Nothing yet calls
-this from an HTTP endpoint or the queue; the Ask Contigo semantic-retrieval
-task (E02/F04/US02/T01) is the intended first caller.
+provider SDK directly — always through `IAiGateway`. `SearchAsync`'s first
+caller is `POST /api/chat/query` (task E02/F04/US02/T01, below); nothing
+yet calls `IndexChunkAsync` outside tests — no production pipeline chunks
+an uploaded/extracted document into the `embedding` table yet, so a fresh
+tenant's Ask Contigo queries honestly return "cannot determine" until a
+later task wires that write side.
 
-## Ask Contigo — query router + deterministic queries
+## Ask Contigo — query router + deterministic queries + RAG citations
 
 `Contigo.Chat.Application.AskContigoQueryRouter` classifies a natural-language
 question (product spec §8.3) as `Structured` (deterministic query/filter, no
@@ -176,13 +175,37 @@ A structured question outside those two families (for example "total
 contract value") is reported as `Unsupported` rather than answered against
 the wrong field.
 
+`Contigo.Chat.Application.RagAnswerService` (task E02/F04/US02/T01,
+us-02-rag-citations, AC-1/AC-2/AC-3) turns a `Semantic` decision plus
+already-retrieved, already-authorized evidence into a grounded answer with
+citations via `IAiGateway.AnswerAsync` (ADR-004 `answer` role) — citations
+or an explicit "cannot determine" (spec §8.4 "no evidence, no claim"), never
+a fabricated answer. It also writes one `IAuditWriter` entry per successful
+call (`chat.answered` — ADR-011 "audit of access"), never the raw
+question/evidence/answer text. Task E02/F04/US02/T02 (abstain-guard) adds a
+no-fabrication guard on top of this call; this task does not attempt it.
+
 `Contigo.Chat` cannot reference `Contigo.Documents.Contracts` (see
-"Dependency direction" below), so the handler operates on `ContractFact` — a
-small snapshot DTO the module owns itself — rather than the real `Contract`
-entity. Nothing in this wave maps a real, tenant-scoped `Contract` row to
-`ContractFact` or exposes any of this behind an HTTP endpoint yet; that
-composition is `Contigo.Api`'s job (the one project allowed to reference
-every module) and lands with whichever later task wires `/api/chat/query`.
+"Dependency direction" below), so neither `DeterministicQueryHandler` nor
+`RagAnswerService` retrieves anything itself: both operate on caller-supplied
+data (`ContractFact` / a pre-retrieved evidence list respectively) — small
+DTOs/parameters the module owns or accepts, never the real `Contract`/
+`Embedding` entities. `Contigo.Api.ChatEndpointExtensions` (`POST
+/api/chat/query`, task E02/F04/US02/T01) is the composition root that closes
+this gap for the `Semantic` branch: it resolves the tenant, calls
+`EmbeddingRetrievalService.SearchAsync` (auth-before-retrieval, ADR-011),
+maps each hit into `Contigo.AiGateway.Contracts.AiEvidenceSnippet`, then
+calls `RagAnswerService`. `DocumentId` on that mapping is a
+`{SourceType}:{SourceId}` composite (not a bare id): an `Embedding` row's
+`SourceId` only really identifies a document when `SourceType` is
+`"Document"` — for `"Clause"`-sourced evidence it identifies the clause row,
+and silently relabelling one as the other would misattribute the citation.
+`Page` is left `null` (no page column on `Embedding` yet) and `Section`
+reports the real chunk index instead of a fabricated section title — true
+page/section resolution (joining back to `Clause.SourcePage`/`SourceSpan`) is
+a follow-up gap, not attempted by this task. No task has yet mapped a real,
+tenant-scoped `Contract` row into `ContractFact`, so the endpoint's
+`Structured` branch reports an honest "not wired yet" instead of guessing.
 
 ## Containers and CI
 

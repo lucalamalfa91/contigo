@@ -26,6 +26,13 @@
     <ProjectReference Include="..\..\src\Contigo.Documents.Contracts\Contigo.Documents.Contracts.csproj" />
     <ProjectReference Include="..\..\src\Contigo.Audit\Contigo.Audit.csproj" />
     <ProjectReference Include="..\..\src\Contigo.SharedKernel\Contigo.SharedKernel.csproj" />
+    <!-- Task E02/F04/US02/T01: AskContigoRagCrossTenantIsolationTests composes
+         EmbeddingRetrievalService (Documents.Contracts, already referenced above) with the real
+         POST /api/chat/query host (Contigo.Api, which already references both of these
+         transitively) — explicit here for the same directness every other reference in this file
+         already has, not because compilation would fail without it. -->
+    <ProjectReference Include="..\..\src\Contigo.Chat\Contigo.Chat.csproj" />
+    <ProjectReference Include="..\..\src\Contigo.AiGateway\Contigo.AiGateway.csproj" />
   </ItemGroup>
 
 </Project>

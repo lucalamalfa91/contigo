@@ -3,6 +3,7 @@
 using Contigo.Api;
 using Contigo.Api.Infrastructure;
 using Contigo.Audit.Infrastructure;
+using Contigo.Chat.Infrastructure;
 using Contigo.Documents.Contracts.Application;
 using Contigo.Documents.Contracts.Infrastructure;
 using Contigo.Identity.Workspace.Infrastructure;
@@ -53,6 +54,16 @@ var auditConnectionString = builder.Configuration.GetConnectionString("Audit")
         "(see appsettings.Development.json for the local dev default).");
 
 builder.Services.AddAuditModule(auditConnectionString);
+
+// Task E02/F04/US02/T01 (rag-citations, POST /api/chat/query): the Chat module's own
+// AddChatModule(IServiceCollection) (ADR-002) — nothing called it before this task, though
+// Contigo.Api.csproj already carried a ProjectReference to Contigo.Chat.csproj in anticipation.
+// Depends on IAuditWriter (just registered by AddAuditModule above) and IAiGateway (registered
+// transitively by AddDocumentsContractsModule above, via its own AddAiGatewayModule call) — both
+// already resolvable in this container by the time RagAnswerService is first requested; DI
+// registration order does not matter, only that every AddXxxModule call below happens before
+// builder.Build().
+builder.Services.AddChatModule();
 
 builder.Services.AddHealthChecks();
 
@@ -183,6 +194,14 @@ app.MapAuditEndpoints();
 // see PortfolioEndpointExtensions and those endpoints' own comments for why this gap is not
 // promoted to reports/open-questions.md by this task.
 app.MapPortfolioEndpoints();
+
+// Task E02/F04/US02/T01 (us-02-rag-citations, AC-1/AC-2/AC-3): POST /api/chat/query — the RAG
+// retrieval + grounded-answer-with-citations path for Ask Contigo semantic questions (spec §8.3).
+// See ChatEndpointExtensions for the endpoint itself; AskContigoQueryRouter (task
+// E02/F04/US01/T01) decides Structured vs Semantic, EmbeddingRetrievalService (task
+// E02/F02/US02/T02) performs the tenant-scoped retrieval, and RagAnswerService (this task) turns
+// the two into a grounded answer with citations or an explicit "cannot determine".
+app.MapChatEndpoints();
 
 app.Run();
 

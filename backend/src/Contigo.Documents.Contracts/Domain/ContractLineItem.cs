@@ -34,59 +34,28 @@ public sealed class ContractLineItem : TenantScopedEntity
     public decimal? AnnualCost { get; set; }
     public decimal? TotalCost { get; set; }
 
-    /// <summary>Evidence pointer (Appendix C rule 2), mirroring <see cref="Clause.SourceDocumentId"/>.</summary>
-    public EntityId? SourceDocumentId { get; set; }
-
-    /// <summary>Page/section evidence pointer + confidence (Appendix C rule 2; spec §7.3 "every
-    /// extracted fact carries source span + confidence"). Added by task E02/F01/US02/T01
-    /// (us-02-staged-extraction, AC-2) — this task's `price/SKU` stage is the first writer of
-    /// this entity that needs it; the original contract-schema task (E02/F02/US01/T01) had no
-    /// extraction caller yet, matching <see cref="Clause"/>'s already-evidenced shape.
-    ///
-    /// NOTE: this file previously carried two independent copies of these three properties (a
-    /// second, near-identical block re-added <c>SourceSpan</c>/<c>SourcePage</c>/<c>Confidence</c>
-    /// under a "mirrors Clause" doc comment) — a phase-barrier merge artifact from task
-    /// E02/F02/US01/T02 (schema-evidence) landing in the same wave as this task without either
-    /// side seeing the other's addition, which failed the build with CS0102 ("already contains a
-    /// definition"). Task E02/F01/US02/T02 (hybrid-ocr) deduplicated back down to one copy of
-    /// each property (identical types/nullability on both sides, so nothing was lost) purely to
-    /// get a green build for its own, unrelated change — see that task's implementer notes.
-    /// </summary>
-    /// <summary>Evidence pointer + confidence (Appendix C rule 2; spec §7.3 "every extracted
-    /// fact carries source span + confidence"), mirroring <see cref="Clause.SourceDocumentId"/>/
-    /// <see cref="Clause.SourceSpan"/>/<see cref="Clause.SourcePage"/>. Added by task
-    /// E02/F01/US02/T01 (us-02-staged-extraction, AC-2) — this task's `price/SKU` stage is the
-    /// first writer of this entity that needs it; the original contract-schema task
-    /// (E02/F02/US01/T01) had no extraction caller yet.</summary>
-    /// <summary>Evidence pointer + confidence (Appendix C rule 2; spec §7.3 "every extracted fact
-    /// carries source span + confidence"). Added by task E02/F01/US02/T01 (us-02-staged-extraction,
-    /// AC-2) — this task's `price/SKU` stage is the first writer of this entity that needs it; the
-    /// original contract-schema task (E02/F02/US01/T01) had no extraction caller yet, matching
-    /// <see cref="Clause"/>'s already-evidenced shape. <see cref="SourceDocumentId"/> mirrors
-    /// <see cref="Clause.SourceDocumentId"/>. (A prior phase-barrier merge had duplicated this
-    /// evidence block across two converging tasks, producing CS0102 "already contains a
-    /// definition" on all three scalar members; task E02/F03/US02/T01 collapsed it back to one
-    /// declaration per member so the module compiles — the migration and EF configuration already
-    /// only ever added/referenced one physical column each, so no schema change is needed.)
-    /// </summary>
     /// <summary>Evidence pointer + page/section span + confidence (Appendix C rule 2; spec §7.3
     /// "every extracted fact carries source span + confidence"), mirroring
     /// <see cref="Clause.SourceDocumentId"/>/<see cref="Clause.SourceSpan"/>/
     /// <see cref="Clause.SourcePage"/>/<see cref="Clause.Confidence"/>. Added by task
     /// E02/F01/US02/T01 (us-02-staged-extraction, AC-2) — this task's `price/SKU` stage is the
     /// first writer of this entity that needs it; the original contract-schema task
-    /// (E02/F02/US01/T01) had no extraction caller yet. <see cref="SourceDocumentId"/> itself
-    /// (which of a contract's documents) landed with task E02/F02/US01/T02's evidence-schema
-    /// pass, alongside <see cref="Version"/>.</summary>
+    /// (E02/F02/US01/T01) had no extraction caller yet.
+    ///
+    /// NOTE: this block has repeatedly been re-duplicated by independent phase-barrier merges
+    /// landing the same "add evidence pointer" change from more than one converging task, each
+    /// time failing the build with CS0102 ("already contains a definition") until the next
+    /// implementer collapsed it back to one declaration per member — see git history on this file.
+    /// The migration and EF configuration (<see cref="Infrastructure.Configurations
+    /// .ContractLineItemConfiguration"/>) have only ever added/referenced one physical column per
+    /// member throughout, so collapsing duplicate C# declarations back to one is never a schema
+    /// change.</summary>
     public EntityId? SourceDocumentId { get; set; }
     public string? SourceSpan { get; set; }
     public int? SourcePage { get; set; }
     public double? Confidence { get; set; }
 
     public required DateTimeOffset CreatedAt { get; set; }
-
-    /// <summary>Evidence pointer (Appendix C rule 2), mirroring <see cref="Clause.SourceDocumentId"/>.</summary>
-    public EntityId? SourceDocumentId { get; set; }
 
     /// <summary>Optimistic-concurrency guard — see <see cref="Contract.Version"/>.</summary>
     public int Version { get; set; } = 1;
