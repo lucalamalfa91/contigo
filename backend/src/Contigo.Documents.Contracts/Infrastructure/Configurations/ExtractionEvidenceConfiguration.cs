@@ -4,11 +4,11 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Contigo.Documents.Contracts.Infrastructure.Configurations;
 
-public sealed class ObligationConfiguration : IEntityTypeConfiguration<Obligation>
+public sealed class ExtractionEvidenceConfiguration : IEntityTypeConfiguration<ExtractionEvidence>
 {
-    public void Configure(EntityTypeBuilder<Obligation> builder)
+    public void Configure(EntityTypeBuilder<ExtractionEvidence> builder)
     {
-        builder.ToTable("obligation");
+        builder.ToTable("extraction_evidence");
         builder.HasKey(e => e.Id);
 
         builder.Property(e => e.Id)
@@ -20,28 +20,33 @@ public sealed class ObligationConfiguration : IEntityTypeConfiguration<Obligatio
             .HasConversion(ValueConverters.EntityIdConverter);
         builder.Property(e => e.SourceDocumentId)
             .HasConversion(ValueConverters.NullableEntityIdConverter);
+        builder.Property(e => e.ExtractionJobId)
+            .HasConversion(ValueConverters.NullableEntityIdConverter);
 
-        builder.Property(e => e.Party).HasMaxLength(300);
-        builder.Property(e => e.ObligationType).HasMaxLength(100);
-        builder.Property(e => e.Criticality).HasMaxLength(30);
-        builder.Property(e => e.Status).HasMaxLength(30);
+        builder.Property(e => e.FieldName).HasMaxLength(200);
         builder.Property(e => e.SourceSpan).HasMaxLength(500);
 
         builder.HasIndex(e => e.TenantId);
-        builder.HasIndex(e => e.ContractId);
-        builder.HasIndex(e => e.SourceDocumentId);
-        builder.HasIndex(e => e.DueDate);
+        builder.HasIndex(e => new { e.ContractId, e.FieldName });
 
-        // Owned by the contract: an obligation has no meaning without it.
+        // Owned by the contract: evidence has no meaning without it (mirrors ContractLineItemConfiguration).
         builder.HasOne<Contract>()
             .WithMany()
             .HasForeignKey(e => e.ContractId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        // Evidence pointer only; see ClauseConfiguration.
+        // Evidence pointer only; see ClauseConfiguration for the same "do not cascade-delete a
+        // fact just because its source document is removed" reasoning.
         builder.HasOne<Document>()
             .WithMany()
             .HasForeignKey(e => e.SourceDocumentId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Traceability pointer only; deleting an ExtractionJob (it never is today — jobs are
+        // append-only run records) must not cascade-delete the evidence it produced.
+        builder.HasOne<ExtractionJob>()
+            .WithMany()
+            .HasForeignKey(e => e.ExtractionJobId)
             .OnDelete(DeleteBehavior.Restrict);
     }
 }

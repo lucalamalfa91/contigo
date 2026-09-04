@@ -29,6 +29,7 @@ public sealed class ContractLineItemConfiguration : IEntityTypeConfiguration<Con
         builder.Property(e => e.Description).HasMaxLength(1000);
         builder.Property(e => e.Unit).HasMaxLength(50);
         builder.Property(e => e.BillingPeriod).HasMaxLength(50);
+        builder.Property(e => e.SourceSpan).HasMaxLength(500);
 
         builder.Property(e => e.Quantity).HasPrecision(18, 4);
         builder.Property(e => e.UnitPrice).HasPrecision(18, 2);

@@ -602,3 +602,125 @@ BEGIN
 END $EF$;
 COMMIT;
 
+START TRANSACTION;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904135028_AddStagedExtractionEvidence') THEN
+    ALTER TABLE risk ADD source_page integer;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904135028_AddStagedExtractionEvidence') THEN
+    ALTER TABLE risk ADD source_span character varying(500);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904135028_AddStagedExtractionEvidence') THEN
+    ALTER TABLE obligation ADD source_page integer;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904135028_AddStagedExtractionEvidence') THEN
+    ALTER TABLE obligation ADD source_span character varying(500);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904135028_AddStagedExtractionEvidence') THEN
+    ALTER TABLE contract_line_item ADD confidence double precision;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904135028_AddStagedExtractionEvidence') THEN
+    ALTER TABLE contract_line_item ADD source_page integer;
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904135028_AddStagedExtractionEvidence') THEN
+    ALTER TABLE contract_line_item ADD source_span character varying(500);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904135028_AddStagedExtractionEvidence') THEN
+    CREATE TABLE extraction_evidence (
+        id uuid NOT NULL,
+        contract_id uuid NOT NULL,
+        source_document_id uuid,
+        extraction_job_id uuid,
+        field_name character varying(200) NOT NULL,
+        value text,
+        source_span character varying(500),
+        source_page integer,
+        confidence double precision,
+        created_at timestamp with time zone NOT NULL,
+        tenant_id uuid NOT NULL,
+        CONSTRAINT pk_extraction_evidence PRIMARY KEY (id),
+        CONSTRAINT fk_extraction_evidence_contract_contract_id FOREIGN KEY (contract_id) REFERENCES contract (id) ON DELETE CASCADE,
+        CONSTRAINT fk_extraction_evidence_document_source_document_id FOREIGN KEY (source_document_id) REFERENCES document (id) ON DELETE RESTRICT,
+        CONSTRAINT fk_extraction_evidence_extraction_job_extraction_job_id FOREIGN KEY (extraction_job_id) REFERENCES extraction_job (id) ON DELETE RESTRICT
+    );
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904135028_AddStagedExtractionEvidence') THEN
+    CREATE INDEX ix_extraction_evidence_contract_id_field_name ON extraction_evidence (contract_id, field_name);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904135028_AddStagedExtractionEvidence') THEN
+    CREATE INDEX ix_extraction_evidence_extraction_job_id ON extraction_evidence (extraction_job_id);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904135028_AddStagedExtractionEvidence') THEN
+    CREATE INDEX ix_extraction_evidence_source_document_id ON extraction_evidence (source_document_id);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904135028_AddStagedExtractionEvidence') THEN
+    CREATE INDEX ix_extraction_evidence_tenant_id ON extraction_evidence (tenant_id);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904135028_AddStagedExtractionEvidence') THEN
+    ALTER TABLE "extraction_evidence" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "extraction_evidence" FORCE ROW LEVEL SECURITY;
+    CREATE POLICY tenant_isolation ON "extraction_evidence"
+        USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+        WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
+    END IF;
+END $EF$;
+
+DO $EF$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM "__EFMigrationsHistory" WHERE "migration_id" = '20260904135028_AddStagedExtractionEvidence') THEN
+    INSERT INTO "__EFMigrationsHistory" (migration_id, product_version)
+    VALUES ('20260904135028_AddStagedExtractionEvidence', '10.0.4');
+    END IF;
+END $EF$;
+COMMIT;
+

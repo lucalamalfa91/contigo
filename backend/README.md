@@ -20,9 +20,9 @@ backend/
     Contigo.Worker/              # thin worker composition root
     Contigo.SharedKernel/        # TenantId, EntityId, Result<T>, IClock, IAuditWriter, IDocumentStorage
     Contigo.Identity.Workspace/  # workspace, membership, roles (live)
-    Contigo.Documents.Contracts/ # upload, metadata, extraction job (live)
+    Contigo.Documents.Contracts/ # upload, metadata, staged extraction pipeline (live)
     Contigo.Audit/               # append-only audit events (live)
-    Contigo.AiGateway/           # IAiGateway only — no Foundry SDK yet
+    Contigo.AiGateway/           # IAiGateway + FixtureAiGateway, wired via DI — no Foundry SDK yet
     Contigo.Benchmark/           # IBenchmarkService only — fixture adapter is later (R3)
     Contigo.Suppliers.Products/  # scaffold (R1+)
     Contigo.Renewals/            # scaffold (R2)
@@ -91,6 +91,30 @@ The R0 default queue is an **in-process** `InMemoryQueueConsumer` — Azure
 Service Bus exists in Terraform (`modules/servicebus`) but is not consumed
 here yet. Extraction / renewal / benchmark / quote handlers land with
 those features.
+
+## AI Gateway
+
+`Contigo.AiGateway` is wired into DI by `Contigo.Documents.Contracts`'s own
+`AddDocumentsContractsModule` (so both the API and Worker hosts get a
+working `IAiGateway` with no host-side change). `IAiGateway` is bound to
+`FixtureAiGateway` — deterministic, provider-free — until a live Foundry
+endpoint exists (ADR-004/ADR-017); domain code depends only on the
+interface. Per-role model ids/versions (`classify`/`extract`/`embed`/
+`answer`) bind from the `AiGateway:Models` configuration section
+(`AiGateway:Models:Extract:ModelId`, etc. — env var form
+`AiGateway__Models__Extract__ModelId`) and default to ADR-004's candidate
+models when that section is absent, so no config is required to run
+locally.
+
+`Contigo.Documents.Contracts.Application.Extraction.StagedExtractionService`
+runs product spec §7.2's seven-stage pipeline (metadata → commercial terms
+→ dates → price/SKU → clauses → obligations → risk) over already
+page-mapped text (`DocumentPageText` — native-vs-OCR text acquisition is a
+separate concern, not this service's) and persists every fact with source
+span/page + confidence (spec §7.3) — directly on `ContractLineItem`/
+`Clause`/`Obligation`/`Risk`, or via the new `ExtractionEvidence` table for
+`Contract`'s own scalar fields. Nothing yet calls it from an HTTP endpoint
+or the queue; wiring a caller is a later task.
 
 ## Containers and CI
 

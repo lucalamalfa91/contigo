@@ -21,5 +21,13 @@ public sealed class Obligation : TenantScopedEntity
     public string? Status { get; set; }
     public double? Confidence { get; set; }
 
+    /// <summary>Page/section evidence pointer (Appendix C rule 2; spec §7.3 "every extracted
+    /// fact carries source span + confidence"). Added by task E02/F01/US02/T01
+    /// (us-02-staged-extraction, AC-2) — <see cref="SourceDocumentId"/> alone names *which*
+    /// document but not *where in it*, unlike <see cref="Clause"/>, which already had both.
+    /// </summary>
+    public string? SourceSpan { get; set; }
+    public int? SourcePage { get; set; }
+
     public required DateTimeOffset CreatedAt { get; set; }
 }
