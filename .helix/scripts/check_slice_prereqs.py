@@ -285,7 +285,7 @@ def check_azure_subscription() -> tuple[bool, str]:
         return False, (
             f"{name} ({pinned}) looks like a trial/capped offer "
             f"(quotaId={quota or '?'}, spendingLimit={spending or '?'}). "
-            "Contigo needs a pay-as-you-go (or EA/CSP) subscription in westeurope. "
+            "Contigo needs a pay-as-you-go (or EA/CSP) subscription in northeurope. "
             + summary
         )
 

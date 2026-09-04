@@ -1,6 +1,6 @@
 # ADR-006 — Azure region for `dev` and `demo`
 
-- **Status**: accepted
+- **Status**: accepted (amended 2026-09-04)
 - **Date**: 2026-09-01
 - **Deciders**: cloud-architect (owner)
 - **Locked citations**: Cloud — Microsoft Azure; Environments — `dev` and `demo` in the same region (brief §4: "Region: council (keep `dev` and `demo` in the same region)").
@@ -14,6 +14,7 @@ Both Azure environments must live in one region to keep latency, data-residency 
 - **Service coverage**: the region must host Container Apps (consumption), Flexible Server with pgvector, Foundry model endpoints for the cheapest models, Service Bus Standard, and Entra ID.
 - **Latency / reach**: `demo` is stakeholder-facing; prefer a region with good general latency to the expected audience without paying multi-region cost.
 - **Cost stability**: pick a region with stable pricing for the chosen SKUs; avoid newly launched regions with incomplete feature coverage.
+- **Subscription eligibility**: the chosen region must accept new customers on this tenant (Azure `locationineligible` / `RequestDisallowedByAzure`).
 
 ## Considered options
 
@@ -23,23 +24,25 @@ Both Azure environments must live in one region to keep latency, data-residency 
 
 ## Decision outcome
 
-**Chosen: Option 1 — West Europe (`westeurope`)**, because it provides full and mature coverage of every required service (Container Apps consumption, PostgreSQL Flexible Server + pgvector, Foundry model endpoints, Service Bus, Entra ID) at standard pricing while keeping stakeholder-facing `demo` latency reasonable for a European audience — all within the no-multi-region, cheapest-SKU mandate.
+**Chosen: Option 2 — North Europe (`northeurope`)**.
+
+The 2026-09-01 council chose West Europe. First apply on this tenant failed with `RequestDisallowedByAzure` / [locationineligible](https://learn.microsoft.com/en-us/azure/azure-resource-manager/troubleshooting/error-region-access-policy): Microsoft is not accepting new customers in West Europe when the tenant has no existing resources there. North Europe was already the documented fallback (same SKU coverage, still EU latency) and unblocks `dev`/`demo` without splitting regions.
 
 ### Consequences
 
-- **Good**: single region for both envs keeps Terraform, remote state, and identity wiring identical; every required SKU is available; no multi-region spend.
+- **Good**: single region for both envs keeps Terraform, remote state, and identity wiring identical; every required SKU is available; no multi-region spend; deployable on this subscription.
 - **Bad**: regional outages affect both `dev` and `demo` simultaneously (acceptable for a no-prod V1); single region means no provider diversity.
-- **Neutral**: Foundry model IDs must be confirmed as available in `westeurope` at implementation time (jointly with software-architect on CQ-008).
+- **Neutral**: Foundry model IDs must be confirmed as available in `northeurope` at implementation time (jointly with software-architect on CQ-008).
 
 ## Pros and cons of the options
 
 ### west europe
 - Good: full, mature service + model coverage; stable pricing; low latency for EU stakeholders.
-- Bad: single-region (no geo-redundancy).
+- Bad: currently `locationineligible` for new customers on this tenant; apply cannot create Storage, Container Apps, Postgres, ACR, Key Vault, Service Bus, VNet, or managed identity there.
 
 ### north europe
-- Good: near-identical coverage.
-- Bad: no material advantage over west europe for this product's audience; would add no benefit worth diverging.
+- Good: near-identical coverage to West Europe; EU latency; eligible for new resources on this tenant.
+- Bad: slightly different peering/latency profile than Amsterdam; Foundry model IDs must be re-checked here (CQ-008).
 
 ### east us
 - Good: full coverage.
@@ -47,11 +50,11 @@ Both Azure environments must live in one region to keep latency, data-residency 
 
 ## Implications for the decomposition
 
-- All Terraform providers/remote-state must pin `location = "West Europe"` (or the canonical `westeurope`) for both `dev` and `demo`.
-- Any task that confirms Foundry model IDs must check `westeurope` availability and price before pinning (CQ-008).
+- All Terraform providers/remote-state must pin `location = "North Europe"` (or the canonical `northeurope`) for both `dev` and `demo`.
+- Any task that confirms Foundry model IDs must check `northeurope` availability and price before pinning (CQ-008).
 - Do not introduce a second region for either environment.
 
 ## Assumptions
 
-- All services named in ADR-azure-skus are GA in `westeurope` (Container Apps consumption, PostgreSQL Flexible Server with `pgvector`, Service Bus Standard, Foundry model serving).
-- The primary `demo` audience is European, making `westeurope` the latency-correct choice.
+- All services named in ADR-azure-skus are GA in `northeurope` (Container Apps consumption, PostgreSQL Flexible Server with `pgvector`, Service Bus Standard, Foundry model serving).
+- The primary `demo` audience is European, making `northeurope` an acceptable latency choice once West Europe is ineligible.

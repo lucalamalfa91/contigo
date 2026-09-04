@@ -6,7 +6,7 @@ Parent story `us-02-dev-environment` AC-1 ("dev provisions: ... Container
 Apps Environment ... PostgreSQL Flexible Server ... Storage Account ...
 Service Bus ... Key Vault ... Container Registry ... Log Analytics")
 and AC-2 ("All dev resources tagged project=contigo, env=dev,
-location=West Europe") need a repeatable proof that the *outputs* of
+location=North Europe") need a repeatable proof that the *outputs* of
 `infra/environments/dev/` actually surface a resource id/endpoint per
 service, and that the per-service resources underneath are tagged. Task
 T01 (E01/F02/US02/T01, already merged) provisioned the dev root but left

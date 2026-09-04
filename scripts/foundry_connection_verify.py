@@ -10,17 +10,17 @@ FOUNDRY_HUB_NAME/AI_SERVICES_ACCOUNT_NAME/FOUNDRY_PROJECTS in
 scripts/bootstrap_hcp_org.py and structurally asserted it is complete and
 internally consistent (check_foundry_account_recorded). This task's own
 coding objective ("Verify Foundry hub/projects availability in
-westeurope; record connection ids") is narrower and additive -- never a
+northeurope; record connection ids") is narrower and additive -- never a
 re-decision of what T01 already owns:
 
   1. Region -- ADR-006 pins both `dev` and `demo` to the same region
-     ("West Europe" / `westeurope`), and ADR-008's own Assumptions section
+     ("North Europe" / `northeurope`), and ADR-008's own Assumptions section
      names that as the region Foundry + Document Intelligence must be
      available in. check_region_pinned_to_westeurope() re-asserts (not
      just assumes) that both environment roots are still pinned there --
      via scripts/terraform_env_roots_scan.check_location_pin(), the same
      check task E01/F02/US01/T02 already wrote -- and that the canonical
-     Foundry region slug this task records (`westeurope`) is the same
+     Foundry region slug this task records (`northeurope`) is the same
      region. One region, one source of truth (infra/environments/*/
      variables.tf), never a second literal that could silently drift.
   2. Connection ids -- T01 recorded a Document Intelligence connection
@@ -94,11 +94,11 @@ ENVS = ("dev", "demo")
 
 # ADR-006: both environments share one region; ADR-008's Assumptions
 # section names it as the region Foundry + AI services + Document
-# Intelligence must be confirmed available in. "westeurope" is the
-# canonical Azure region slug for the Terraform-pinned "West Europe"
+# Intelligence must be confirmed available in. "northeurope" is the
+# canonical Azure region slug for the Terraform-pinned "North Europe"
 # (infra/environments/{dev,demo}/variables.tf) -- see _normalize_region
 # below for why both spellings must compare equal.
-FOUNDRY_REGION = "westeurope"
+FOUNDRY_REGION = "northeurope"
 
 # ADR-017 AC-4: the exact two Document Intelligence prebuilt models this
 # story's per-project connections must serve. Named literally here
@@ -111,7 +111,7 @@ FILES_TO_SECRET_SCAN_RELATIVE = ("modules/identity/outputs.tf",)
 
 
 def _normalize_region(value: str) -> str:
-    """"West Europe" and "westeurope" must compare equal: Terraform's
+    """"North Europe" and "northeurope" must compare equal: Terraform's
     azurerm provider accepts the human-readable display name, while
     Foundry/ARM region slugs are lowercase-no-space. Same region, two
     spellings -- this is the one place that equivalence is asserted."""
@@ -156,8 +156,8 @@ def check_foundry_account_shape_still_recorded() -> tuple:
 
 
 def check_region_pinned_to_westeurope(environments_root: Path = ENVIRONMENTS_ROOT) -> tuple:
-    if _normalize_region(FOUNDRY_REGION) != "westeurope":
-        return False, f"FOUNDRY_REGION={FOUNDRY_REGION!r} does not normalize to 'westeurope'"
+    if _normalize_region(FOUNDRY_REGION) != "northeurope":
+        return False, f"FOUNDRY_REGION={FOUNDRY_REGION!r} does not normalize to 'northeurope'"
     problems = []
     for env in ENVS:
         passed, detail = tfr.check_location_pin(env, environments_root)
@@ -296,7 +296,7 @@ def run_all_checks(
 ) -> list:
     return [
         ("foundry account shape still recorded", check_foundry_account_shape_still_recorded()),
-        ("region pinned to westeurope", check_region_pinned_to_westeurope(environments_root)),
+        ("region pinned to northeurope", check_region_pinned_to_westeurope(environments_root)),
         ("connection ids well-formed", check_connection_ids_well_formed(projects)),
         ("connection ids unique + isolated per env", check_connection_ids_unique_and_isolated(projects)),
         ("connections share the single ADR-008 account", check_connections_share_single_account(projects)),

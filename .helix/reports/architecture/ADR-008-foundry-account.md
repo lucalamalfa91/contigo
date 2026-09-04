@@ -38,7 +38,7 @@ All model I/O flows through the Contigo AI Gateway (brief §8), and Foundry is t
 | Foundry control surface | Azure AI Foundry **Hub** | One hub, **no hub-level SKU charge** (hub is metadata) | One hub for the whole org. |
 | Per-env isolation | Azure AI Foundry **Project** | Two projects (`contigo-dev`, `contigo-demo`), **no project-level charge** | Distinct deployments, connections, audit. |
 | Inference billing | Azure AI Services account | **Pay-as-you-go (standard / S0)** — metered per 1K tokens; no free tier for model inference | One shared account; usage attributed per project. |
-| Deployments | Foundry model deployments | **Serverless / standard deployment** — check regional availability in `westeurope` | Exact model IDs + pricing confirmed jointly with software-architect (CQ-008). |
+| Deployments | Foundry model deployments | **Serverless / standard deployment** — check regional availability in `northeurope` | Exact model IDs + pricing confirmed jointly with software-architect (CQ-008). |
 | Embeddings | Foundry embedding model | **Pay-per-token** | Cheapest compatible embedding model, e.g. text-embedding-3-small (confirm at implementation). |
 | OCR / layout | Azure AI Document Intelligence | **S0 / pay-per-page** on the same AI services account | V1 capability (ADR-017). `prebuilt-read` + `prebuilt-layout`; per-project connection (`contigo-dev` / `contigo-demo`). No second account. |
 
@@ -62,11 +62,11 @@ All model I/O flows through the Contigo AI Gateway (brief §8), and Foundry is t
 
 - Any task wiring the AI Gateway must target distinct Foundry **projects** per environment (`contigo-dev` and `contigo-demo`) under a single hub and a single pay-as-you-go AI services account.
 - Do not create two AI services accounts/subscriptions; attribute usage per project for the cost researcher.
-- Model IDs/prices must be confirmed for `westeurope` before pinning (CQ-008); pick the cheapest that meets extract / embed / grounded-Q&A-with-citations **and** Document Intelligence Read/Layout for V1 OCR (ADR-004, ADR-017; jointly with software-architect).
+- Model IDs/prices must be confirmed for `northeurope` before pinning (CQ-008); pick the cheapest that meets extract / embed / grounded-Q&A-with-citations **and** Document Intelligence Read/Layout for V1 OCR (ADR-004, ADR-017; jointly with software-architect).
 - The AI Gateway reads Foundry endpoint + credentials via managed identity/Key Vault; no model key in Terraform source or app code.
 
 ## Assumptions
 
-- Azure AI Foundry (hub + projects) and Azure AI Services pay-as-you-go are available in `westeurope`.
+- Azure AI Foundry (hub + projects) and Azure AI Services pay-as-you-go are available in `northeurope`.
 - Foundry has no meaningful free inference tier, so a single pay-as-you-go account is the cheapest compliant option.
 - Per-project deployment isolation satisfies the brief's isolation requirement without a second account.

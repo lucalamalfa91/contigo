@@ -4,7 +4,7 @@
 Task E01/F01/US02/T01 (parent story `us-02-hcp-terraform-workspaces`,
 AC-1..AC-3; ADR-007 remote state per environment -- reusable modules + two
 thin environment roots, remote state per env, no secrets in source; ADR-006
-region `westeurope` is a data-plane concern only and never touches where
+region `northeurope` is a data-plane concern only and never touches where
 Terraform state lives). This script turns "an HCP Terraform org with two
 independently-stated workspaces exists" into a reproducible, idempotent API
 call instead of a one-off console click -- the same way
