@@ -22,10 +22,15 @@ locals {
   }
 
   # ADR-012: SPA redirect is the Static Web App origin, passed in by the
-  # env root from modules/staticwebapp.default_host_name (not a guessed
-  # custom hostname). The entra-keyvault scan asserts redirect_uris uses
-  # this local, not the raw variable.
-  web_redirect_uri = var.web_redirect_uri
+  # env root from modules/staticwebapp.default_host_name. Entra requires a
+  # trailing slash when the URI has no path segment (`single_page_application
+  # redirect_uris`); origin-only values are normalized here so callers can
+  # pass with or without `/`.
+  web_redirect_uri = (
+    can(regex("^https://[^/]+/?$", var.web_redirect_uri))
+    ? "${trimsuffix(var.web_redirect_uri, "/")}/"
+    : var.web_redirect_uri
+  )
 }
 
 resource "azurerm_user_assigned_identity" "workload" {

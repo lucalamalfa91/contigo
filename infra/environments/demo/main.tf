@@ -90,7 +90,7 @@ module "identity" {
   environment         = local.environment
   location            = var.location
   resource_group_name = azurerm_resource_group.this.name
-  web_redirect_uri    = "https://${module.staticwebapp.default_host_name}"
+  web_redirect_uri    = "https://${module.staticwebapp.default_host_name}/"
 }
 
 # ADR-005: PostgreSQL Flexible Server, Burstable "B_Standard_B1ms" (module

@@ -61,7 +61,8 @@ Closing this is CI work: after `download-artifact`, write real
 `apiBaseUrl` / `oidcAuthority` / `oidcClientId` / `oidcRedirectUri` /
 `oidcApiScopes` (all non-secret) into `web-dist/config.json` before
 `swa-cli deploy`. `oidcRedirectUri` should match the SWA origin
-(`https://<default_host_name>`), which Terraform already registers on the
+(`https://<default_host_name>/` — trailing slash required by Entra for
+origin-only SPA redirect URIs), which Terraform already registers on the
 public client.
 
 The Static Web App itself is `swa-contigo-<env>` in `rg-contigo-<env>`
