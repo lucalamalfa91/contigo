@@ -97,6 +97,10 @@ jobs:
       id-token: write # required so GitHub issues the OIDC token azure/login exchanges
       contents: read
     steps:
+      # Local composite actions (./.github/actions/...) need the repo on
+      # disk; download-artifact alone leaves the workspace empty.
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           name: web-dist
