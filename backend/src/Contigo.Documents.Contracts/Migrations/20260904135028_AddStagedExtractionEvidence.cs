@@ -7,70 +7,41 @@ namespace Contigo.Documents.Contracts.Migrations
 {
     /// <summary>
     /// Task E02/F01/US02/T01 (us-02-staged-extraction, AC-2 "every extracted fact carries source
-    /// span + confidence"): completes source-span/page/confidence evidence on
-    /// <c>risk</c>/<c>obligation</c>/<c>contract_line_item</c> (already-existing "one row = one
-    /// fact" tables that were missing one or more of those columns — see
-    /// <c>Domain.Risk</c>/<c>Domain.Obligation</c>/<c>Domain.ContractLineItem</c>'s own doc
-    /// comments), and adds <c>extraction_evidence</c> for the scalar <c>contract</c> fields that
-    /// have no "one row = one fact" table of their own (see <c>Domain.ExtractionEvidence</c>'s
-    /// doc comment). <c>extraction_evidence</c> is a new tenant-scoped table, so — exactly like
-    /// <c>AddContractLineItem</c> before it — its RLS enable/force/policy statements are bundled
-    /// into this same migration rather than a separate follow-up, so there is no migration
-    /// history state where it exists without RLS (ADR-009).
+    /// span + confidence"): adds <c>extraction_evidence</c> for the scalar <c>contract</c> fields
+    /// that have no "one row = one fact" table of their own (see
+    /// <c>Domain.ExtractionEvidence</c>'s doc comment). <c>extraction_evidence</c> is a new
+    /// tenant-scoped table, so — exactly like <c>AddContractLineItem</c> before it — its RLS
+    /// enable/force/policy statements are bundled into this same migration rather than a separate
+    /// follow-up, so there is no migration history state where it exists without RLS (ADR-009).
     /// <c>Contigo.Tenancy.Tests.TenantRlsMigrationCheckTests</c>/<c>TenantRlsDeployableScriptCheckTests</c>
     /// discover it automatically (every <c>TenantScopedEntity</c> subclass) and would fail the
     /// build if this were omitted.
+    ///
+    /// This migration originally ALSO re-added source-span/page/confidence columns on
+    /// <c>risk</c>/<c>obligation</c>/<c>contract_line_item</c> here — see the removed-duplicate
+    /// note on <see cref="Up"/> for why that half was deleted; migration
+    /// <c>20260904133500_AddEvidenceConfidenceVersionColumns</c> is the sole owner of those
+    /// columns now.
     /// </summary>
     public partial class AddStagedExtractionEvidence : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<int>(
-                name: "source_page",
-                table: "risk",
-                type: "integer",
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "source_span",
-                table: "risk",
-                type: "character varying(500)",
-                maxLength: 500,
-                nullable: true);
-
-            migrationBuilder.AddColumn<int>(
-                name: "source_page",
-                table: "obligation",
-                type: "integer",
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "source_span",
-                table: "obligation",
-                type: "character varying(500)",
-                maxLength: 500,
-                nullable: true);
-
-            migrationBuilder.AddColumn<double>(
-                name: "confidence",
-                table: "contract_line_item",
-                type: "double precision",
-                nullable: true);
-
-            migrationBuilder.AddColumn<int>(
-                name: "source_page",
-                table: "contract_line_item",
-                type: "integer",
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "source_span",
-                table: "contract_line_item",
-                type: "character varying(500)",
-                maxLength: 500,
-                nullable: true);
-
+            // NOTE: this migration originally re-added source_page/source_span (risk, obligation)
+            // and confidence/source_page/source_span (contract_line_item) here, duplicating the
+            // same columns migration 20260904133500_AddEvidenceConfidenceVersionColumns already
+            // adds earlier in the migration history (both migrations were scaffolded
+            // independently, on separate task branches, against a model that had not yet seen the
+            // other branch's column — see that migration's own AddColumn calls for risk/
+            // obligation/contract_line_item). Applying both in sequence failed with Postgres 42701
+            // ("column ... already exists"), taking every migration-dependent test in
+            // Contigo.Documents.Contracts.Tests down with it — including the parent story's own
+            // named integration test. Removed here (review gap on task E02/F01/US02/T02) rather
+            // than left standing, since it blocked every build-time migration in this module, not
+            // just this task's own. The extraction_evidence table below — the actual new schema
+            // this migration introduces — is unaffected. Migrations/Scripts/documents-contracts.sql
+            // was regenerated in the same commit via `dotnet ef migrations script --idempotent`.
             migrationBuilder.CreateTable(
                 name: "extraction_evidence",
                 columns: table => new
@@ -155,34 +126,6 @@ namespace Contigo.Documents.Contracts.Migrations
 
             migrationBuilder.DropTable(
                 name: "extraction_evidence");
-
-            migrationBuilder.DropColumn(
-                name: "source_page",
-                table: "risk");
-
-            migrationBuilder.DropColumn(
-                name: "source_span",
-                table: "risk");
-
-            migrationBuilder.DropColumn(
-                name: "source_page",
-                table: "obligation");
-
-            migrationBuilder.DropColumn(
-                name: "source_span",
-                table: "obligation");
-
-            migrationBuilder.DropColumn(
-                name: "confidence",
-                table: "contract_line_item");
-
-            migrationBuilder.DropColumn(
-                name: "source_page",
-                table: "contract_line_item");
-
-            migrationBuilder.DropColumn(
-                name: "source_span",
-                table: "contract_line_item");
         }
     }
 }
