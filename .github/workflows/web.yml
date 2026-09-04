@@ -133,8 +133,10 @@ jobs:
       # SWA name is composed like backend.yml's Container Apps
       # (ca-contigo-<env>-api): infra/modules/staticwebapp names the
       # resource swa-contigo-<env>. No GitHub Environment variable.
-      - name: Ensure staticwebapp CLI extension
-        run: az extension add --name staticwebapp --upgrade -y
+      - name: Ensure Azure CLI extensions
+        run: |
+          az extension add --name staticwebapp --upgrade -y
+          az extension add --name containerapp --upgrade -y
 
       # ADR-012 "config, not code": the build job uploads one web-dist for
       # both envs. Overwrite dist/config.json here with this environment's
@@ -161,11 +163,22 @@ jobs:
             echo "::error::$SWA_NAME was not found in $RG. Confirm the HCP VCS apply for workspace contigo-${TARGET_ENVIRONMENT} at $HCP_RUNS, wait until it is CURRENT, then re-run this job."
             exit 1
           fi
-          SWA_HOST=$(az staticwebapp show --name "$SWA_NAME" --resource-group "$RG" --query properties.defaultHostname -o tsv)
-          API_FQDN=$(az containerapp show --name "$API_NAME" --resource-group "$RG" --query properties.configuration.ingress.fqdn -o tsv)
-          CLIENT_ID=$(az identity show --name "$UAI_NAME" --resource-group "$RG" --query tags.oidcPublicClientId -o tsv)
-          if [[ -z "$SWA_HOST" || -z "$API_FQDN" ]]; then
-            echo "::error::could not resolve SWA hostname or API ingress FQDN in $RG. Confirm the HCP VCS apply at $HCP_RUNS, then re-run this job."
+          # az staticwebapp show flattens ARM JSON: hostname is defaultHostname
+          # (Microsoft's own docs), not properties.defaultHostname. az containerapp
+          # show keeps the ARM shape. Accept both so the same job works for
+          # TARGET_ENVIRONMENT=dev and demo.
+          SWA_HOST=$(az staticwebapp show --name "$SWA_NAME" --resource-group "$RG" \
+            --query "defaultHostname || properties.defaultHostname" -o tsv | tr -d '\r')
+          API_FQDN=$(az containerapp show --name "$API_NAME" --resource-group "$RG" \
+            --query "properties.configuration.ingress.fqdn || configuration.ingress.fqdn || properties.latestRevisionFqdn || latestRevisionFqdn" -o tsv | tr -d '\r')
+          CLIENT_ID=$(az identity show --name "$UAI_NAME" --resource-group "$RG" \
+            --query "tags.oidcPublicClientId" -o tsv | tr -d '\r')
+          if [[ -z "$SWA_HOST" ]]; then
+            echo "::error::could not resolve defaultHostname for $SWA_NAME in $RG. Confirm the HCP VCS apply at $HCP_RUNS, then re-run this job."
+            exit 1
+          fi
+          if [[ -z "$API_FQDN" ]]; then
+            echo "::error::could not resolve ingress FQDN for $API_NAME in $RG. Confirm the HCP VCS apply at $HCP_RUNS, then re-run this job."
             exit 1
           fi
           if [[ -z "$CLIENT_ID" ]]; then
