@@ -33,7 +33,7 @@ backend/
     Contigo.AiGateway/           # IAiGateway + FixtureAiGateway (wired via DI) + LoggingAiGateway decorator — no Foundry SDK yet
     Contigo.Benchmark/           # IBenchmarkService only — fixture adapter is later (R3)
     Contigo.Suppliers.Products/  # scaffold (R1+)
-    Contigo.Renewals/            # scaffold (R2)
+    Contigo.Renewals/            # deterministic renewal-date / cancellation-deadline engine (R2, task E03/F01/US01/T01; live)
     Contigo.Savings/             # scaffold (R3)
     Contigo.Quotes/              # scaffold (R4)
     Contigo.Chat/                # Ask Contigo structured-vs-semantic query router (R1, task E02/F04/US01/T01) + deterministic dates/spend query handlers (task E02/F04/US01/T02) + RagAnswerService (task E02/F04/US02/T01) + AbstainGuard no-fabrication guard (task E02/F04/US02/T02); AddChatModule wired into Contigo.Api by this last task
@@ -248,6 +248,60 @@ page/section resolution (joining back to `Clause.SourcePage`/`SourceSpan`) is
 a follow-up gap, not attempted by this task. No task has yet mapped a real,
 tenant-scoped `Contract` row into `ContractFact`, so the endpoint's
 `Structured` branch reports an honest "not wired yet" instead of guessing.
+
+## Renewal Intelligence — deterministic renewal engine
+
+`Contigo.Renewals.Application.RenewalEngine` (task E03/F01/US01/T01,
+us-01-deterministic-dates) is product spec §9.1's "calculate renewal date,
+calculate cancellation deadline, calculate days remaining" made concrete:
+pure, synchronous arithmetic over a `ContractRenewalTerms` snapshot — no
+database, no HTTP call, no LLM call (Appendix C rule 6) — returning a
+`RenewalCalculationResult` with a three-way `RenewalCalculationStatus`:
+
+- `Determined` — `RenewalDate` equals `EndDate` when `AutoRenewal` is true
+  (the same convention `PortfolioListItem.RenewalDate` /
+  `Contract360Header.RenewalDate` already use, reproduced here on purpose).
+  `CancellationDeadline` additionally needs `CancellationNoticeDays`
+  (`EndDate` minus that many days) and can stay null even inside a
+  `Determined` result when that one input is missing or negative — a
+  renewal date and its cancellation deadline are independently
+  determinable.
+- `NoRenewal` — `AutoRenewal` is false: a known fact, not a data gap, so it
+  is not folded into `CannotDetermine`.
+- `CannotDetermine` — `EndDate` itself is unknown: nothing can be computed
+  without fabricating it (Appendix C rule 10; parent story AC-3).
+
+`DaysUntilRenewal`/`DaysUntilCancellationDeadline` are signed, unclamped
+day counts relative to `IClock.UtcNow` — a negative value honestly means
+the date already passed, rather than being hidden behind a floor of zero.
+`RenewalEngine.CalculateMany` is the batch form for spec §9.1's "daily
+scheduler for each active contract" shape; deciding which contracts are
+"active" (in scope to call it with) is the caller's job, not the engine's.
+
+`ContractRenewalTerms` deliberately does not reference
+`Contigo.Documents.Contracts.Domain.Contract` — ADR-002 forbids
+`Contigo.Renewals` from referencing `Contigo.Documents.Contracts` at all
+(same reason `Contigo.Chat.Application.ContractFact` is its own small DTO,
+not the real `Contract` entity). Two honest gaps follow, both deliberately
+out of this task's file scope:
+
+1. No host endpoint or worker job calls `RenewalEngine` yet.
+   `AddRenewalsModule` exists (`Infrastructure/ServiceCollectionExtensions.cs`)
+   so the three tasks that depend on `renewal-engine` in the wave-spec DAG
+   (renewal-opportunity generation, priority score, the cancellation-alerts
+   threshold scheduler) can resolve it from a container, but
+   `Contigo.Api`/`Contigo.Worker`'s `Program.cs` do not call it yet — the
+   same "wiring lands with the first real caller" sequencing `AddChatModule`
+   followed before `Contigo.Chat` had one (see that section above).
+2. `Contract` has no persisted `CancellationNoticeDays` column — its "dates"
+   extraction stage (`StagedExtractionService.ApplyDatesFact`) still writes
+   a raw `cancellationDeadline` date directly from extraction instead of a
+   notice-period day count (product spec §7.3's own extraction-evidence
+   example names `cancellation_notice_days`, not a computed date). Mapping
+   a real `Contract` row onto `ContractRenewalTerms` — and giving
+   extraction a real `CancellationNoticeDays` field to populate — is
+   follow-up work in `Contigo.Documents.Contracts`, a different module and
+   a different task's file scope.
 
 ## R1 demo smoke test
 
