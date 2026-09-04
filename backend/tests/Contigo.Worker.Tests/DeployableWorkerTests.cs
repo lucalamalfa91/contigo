@@ -25,12 +25,13 @@ public sealed class DeployableWorkerTests
         // A syntactically valid Npgsql connection string satisfies AddDocumentsContractsModule's
         // eager UseNpgsql() parsing. Nothing below opens a real connection, so no running
         // Postgres instance is required for this test (same approach as
-        // Contigo.Api.Tests.DeployableApiTests). Same connection string reused for both
+        // Contigo.Api.Tests.DeployableApiTests). Same connection string reused for all three
         // parameters, mirroring appsettings.Development.json's own single shared `contigo_dev`
-        // database (ADR-003 "single system of record").
+        // database (ADR-003 "single system of record") — task E03/F03/US01/T02 (renewal-action)
+        // added the third (Renewals) when AddRenewalsModule got its own first DbContext.
         const string connectionString =
             "Host=localhost;Port=5432;Database=contigo_dev;Username=contigo;Password=contigo;Include Error Detail=true";
-        builder.Services.AddWorkerHost(connectionString, connectionString);
+        builder.Services.AddWorkerHost(connectionString, connectionString, connectionString);
 
         return builder.Build();
     }

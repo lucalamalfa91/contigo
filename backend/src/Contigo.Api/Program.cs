@@ -71,7 +71,16 @@ builder.Services.AddChatModule();
 // AddRenewalsModule(IServiceCollection) (ADR-002) — task E03/F01/US01/T01 registered RenewalEngine
 // here already but nothing called it; this task is that first real caller (same "wiring lands with
 // the first real caller" sequencing AddChatModule followed above).
-builder.Services.AddRenewalsModule();
+//
+// Task E03/F03/US01/T02 (renewal-action, POST /api/renewals/{id}/action): this module's first
+// DbContext (RenewalsDbContext, backing RenewalActionService) means AddRenewalsModule now takes a
+// connection string too, the same fail-fast shape as every other required connection string above.
+var renewalsConnectionString = builder.Configuration.GetConnectionString("Renewals")
+    ?? throw new InvalidOperationException(
+        "Missing required configuration 'ConnectionStrings:Renewals' " +
+        "(set env var ConnectionStrings__Renewals in deployed environments).");
+
+builder.Services.AddRenewalsModule(renewalsConnectionString);
 
 builder.Services.AddHealthChecks();
 

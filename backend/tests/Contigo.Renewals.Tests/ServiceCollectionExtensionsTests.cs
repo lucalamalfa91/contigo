@@ -22,9 +22,39 @@ namespace Contigo.Renewals.Tests;
 /// E03/F01/US02/T02), <see cref="Contigo.Renewals.Application.RenewalThresholdScheduler"/> plus its
 /// <see cref="ThresholdWindowOptions"/> (E03/F02/US01/T01), and <see cref="RenewalPipelineBuilder"/>
 /// (E03/F03/US01/T01).
+/// Proves task E03/F01/US01/T01's own wiring claim (mirrors
+/// <c>Contigo.Chat.Tests.ServiceCollectionExtensionsTests</c>): <see cref="RenewalEngine"/> is
+/// resolvable from a container that only has <see cref="ServiceCollectionExtensions.AddRenewalsModule"/>
+/// registered — no external dependency needed, unlike the Chat module's own equivalent test — the
+/// shape a future host wiring (<c>Contigo.Api.Program</c> / <c>Contigo.Worker.Program</c>) will
+/// rely on once a task adds the first real caller. Task E03/F01/US01/T02 (renewal-opportunity)
+/// extends this same proof to <see cref="RenewalOpportunityGenerator"/>, which depends on
+/// <see cref="RenewalEngine"/> — resolving it from the same container proves the constructor
+/// dependency is satisfied by this one <c>AddRenewalsModule</c> call, not by some other module's
+/// registration.
+/// rely on once a task adds the first real caller. Task E03/F01/US02/T01 (priority-score) extends
+/// this same proof to <see cref="PriorityScoreCalculator"/>.
+/// Proves task E03/F01/US01/T01's and E03/F02/US01/T01's own wiring claims (mirrors
+/// <c>Contigo.Chat.Tests.ServiceCollectionExtensionsTests</c>): <see cref="RenewalEngine"/> and
+/// <see cref="RenewalThresholdScheduler"/> are resolvable from a container that only has
+/// <see cref="ServiceCollectionExtensions.AddRenewalsModule"/> registered (plus the
+/// <see cref="IAuditWriter"/>/<see cref="IConfiguration"/> every host already supplies) — the shape
+/// <c>Contigo.Worker.WorkerServiceCollectionExtensions.AddWorkerHost</c> relies on now that it
+/// calls <see cref="ServiceCollectionExtensions.AddRenewalsModule"/> for real.
+///
+/// Task E03/F03/US01/T02 (renewal-action): <see cref="ServiceCollectionExtensions.AddRenewalsModule"/>
+/// now takes a connection string (this module's first <c>DbContext</c>) — every call site below
+/// passes <see cref="ConnectionString"/>, a syntactically valid but never-connected-to Npgsql
+/// string (same "eager `UseNpgsql()` parsing only, no real Postgres required" convention
+/// <c>Contigo.Api.Tests.DeployableApiTests</c>/<c>Contigo.Worker.Tests.DeployableWorkerTests</c>
+/// already use) — none of these tests exercise <see cref="RenewalActionService"/> itself (see
+/// <c>RenewalActionServiceTests</c> for that, against a real Testcontainers Postgres).
 /// </summary>
 public sealed class ServiceCollectionExtensionsTests
 {
+    private const string ConnectionString =
+        "Host=localhost;Port=5432;Database=contigo_dev;Username=contigo;Password=contigo;Include Error Detail=true";
+
     [Fact]
     public void AddRenewalsModule_resolves_RenewalEngine_and_RenewalThresholdScheduler_with_no_captive_dependency()
     {
@@ -36,7 +66,7 @@ public sealed class ServiceCollectionExtensionsTests
         services.AddSingleton<IAuditWriter>(new RecordingAuditWriter());
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
 
-        services.AddRenewalsModule();
+        services.AddRenewalsModule(ConnectionString);
 
         using var provider = services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
@@ -69,7 +99,7 @@ public sealed class ServiceCollectionExtensionsTests
         services.AddSingleton<IAuditWriter>(new RecordingAuditWriter());
         services.AddSingleton<IConfiguration>(configuration);
 
-        services.AddRenewalsModule();
+        services.AddRenewalsModule(ConnectionString);
 
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<ThresholdWindowOptions>();
@@ -89,14 +119,37 @@ public sealed class ServiceCollectionExtensionsTests
         // already documents.
         services.AddSingleton<IAuditWriter>(new RecordingAuditWriter());
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+    public void AddRenewalsModule_resolves_RenewalOpportunityGenerator_with_no_captive_dependency()
+    {
+        var services = new ServiceCollection();
+        // AddRenewalsModule also unconditionally registers the Scoped RenewalThresholdScheduler
+        // and RenewalActionService, both of which need IAuditWriter (see this class's own doc
+        // comment) — ValidateOnBuild below fails the whole container, not just the type under
+        // test, without this registration.
+        services.AddSingleton<IAuditWriter>(new RecordingAuditWriter());
 
-        services.AddRenewalsModule();
+        services.AddRenewalsModule(ConnectionString);
 
         using var provider = services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
         using var scope = provider.CreateScope();
 
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<RenewalOpportunityGenerator>());
+    }
+
+    [Fact]
+    public void AddRenewalsModule_resolves_PriorityScoreCalculator_with_no_captive_dependency()
+    {
+        var services = new ServiceCollection();
+        // Same IAuditWriter landmine as the RenewalOpportunityGenerator test above.
+        services.AddSingleton<IAuditWriter>(new RecordingAuditWriter());
+
+        services.AddRenewalsModule(ConnectionString);
+
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
+        using var scope = provider.CreateScope();
+
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<PriorityScoreCalculator>());
     }
 
@@ -186,14 +239,39 @@ public sealed class ServiceCollectionExtensionsTests
         // this test never resolves it directly.
         services.AddSingleton<IAuditWriter>(new RecordingAuditWriter());
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        // Same IAuditWriter landmine as the RenewalOpportunityGenerator test above.
+        services.AddSingleton<IAuditWriter>(new RecordingAuditWriter());
 
-        services.AddRenewalsModule();
+        services.AddRenewalsModule(ConnectionString);
 
         using var provider = services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
         using var scope = provider.CreateScope();
 
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<RenewalPipelineBuilder>());
+    }
+
+    /// <summary>
+    /// Task E03/F03/US01/T02 (renewal-action): <see cref="RenewalActionService"/> must resolve
+    /// from the same container — <c>Contigo.Api.RenewalsEndpointExtensions</c>' new POST handler
+    /// takes it as a minimal-API handler parameter, same reason as
+    /// <see cref="AddRenewalsModule_resolves_RenewalPipelineBuilder_with_no_captive_dependency"/>
+    /// above. Needs <see cref="IAuditWriter"/> registered first (same landmine as
+    /// <see cref="RenewalThresholdScheduler"/> above).
+    /// </summary>
+    [Fact]
+    public void AddRenewalsModule_resolves_RenewalActionService_with_no_captive_dependency()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IAuditWriter>(new RecordingAuditWriter());
+
+        services.AddRenewalsModule(ConnectionString);
+
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
+        using var scope = provider.CreateScope();
+
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<RenewalActionService>());
     }
 
     [Fact]
@@ -203,7 +281,7 @@ public sealed class ServiceCollectionExtensionsTests
         var preRegisteredClock = new FixedClock(new DateTimeOffset(2026, 9, 4, 0, 0, 0, TimeSpan.Zero));
         services.AddSingleton<IClock>(preRegisteredClock);
 
-        services.AddRenewalsModule();
+        services.AddRenewalsModule(ConnectionString);
 
         using var provider = services.BuildServiceProvider();
 

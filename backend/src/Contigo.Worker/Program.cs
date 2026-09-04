@@ -24,10 +24,17 @@ var auditConnectionString = builder.Configuration.GetConnectionString("Audit")
         "Missing required configuration 'ConnectionStrings:Audit' " +
         "(set env var ConnectionStrings__Audit in deployed environments).");
 
+// Same configuration key Contigo.Api/Program.cs reads (task E03/F03/US01/T02, renewal-action):
+// AddRenewalsModule now requires a connection string for its own first DbContext.
+var renewalsConnectionString = builder.Configuration.GetConnectionString("Renewals")
+    ?? throw new InvalidOperationException(
+        "Missing required configuration 'ConnectionStrings:Renewals' " +
+        "(set env var ConnectionStrings__Renewals in deployed environments).");
+
 // WorkerServiceCollectionExtensions.AddWorkerHost is the single source of truth for this host's
 // composition (module registration + queue consumer + hosted service) -- Contigo.Worker.Tests
 // calls the same method to prove the wiring, not a hand-rolled copy of it.
-builder.Services.AddWorkerHost(documentsContractsConnectionString, auditConnectionString);
+builder.Services.AddWorkerHost(documentsContractsConnectionString, auditConnectionString, renewalsConnectionString);
 
 var host = builder.Build();
 host.Run();

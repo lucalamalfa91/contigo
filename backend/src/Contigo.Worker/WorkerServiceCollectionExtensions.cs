@@ -47,13 +47,25 @@ public static class WorkerServiceCollectionExtensions
     /// first (or at all) for <c>RenewalThresholdScheduler</c>'s own <c>IAuditWriter</c> dependency
     /// to resolve — the identical landmine this doc comment already flags for
     /// <c>DocumentUploadService</c>.
+    ///
+    /// Task E03/F03/US01/T02 (renewal-action): <c>AddRenewalsModule</c> now takes a connection
+    /// string (this module's first <c>DbContext</c>) — <paramref name="renewalsConnectionString"/>
+    /// is that parameter, threaded through the same way <paramref name="documentsContractsConnectionString"/>/
+    /// <paramref name="auditConnectionString"/> already are. No worker job resolves
+    /// <c>RenewalActionService</c> today (only <c>Contigo.Api</c>'s `POST /api/renewals/{id}/action`
+    /// does), but this host must still supply a valid connection string the moment
+    /// <c>AddDbContext</c>'s eager <c>UseNpgsql()</c> parsing runs during <c>AddRenewalsModule</c>
+    /// itself, not lazily on first use.
     /// </summary>
     public static IServiceCollection AddWorkerHost(
-        this IServiceCollection services, string documentsContractsConnectionString, string auditConnectionString)
+        this IServiceCollection services,
+        string documentsContractsConnectionString,
+        string auditConnectionString,
+        string renewalsConnectionString)
     {
         services.AddDocumentsContractsModule(documentsContractsConnectionString);
         services.AddAuditModule(auditConnectionString);
-        services.AddRenewalsModule();
+        services.AddRenewalsModule(renewalsConnectionString);
 
         services.AddSingleton<InMemoryQueueConsumer>();
         services.AddSingleton<IQueueConsumer>(sp => sp.GetRequiredService<InMemoryQueueConsumer>());

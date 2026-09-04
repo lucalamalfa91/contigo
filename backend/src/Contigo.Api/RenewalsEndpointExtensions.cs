@@ -63,6 +63,14 @@ namespace Contigo.Api;
 /// <c>totalCount</c> lets a caller detect that rather than silently trusting an incomplete list —
 /// Appendix C rule 10). A dedicated unpaged renewal-candidates query is a follow-up, not attempted
 /// by this task.
+///
+/// Task E03/F03/US01/T02 (renewal-action) adds `POST /api/renewals/{id}/action` to this same file
+/// (AC-3: "updates owner/status/action") — see <see cref="PostRenewalActionAsync"/> below. Same
+/// thin-composition shape and the same interim `X-Tenant-Id` placeholder as the GET handler above;
+/// unlike the GET handler, this one does not compose across modules (<see cref="RenewalActionService"/>
+/// is the whole implementation) because it never needs to read <c>Contigo.Documents.Contracts</c> —
+/// see <see cref="RenewalActionService"/>'s own doc comment for the honest gap that leaves (no
+/// check that the route's <c>{id}</c> names an existing, tenant-owned contract).
 /// </summary>
 public static class RenewalsEndpointExtensions
 {
@@ -70,6 +78,7 @@ public static class RenewalsEndpointExtensions
     {
         endpoints.MapGet("/api/renewals", GetRenewalsAsync);
         endpoints.MapGet("/api/renewals/{contractId}/priority", GetRenewalPriorityAsync);
+        endpoints.MapPost("/api/renewals/{id}/action", PostRenewalActionAsync);
         return endpoints;
     }
 
@@ -286,4 +295,59 @@ public static class RenewalsEndpointExtensions
         score = component.Score,
         explanation = component.Explanation,
     };
+    /// `POST /api/renewals/{id}/action` (us-01-renewal-dashboard-api AC-3: "updates owner/status/
+    /// action"). <c>{id}</c> is the same <c>contractId</c> `GET /api/renewals` returns per row —
+    /// there is no separate, persisted "renewal id" (see <see cref="Contigo.Renewals.Domain.RenewalAction"/>'s
+    /// own doc comment). 400 for a missing/invalid tenant header or route id (same guard shape as
+    /// every other endpoint in this file/host), 400 with <see cref="Contigo.SharedKernel.Result{T}.Error"/>
+    /// for an empty <c>owner</c>/<c>action</c> or an unrecognized <c>status</c> — never a 404: unlike
+    /// `PATCH /api/contracts/{id}`, this module cannot check whether <c>{id}</c> names an existing
+    /// contract at all (ADR-002 forbids <c>Contigo.Renewals</c> from referencing
+    /// <c>Contigo.Documents.Contracts</c>), so a well-formed action against a nonexistent or
+    /// cross-tenant contract id still upserts a row rather than failing closed — an honest,
+    /// documented gap (<see cref="Contigo.Renewals.Domain.RenewalAction"/>'s own doc comment),
+    /// not silently swallowed.
+    /// </summary>
+    private static async Task<IResult> PostRenewalActionAsync(
+        string id,
+        RenewalActionRequest request,
+        HttpRequest httpRequest,
+        RenewalActionService actionService,
+        CancellationToken cancellationToken)
+    {
+        if (!httpRequest.Headers.TryGetValue("X-Tenant-Id", out var tenantHeaderValues)
+            || !Guid.TryParse(tenantHeaderValues.ToString(), out var tenantGuid))
+        {
+            return Results.BadRequest("A valid 'X-Tenant-Id' header (a GUID) is required.");
+        }
+
+        if (!Guid.TryParse(id, out var contractGuid))
+        {
+            return Results.BadRequest(
+                "The renewal id in the route must be a GUID (the same 'contractId' GET /api/renewals returns).");
+        }
+
+        var result = await actionService.SetActionAsync(
+            new TenantId(tenantGuid),
+            new EntityId(contractGuid),
+            request.Owner,
+            request.Status,
+            request.Action,
+            cancellationToken).ConfigureAwait(false);
+
+        if (result.IsFailure)
+        {
+            return Results.BadRequest(result.Error);
+        }
+
+        var action = result.Value;
+        return Results.Ok(new
+        {
+            contractId = action.ContractId.Value,
+            owner = action.Owner,
+            status = action.Status.ToString(),
+            action = action.Action,
+            updatedAt = action.UpdatedAt,
+        });
+    }
 }

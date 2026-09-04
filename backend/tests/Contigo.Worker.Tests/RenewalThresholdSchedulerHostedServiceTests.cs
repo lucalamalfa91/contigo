@@ -42,7 +42,12 @@ public sealed class RenewalThresholdSchedulerHostedServiceTests
         // proof), swapping in a fast interval and an observable fake source.
         builder.Services.AddSingleton<IActiveRenewalContractsSource>(countingSource);
         builder.Services.AddSingleton(new RenewalThresholdSchedulerOptions { Interval = TimeSpan.FromMilliseconds(20) });
-        builder.Services.AddWorkerHost(ConnectionString, ConnectionString);
+        // Task E03/F03/US01/T02 (renewal-action) added AddWorkerHost's third (Renewals) connection
+        // string parameter — same never-connected-to string reused for all three, mirroring
+        // DeployableWorkerTests.BuildHost's identical convention (see this file's own class doc
+        // comment for why a syntactically valid string is enough: nothing here opens a real
+        // connection).
+        builder.Services.AddWorkerHost(ConnectionString, ConnectionString, ConnectionString);
 
         using var host = builder.Build();
         await host.StartAsync();
