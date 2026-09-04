@@ -26,51 +26,17 @@ namespace Contigo.Documents.Contracts.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<int>(
-                name: "source_page",
-                table: "risk",
-                type: "integer",
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "source_span",
-                table: "risk",
-                type: "character varying(500)",
-                maxLength: 500,
-                nullable: true);
-
-            migrationBuilder.AddColumn<int>(
-                name: "source_page",
-                table: "obligation",
-                type: "integer",
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "source_span",
-                table: "obligation",
-                type: "character varying(500)",
-                maxLength: 500,
-                nullable: true);
-
-            migrationBuilder.AddColumn<double>(
-                name: "confidence",
-                table: "contract_line_item",
-                type: "double precision",
-                nullable: true);
-
-            migrationBuilder.AddColumn<int>(
-                name: "source_page",
-                table: "contract_line_item",
-                type: "integer",
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "source_span",
-                table: "contract_line_item",
-                type: "character varying(500)",
-                maxLength: 500,
-                nullable: true);
-
+            // NOTE: this migration originally re-added source_page/source_span (risk, obligation)
+            // and confidence/source_page/source_span (contract_line_item) here, duplicating the
+            // columns migration 20260904133500_AddEvidenceConfidenceVersionColumns already adds
+            // earlier in the migration history (both migrations were scaffolded independently, on
+            // separate task branches, against a model that had not yet seen the other branch's
+            // column — see that migration's own AddColumn calls for risk/obligation/
+            // contract_line_item). Applying both in sequence failed with Postgres 42701 ("column
+            // ... already exists"). Removed here (task E02/F02/US02/T02) rather than left for a
+            // later task, since it blocked every migration-dependent build in this module, not
+            // just this task's own. The extraction_evidence table below — the actual new schema
+            // this migration introduces — is unaffected.
             migrationBuilder.CreateTable(
                 name: "extraction_evidence",
                 columns: table => new
@@ -155,34 +121,6 @@ namespace Contigo.Documents.Contracts.Migrations
 
             migrationBuilder.DropTable(
                 name: "extraction_evidence");
-
-            migrationBuilder.DropColumn(
-                name: "source_page",
-                table: "risk");
-
-            migrationBuilder.DropColumn(
-                name: "source_span",
-                table: "risk");
-
-            migrationBuilder.DropColumn(
-                name: "source_page",
-                table: "obligation");
-
-            migrationBuilder.DropColumn(
-                name: "source_span",
-                table: "obligation");
-
-            migrationBuilder.DropColumn(
-                name: "confidence",
-                table: "contract_line_item");
-
-            migrationBuilder.DropColumn(
-                name: "source_page",
-                table: "contract_line_item");
-
-            migrationBuilder.DropColumn(
-                name: "source_span",
-                table: "contract_line_item");
         }
     }
 }

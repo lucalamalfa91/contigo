@@ -48,11 +48,6 @@ public sealed class ContractLineItem : TenantScopedEntity
     /// <summary>Evidence pointer (Appendix C rule 2), mirroring <see cref="Clause.SourceDocumentId"/>.</summary>
     public EntityId? SourceDocumentId { get; set; }
 
-    /// <summary>Page/section evidence pointer (Appendix C rule 2).</summary>
-    public string? SourceSpan { get; set; }
-    public int? SourcePage { get; set; }
-    public double? Confidence { get; set; }
-
     /// <summary>Optimistic-concurrency guard — see <see cref="Contract.Version"/>.</summary>
     public int Version { get; set; } = 1;
 }

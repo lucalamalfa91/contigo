@@ -125,6 +125,17 @@ span/page + confidence (spec §7.3) — directly on `ContractLineItem`/
 `Contract`'s own scalar fields. Nothing yet calls it from an HTTP endpoint
 or the queue; wiring a caller is a later task.
 
+`Contigo.Documents.Contracts.Application.EmbeddingRetrievalService`
+(us-02-embedding-search-index) is the pgvector half of Ask Contigo RAG:
+`IndexChunkAsync` embeds a text chunk via `IAiGateway.EmbedAsync` and
+persists it to the `embedding` table; `SearchAsync` embeds a query the
+same way and returns the tenant's nearest chunks by cosine distance
+(`Vector.CosineDistance`), explicitly filtered by `tenant_id` on top of
+that table's own RLS policy. Embedding generation never touches a
+provider SDK directly — always through `IAiGateway`. Nothing yet calls
+this from an HTTP endpoint or the queue; the Ask Contigo semantic-retrieval
+task (E02/F04/US02/T01) is the intended first caller.
+
 ## Containers and CI
 
 `.github/workflows/backend.yml` (path-filtered to `backend/**`):

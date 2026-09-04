@@ -32,7 +32,10 @@ namespace Contigo.Documents.Contracts.Infrastructure;
 /// <c>GET /api/contracts</c> reuses it again and adds <see cref="PortfolioQueryService"/>.
 /// adds <see cref="DocumentQueryService"/> alongside it. Task E02/F05/US01/T01's `PATCH
 /// /api/contracts/{id}` (<see cref="ContractCorrectionService"/>) reuses the same registration
-/// again.
+/// again. Task E02/F02/US02/T02 (us-02-embedding-search-index) adds
+/// <see cref="EmbeddingRetrievalService"/> alongside it — no new dependency to wire, since the
+/// module's own <see cref="IAiGateway"/> registration (this method's own
+/// <c>AddAiGatewayModule</c> call, above) already resolves everything that service needs.
 /// </summary>
 public static class ServiceCollectionExtensions
 {
@@ -59,6 +62,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<StagedExtractionService>();
         services.AddScoped<PortfolioQueryService>();
         services.AddScoped<ContractCorrectionService>();
+        services.AddScoped<EmbeddingRetrievalService>();
 
         return services;
     }
