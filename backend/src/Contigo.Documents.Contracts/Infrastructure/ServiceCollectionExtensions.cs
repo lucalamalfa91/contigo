@@ -28,6 +28,8 @@ namespace Contigo.Documents.Contracts.Infrastructure;
 /// (<c>Contigo.Api/Program.cs</c>, <c>Contigo.Worker.WorkerServiceCollectionExtensions</c>),
 /// keeps <see cref="IAiGateway"/> resolvable everywhere this module already is without changing
 /// either host's code.
+/// adds <see cref="DocumentQueryService"/> alongside it. Task E02/F03/US01/T01's
+/// <c>GET /api/contracts</c> reuses it again and adds <see cref="PortfolioQueryService"/>.
 /// </summary>
 public static class ServiceCollectionExtensions
 {
@@ -52,6 +54,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<DocumentUploadService>();
         services.AddScoped<DocumentQueryService>();
         services.AddScoped<StagedExtractionService>();
+        services.AddScoped<PortfolioQueryService>();
 
         return services;
     }

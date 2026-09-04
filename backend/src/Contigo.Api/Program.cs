@@ -169,6 +169,13 @@ app.MapGet("/api/documents/{id}", async Task<IResult> (
 // the authorization decision (401 vs 403 vs the tenant-scoped read).
 app.MapAuditEndpoints();
 
+// Task E02/F03/US01/T01 (us-01-portfolio-list-filters, AC-1/AC-2/AC-3): GET /api/contracts, the
+// spec §8.1 portfolio columns + filters, tenant-scoped (ADR-009). Same interim X-Tenant-Id
+// placeholder as the document endpoints above (ADR-010 is not in force for this task either) —
+// see PortfolioEndpointExtensions and those endpoints' own comments for why this gap is not
+// promoted to reports/open-questions.md by this task.
+app.MapPortfolioEndpoints();
+
 app.Run();
 
 // Exposes the top-level-statement entry point to WebApplicationFactory<Program> in the
