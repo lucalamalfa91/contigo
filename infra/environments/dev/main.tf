@@ -56,12 +56,22 @@ module "network" {
   resource_group_name = azurerm_resource_group.this.name
 }
 
+module "staticwebapp" {
+  source = "../../modules/staticwebapp"
+
+  environment         = local.environment
+  resource_group_name = azurerm_resource_group.this.name
+  # location defaults to West US 2: Microsoft.Web/staticSites is not
+  # offered in North Europe; West Europe is ineligible on this tenant.
+}
+
 module "identity" {
   source = "../../modules/identity"
 
   environment         = local.environment
   location            = var.location
   resource_group_name = azurerm_resource_group.this.name
+  web_redirect_uri    = "https://${module.staticwebapp.default_host_name}"
 }
 
 module "postgres" {

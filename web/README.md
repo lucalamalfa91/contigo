@@ -55,16 +55,20 @@ sensitive.
 
 `web.yml`'s `deploy` job does not yet overwrite `config.json` in the
 downloaded `web-dist/` artifact with that environment's real values before
-the Static Web Apps deploy step — there is also no `infra/modules/staticwebapp`
-yet to source those values from (tracked separately). Until both land, a real
-`dev`/`demo` deploy of this bundle would serve the checked-in localhost
-placeholder. Closing this is CI/infra work, not this task's file scope
-(`web/src/`); the fix is additive to `web.yml`'s `deploy` job: write real
+the Static Web Apps deploy step. Until that lands, a real `dev`/`demo`
+deploy of this bundle would serve the checked-in localhost placeholder.
+Closing this is CI work: after `download-artifact`, write real
 `apiBaseUrl` / `oidcAuthority` / `oidcClientId` / `oidcRedirectUri` /
-`oidcApiScopes` values (sourced from that GitHub Environment's `vars.*`, none
-of them secret) into `web-dist/config.json` after `download-artifact` and
-before the Azure Static Web Apps deploy step, mirroring how
-`vars.AZURE_STATIC_WEB_APP_NAME` is already read per-environment.
+`oidcApiScopes` (all non-secret) into `web-dist/config.json` before
+`swa-cli deploy`. `oidcRedirectUri` should match the SWA origin
+(`https://<default_host_name>`), which Terraform already registers on the
+public client.
+
+The Static Web App itself is `swa-contigo-<env>` in `rg-contigo-<env>`
+(`infra/modules/staticwebapp`). `web.yml` composes that name; it does not
+read a GitHub Environment variable. Deploy will 404 the resource until the
+HCP VCS apply that creates it has finished — re-run the web workflow after
+that apply is CURRENT.
 
 ## API client (ADR-012 "one generated TypeScript client, no hand-written divergent DTOs")
 

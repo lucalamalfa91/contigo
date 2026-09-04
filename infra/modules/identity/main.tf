@@ -21,16 +21,11 @@ locals {
     env     = var.environment
   }
 
-  # ADR-012: the web client is a React SPA hosted on Azure Static Web Apps
-  # (free tier); that hosting module does not exist yet under
-  # infra/modules/, so the real per-environment hostname cannot be known
-  # here. This is a deliberate placeholder redirect URI so the public
-  # client registration -- and this task's "pre-authorized for ... the web
-  # redirect URI" requirement -- is structurally complete now. Whoever
-  # provisions the Static Web App module must reconcile this value (or
-  # wire it from that module's output) with the real hostname/custom
-  # domain before the web client can complete a login round trip.
-  web_redirect_uri = "https://contigo-${var.environment}.azurestaticapps.net/auth/callback"
+  # ADR-012: SPA redirect is the Static Web App origin, passed in by the
+  # env root from modules/staticwebapp.default_host_name (not a guessed
+  # custom hostname). The entra-keyvault scan asserts redirect_uris uses
+  # this local, not the raw variable.
+  web_redirect_uri = var.web_redirect_uri
 }
 
 resource "azurerm_user_assigned_identity" "workload" {

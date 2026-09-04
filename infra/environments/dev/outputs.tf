@@ -91,3 +91,13 @@ output "log_analytics_workspace_id" {
   description = "Workspace (Customer) ID of the dev Log Analytics workspace, used by diagnostic settings/agents."
   value       = module.monitor.workspace_id
 }
+
+output "static_web_app_name" {
+  description = "Name of the dev Static Web App (swa-contigo-dev); web.yml composes this."
+  value       = module.staticwebapp.name
+}
+
+output "static_web_app_hostname" {
+  description = "Default hostname of the dev Static Web App (SPA origin / OIDC redirect)."
+  value       = module.staticwebapp.default_host_name
+}

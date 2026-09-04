@@ -72,6 +72,15 @@ module "network" {
   resource_group_name = azurerm_resource_group.this.name
 }
 
+# ADR-012: Static Web Apps Free tier. Location is West US 2 inside the
+# module (not this root's North Europe pin) -- see modules/staticwebapp.
+module "staticwebapp" {
+  source = "../../modules/staticwebapp"
+
+  environment         = local.environment
+  resource_group_name = azurerm_resource_group.this.name
+}
+
 # ADR-007: Entra app registration + user-assigned managed identity so
 # the API/worker Container Apps read Key Vault/Storage/Service Bus at
 # runtime without a stored secret.
@@ -81,6 +90,7 @@ module "identity" {
   environment         = local.environment
   location            = var.location
   resource_group_name = azurerm_resource_group.this.name
+  web_redirect_uri    = "https://${module.staticwebapp.default_host_name}"
 }
 
 # ADR-005: PostgreSQL Flexible Server, Burstable "B_Standard_B1ms" (module

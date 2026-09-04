@@ -25,6 +25,7 @@ infra/
     keyvault/         # Key Vault + workload identity grant
     acr/              # Azure Container Registry Basic, admin_enabled = false
     monitor/          # Log Analytics (Pay-As-You-Go, daily cap)
+    staticwebapp/     # Azure Static Web Apps Free (web SPA; region West US 2)
   environments/
     dev/              # thin root; HCP workspace contigo-dev
     demo/             # thin root; HCP workspace contigo-demo
@@ -32,9 +33,10 @@ infra/
   provider.tf         # azurerm / azuread (also mirrored — Terraform has no include)
 ```
 
-Each environment root instantiates the same nine modules into
-`rg-contigo-<env>` in **North Europe**. `var.environment` is locked per root
-(`dev` cannot become `demo`). Tagging is `project=contigo`, `env=dev|demo`.
+Each environment root instantiates the same modules into
+`rg-contigo-<env>` in **North Europe** (Static Web Apps excepted — see
+below). `var.environment` is locked per root (`dev` cannot become `demo`).
+Tagging is `project=contigo`, `env=dev|demo`.
 
 ## Remote state
 
@@ -93,6 +95,7 @@ only on that path); the first demo apply is a HCP UI **New run** or a
 | API / worker apps | `ca-contigo-<env>-api` / `-worker` |
 | Workload identity | `id-contigo-<env>-workload` |
 | ACR | `acrcontigo<env><6-char suffix>` (suffix is state-held) |
+| Static Web App | `swa-contigo-<env>` (Free SKU; resource location **West US 2**) |
 
 Container Apps currently boot from the placeholder image
 `mcr.microsoft.com/k8se/quickstart:latest` until the backend deploy job
@@ -106,9 +109,10 @@ Ingress target port is `8080`.
   `registry {}` block is not wired. Until a module change lands, pull
   identity must be granted out of band (`az role assignment` +
   `az containerapp registry set`) or image pull 403s.
-- **No Static Web Apps module** under `infra/modules/`. Web hosting and the
-  public-client redirect URI in `modules/identity` still use a placeholder
-  hostname (`https://contigo-<env>.azurestaticapps.net/auth/callback`).
+- **Static Web Apps region.** `Microsoft.Web/staticSites` is not offered in
+  North Europe; West Europe is ineligible on this tenant. The module
+  defaults to West US 2. Static assets are a global CDN; that region only
+  hosts managed Functions / staging, which we disable.
 - **Postgres public access**, firewalled closed by default; private-endpoint
   wiring through `modules/network` is later work.
 - **GHA `terraform plan` on push to `main`** is redundant with the HCP VCS

@@ -41,7 +41,7 @@ HEADER_BLOCK = (
     "    env     = var.environment\n"
     "  }\n"
     "\n"
-    '  web_redirect_uri = "https://contigo-${var.environment}.azurestaticapps.net/auth/callback"\n'
+    '  web_redirect_uri = var.web_redirect_uri\n'
     "}\n"
     "\n"
     'resource "azurerm_user_assigned_identity" "workload" {\n'

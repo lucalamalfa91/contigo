@@ -126,25 +126,25 @@ jobs:
       # never persists it: masked in logs, used once, not written to disk,
       # not a GitHub secret.
       #
-      # vars.AZURE_STATIC_WEB_APP_NAME is set once infra provisions the
-      # per-environment Static Web App. No infra/modules/staticwebapp
-      # exists yet as of this task (us-02/task-01 is CI/CD workflow
-      # authoring, not infra provisioning) -- that is a gap for the
-      # web-hosting infra task to close, tracked in open-questions.md
-      # rather than assumed away here.
+      # SWA name is composed like backend.yml's Container Apps
+      # (ca-contigo-<env>-api): infra/modules/staticwebapp names the
+      # resource swa-contigo-<env>. No GitHub Environment variable.
+      - name: Ensure staticwebapp CLI extension
+        run: az extension add --name staticwebapp --upgrade -y
+
       - name: Deploy to Azure Static Web Apps
         run: |
           set -euo pipefail
           RG="rg-contigo-${TARGET_ENVIRONMENT}"
-          SWA_NAME="${{ vars.AZURE_STATIC_WEB_APP_NAME }}"
-          if [ -z "$SWA_NAME" ]; then
-            echo "::error::vars.AZURE_STATIC_WEB_APP_NAME is not set for environment $TARGET_ENVIRONMENT"
-            exit 1
-          fi
+          SWA_NAME="swa-contigo-${TARGET_ENVIRONMENT}"
           DEPLOY_TOKEN=$(az staticwebapp secrets list \
             --name "$SWA_NAME" \
             --resource-group "$RG" \
             --query "properties.apiKey" -o tsv)
+          if [ -z "$DEPLOY_TOKEN" ]; then
+            echo "::error::no deploy token for $SWA_NAME in $RG — wait for the HCP VCS apply that creates infra/modules/staticwebapp, then re-run this job"
+            exit 1
+          fi
           echo "::add-mask::$DEPLOY_TOKEN"
           npx --yes @azure/static-web-apps-cli deploy web/dist \
             --deployment-token "$DEPLOY_TOKEN" \
