@@ -10,8 +10,9 @@ namespace Contigo.Chat.Tests;
 /// <summary>
 /// Proves task E02/F04/US02/T01's own wiring claim (mirrors
 /// <c>Contigo.AiGateway.Tests.ServiceCollectionExtensionsTests</c>): <see cref="AskContigoQueryRouter"/>,
-/// <see cref="DeterministicQueryPlanner"/>, <see cref="DeterministicQueryHandler"/> and
-/// <see cref="RagAnswerService"/> are all resolvable from a container that has
+/// <see cref="DeterministicQueryPlanner"/>, <see cref="DeterministicQueryHandler"/>,
+/// <see cref="AbstainGuard"/> (task E02/F04/US02/T02) and <see cref="RagAnswerService"/> are all
+/// resolvable from a container that has
 /// <see cref="AddChatModule"/> plus this module's two external dependencies
 /// (<see cref="IAiGateway"/>, <see cref="IAuditWriter"/>) registered — the shape
 /// <c>Contigo.Api.Program</c>'s real composition already provides via
@@ -42,6 +43,7 @@ public sealed class ServiceCollectionExtensionsTests
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<AskContigoQueryRouter>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<DeterministicQueryPlanner>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<DeterministicQueryHandler>());
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<AbstainGuard>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<RagAnswerService>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IClock>());
     }

@@ -16,6 +16,16 @@ namespace Contigo.Chat.Tests;
 /// all (see its own doc comment); that half of the story is proven end-to-end against a real
 /// Postgres+RLS Testcontainer by
 /// <c>Contigo.IntegrationTests.AskContigoRagCrossTenantIsolationTests</c>.
+///
+/// <para>
+/// Also proves task E02/F04/US02/T02 (abstain-guard) is actually wired into
+/// <see cref="RagAnswerService.AnswerAsync"/> — that a "determined" gateway result with an
+/// ungrounded citation or zero citations is downgraded to "cannot determine" before it ever reaches
+/// a caller or the audit trail (<see cref="Answer_forces_cannot_determine_when_the_gateway_returns_an_ungrounded_citation"/>,
+/// <see cref="Answer_forces_cannot_determine_when_the_gateway_claims_determined_with_zero_citations"/>).
+/// <see cref="AbstainGuard"/>'s own exhaustive decision matrix (every branch, in isolation) is
+/// covered by <c>Contigo.Chat.Tests.AbstainGuardTests</c> instead of being duplicated here.
+/// </para>
 /// </summary>
 public sealed class RagAnswerServiceTests
 {
@@ -41,7 +51,7 @@ public sealed class RagAnswerServiceTests
                 new AiAnswerResult(CanDetermine: true, Answer: "Liability is capped at $1,000,000.", [citation], metadata)),
         };
         var auditWriter = new RecordingAuditWriter();
-        var service = new RagAnswerService(gateway, auditWriter, new FixedClock(Now));
+        var service = new RagAnswerService(gateway, auditWriter, new FixedClock(Now), new AbstainGuard());
 
         var result = await service.AnswerAsync(tenantId, decision, evidence);
 
@@ -65,6 +75,7 @@ public sealed class RagAnswerServiceTests
         Assert.Contains("canDetermine=True", entry.Detail);
         Assert.Contains("citationCount=1", entry.Detail);
         Assert.Contains("evidenceCount=1", entry.Detail);
+        Assert.Contains("abstainGuardIntervened=False", entry.Detail);
 
         // ADR-011: never write raw prompt or retrieved contract text to logs.
         Assert.DoesNotContain(decision.Question, entry.Detail);
@@ -84,7 +95,7 @@ public sealed class RagAnswerServiceTests
                 new AiAnswerResult(CanDetermine: false, Answer: null, Citations: [], metadata)),
         };
         var auditWriter = new RecordingAuditWriter();
-        var service = new RagAnswerService(gateway, auditWriter, new FixedClock(Now));
+        var service = new RagAnswerService(gateway, auditWriter, new FixedClock(Now), new AbstainGuard());
 
         var result = await service.AnswerAsync(tenantId, decision, evidence: []);
 
@@ -98,6 +109,68 @@ public sealed class RagAnswerServiceTests
         var entry = Assert.Single(auditWriter.Written);
         Assert.Contains("canDetermine=False", entry.Detail);
         Assert.Contains("evidenceCount=0", entry.Detail);
+        // Already an honest abstention from the gateway itself — the guard had nothing to correct.
+        Assert.Contains("abstainGuardIntervened=False", entry.Detail);
+    }
+
+    [Fact]
+    public async Task Answer_forces_cannot_determine_when_the_gateway_returns_an_ungrounded_citation()
+    {
+        var tenantId = TenantId.New();
+        var decision = SemanticDecision();
+        var evidence = new[] { OneEvidenceSnippet() };
+        // A model that hallucinates a citation to a document never in the supplied evidence — the
+        // exact failure mode AbstainGuard exists to catch (see its own doc comment); FixtureAiGateway
+        // itself can never produce this (it only ever echoes the evidence's own DocumentId back).
+        var hallucinatedCitation = new AiCitation("Document:99999999-9999-9999-9999-999999999999", Page: null, Section: "chunk 0");
+        var metadata = new AiCallMetadata("fixture-answer-model", "v1", "fixture-v1", Now, "fabricated");
+        var gateway = new StubAnswerGateway
+        {
+            ResultToReturn = Result<AiAnswerResult>.Success(
+                new AiAnswerResult(CanDetermine: true, Answer: "Liability is capped at $1,000,000.", [hallucinatedCitation], metadata)),
+        };
+        var auditWriter = new RecordingAuditWriter();
+        var service = new RagAnswerService(gateway, auditWriter, new FixedClock(Now), new AbstainGuard());
+
+        var result = await service.AnswerAsync(tenantId, decision, evidence);
+
+        Assert.True(result.IsSuccess);
+        Assert.False(result.Value.CanDetermine);
+        Assert.Null(result.Value.Answer);
+        Assert.Empty(result.Value.Citations);
+        // Reproducibility metadata survives the guard's intervention (ADR-011).
+        Assert.Equal(metadata, result.Value.Metadata);
+
+        var entry = Assert.Single(auditWriter.Written);
+        Assert.Contains("canDetermine=False", entry.Detail);
+        Assert.Contains("citationCount=0", entry.Detail);
+        Assert.Contains("abstainGuardIntervened=True", entry.Detail);
+    }
+
+    [Fact]
+    public async Task Answer_forces_cannot_determine_when_the_gateway_claims_determined_with_zero_citations()
+    {
+        var tenantId = TenantId.New();
+        var decision = SemanticDecision();
+        var evidence = new[] { OneEvidenceSnippet() };
+        var metadata = new AiCallMetadata("fixture-answer-model", "v1", "fixture-v1", Now, "unsupported");
+        var gateway = new StubAnswerGateway
+        {
+            // Determined, but nothing backs it — an unsupported claim (Appendix C rule 2).
+            ResultToReturn = Result<AiAnswerResult>.Success(
+                new AiAnswerResult(CanDetermine: true, Answer: "Liability is capped at $1,000,000.", Citations: [], metadata)),
+        };
+        var auditWriter = new RecordingAuditWriter();
+        var service = new RagAnswerService(gateway, auditWriter, new FixedClock(Now), new AbstainGuard());
+
+        var result = await service.AnswerAsync(tenantId, decision, evidence);
+
+        Assert.True(result.IsSuccess);
+        Assert.False(result.Value.CanDetermine);
+        Assert.Null(result.Value.Answer);
+
+        var entry = Assert.Single(auditWriter.Written);
+        Assert.Contains("abstainGuardIntervened=True", entry.Detail);
     }
 
     [Fact]
@@ -107,7 +180,7 @@ public sealed class RagAnswerServiceTests
         var decision = SemanticDecision();
         var gateway = new StubAnswerGateway { ResultToReturn = Result<AiAnswerResult>.Failure("gateway exploded") };
         var auditWriter = new RecordingAuditWriter();
-        var service = new RagAnswerService(gateway, auditWriter, new FixedClock(Now));
+        var service = new RagAnswerService(gateway, auditWriter, new FixedClock(Now), new AbstainGuard());
 
         var result = await service.AnswerAsync(tenantId, decision, evidence: []);
 
@@ -122,7 +195,7 @@ public sealed class RagAnswerServiceTests
         var tenantId = TenantId.New();
         var structuredDecision = new QueryRouteDecision("What is our annual spend?", QueryIntent.Structured, "test fixture");
         var gateway = new StubAnswerGateway();
-        var service = new RagAnswerService(gateway, new RecordingAuditWriter(), new FixedClock(Now));
+        var service = new RagAnswerService(gateway, new RecordingAuditWriter(), new FixedClock(Now), new AbstainGuard());
 
         await Assert.ThrowsAsync<ArgumentException>(
             () => service.AnswerAsync(tenantId, structuredDecision, evidence: []));
@@ -131,7 +204,7 @@ public sealed class RagAnswerServiceTests
     [Fact]
     public async Task Answer_rejects_a_null_decision()
     {
-        var service = new RagAnswerService(new StubAnswerGateway(), new RecordingAuditWriter(), new FixedClock(Now));
+        var service = new RagAnswerService(new StubAnswerGateway(), new RecordingAuditWriter(), new FixedClock(Now), new AbstainGuard());
 
         await Assert.ThrowsAsync<ArgumentNullException>(
             () => service.AnswerAsync(TenantId.New(), null!, evidence: []));
@@ -140,7 +213,7 @@ public sealed class RagAnswerServiceTests
     [Fact]
     public async Task Answer_rejects_null_evidence()
     {
-        var service = new RagAnswerService(new StubAnswerGateway(), new RecordingAuditWriter(), new FixedClock(Now));
+        var service = new RagAnswerService(new StubAnswerGateway(), new RecordingAuditWriter(), new FixedClock(Now), new AbstainGuard());
 
         await Assert.ThrowsAsync<ArgumentNullException>(
             () => service.AnswerAsync(TenantId.New(), SemanticDecision(), evidence: null!));

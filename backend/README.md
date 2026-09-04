@@ -36,7 +36,7 @@ backend/
     Contigo.Renewals/            # scaffold (R2)
     Contigo.Savings/             # scaffold (R3)
     Contigo.Quotes/              # scaffold (R4)
-    Contigo.Chat/                # Ask Contigo structured-vs-semantic query router (R1, task E02/F04/US01/T01) + deterministic dates/spend query handlers (task E02/F04/US01/T02) + RagAnswerService (task E02/F04/US02/T01); AddChatModule wired into Contigo.Api by this last task
+    Contigo.Chat/                # Ask Contigo structured-vs-semantic query router (R1, task E02/F04/US01/T01) + deterministic dates/spend query handlers (task E02/F04/US01/T02) + RagAnswerService (task E02/F04/US02/T01) + AbstainGuard no-fabrication guard (task E02/F04/US02/T02); AddChatModule wired into Contigo.Api by this last task
   tests/                         # per-module + architecture + R0 integration
 ```
 
@@ -182,8 +182,25 @@ citations via `IAiGateway.AnswerAsync` (ADR-004 `answer` role) — citations
 or an explicit "cannot determine" (spec §8.4 "no evidence, no claim"), never
 a fabricated answer. It also writes one `IAuditWriter` entry per successful
 call (`chat.answered` — ADR-011 "audit of access"), never the raw
-question/evidence/answer text. Task E02/F04/US02/T02 (abstain-guard) adds a
-no-fabrication guard on top of this call; this task does not attempt it.
+question/evidence/answer text.
+
+`Contigo.Chat.Application.AbstainGuard` (task E02/F04/US02/T02, abstain-guard)
+is the no-fabrication guard `RagAnswerService.AnswerAsync` runs on every
+gateway result before it is audited or returned: a "cannot determine" result
+passes straight through, but a "determined" result is only trusted when it
+carries at least one citation, has non-empty answer text, and every citation's
+`DocumentId` matches one of the evidence documents actually handed to the
+gateway — otherwise the guard downgrades it to an honest "cannot determine"
+(preserving the original `AiCallMetadata` for reproducibility) rather than let
+an unsupported or hallucinated citation through (Appendix C rules 2 and 10).
+`FixtureAiGateway` can never trigger this — it only ever echoes citations
+built from its own input evidence — so today the guard is a no-op in practice;
+it exists for the Foundry-backed `IAiGateway` implementation ADR-004
+anticipates, which can hallucinate. The audit detail line gains one field,
+`abstainGuardIntervened=true|false`, so an operator can see a caught
+fabrication attempt without the guard silently discarding the signal — the
+free-text reason itself is deliberately not logged (ADR-011: no model
+output/content in audit rows).
 
 `Contigo.Chat` cannot reference `Contigo.Documents.Contracts` (see
 "Dependency direction" below), so neither `DeterministicQueryHandler` nor

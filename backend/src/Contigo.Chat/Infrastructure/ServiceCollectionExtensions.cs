@@ -16,7 +16,9 @@ namespace Contigo.Chat.Infrastructure;
 /// <c>Contigo.Chat.csproj</c> in anticipation of it (see that file). Task E02/F04/US02/T01
 /// (rag-citations) is the first thing that needs any of this resolvable from a container — it adds
 /// <see cref="RagAnswerService"/> alongside the three pre-existing types, and
-/// <c>Contigo.Api.ChatEndpointExtensions</c> (<c>POST /api/chat/query</c>) is the first caller.
+/// <c>Contigo.Api.ChatEndpointExtensions</c> (<c>POST /api/chat/query</c>) is the first caller. Task
+/// E02/F04/US02/T02 (abstain-guard) adds <see cref="AbstainGuard"/>, a constructor dependency of
+/// <see cref="RagAnswerService"/> (see that type's own doc comment).
 ///
 /// Every registration is Scoped, not Singleton: <see cref="RagAnswerService"/> depends on
 /// <see cref="IAuditWriter"/>, which <c>Contigo.Audit.Infrastructure.ServiceCollectionExtensions
@@ -25,9 +27,9 @@ namespace Contigo.Chat.Infrastructure;
 /// host, which <c>ServiceProviderOptions.ValidateOnBuild</c> (enabled by default for the
 /// Development environment <c>WebApplicationFactory</c>-based tests run under) rejects at startup.
 /// <see cref="AskContigoQueryRouter"/>/<see cref="DeterministicQueryPlanner"/>/
-/// <see cref="DeterministicQueryHandler"/> have no such constraint but are registered the same way
-/// for one uniform per-request/job lifetime across the module — the same choice
-/// <c>Contigo.Documents.Contracts.Infrastructure.ServiceCollectionExtensions
+/// <see cref="DeterministicQueryHandler"/>/<see cref="AbstainGuard"/> have no such constraint but
+/// are registered the same way for one uniform per-request/job lifetime across the module — the
+/// same choice <c>Contigo.Documents.Contracts.Infrastructure.ServiceCollectionExtensions
 /// .AddDocumentsContractsModule</c> already makes for every one of its own services.
 /// </summary>
 public static class ServiceCollectionExtensions
@@ -44,6 +46,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<AskContigoQueryRouter>();
         services.AddScoped<DeterministicQueryPlanner>();
         services.AddScoped<DeterministicQueryHandler>();
+        services.AddScoped<AbstainGuard>();
         services.AddScoped<RagAnswerService>();
 
         return services;

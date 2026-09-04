@@ -31,14 +31,16 @@ namespace Contigo.Chat.Application;
 /// </para>
 ///
 /// <para>
-/// <b>AC-2 (citations or cannot-determine)</b>: delegates the actual grounding/abstention decision
+/// <b>AC-2 (citations or cannot-determine)</b>: delegates the initial grounding/abstention decision
 /// to <see cref="IAiGateway.AnswerAsync"/> (ADR-004 `answer` role), which already returns
 /// <see cref="AiAnswerResult.CanDetermine"/> = <see langword="false"/> for empty evidence rather
 /// than fabricating (spec §8.4 "no evidence, no claim"; Appendix C rule 10) — see
 /// <c>Contigo.AiGateway.Fixtures.FixtureAiGateway.AnswerAsync</c>. Task E02/F04/US02/T02
-/// (abstain-guard) adds a no-fabrication guard on top of this call (validating that a real model's
-/// citations are actually grounded in <paramref name="evidence"/>); this task does not attempt
-/// that guard.
+/// (abstain-guard) then runs <see cref="AbstainGuard.Enforce"/> on that result before it is audited
+/// or returned: a real model's <see langword="true"/> verdict is only trusted when every citation it
+/// produced is actually grounded in <paramref name="evidence"/> — an ungrounded/hallucinated
+/// citation, a zero-citation "determined" claim, or an empty answer text is downgraded to an honest
+/// "cannot determine" rather than passed through (see <see cref="AbstainGuard"/>'s own doc comment).
 /// </para>
 ///
 /// <para>
@@ -54,7 +56,8 @@ namespace Contigo.Chat.Application;
 /// pointer, never the question text, the evidence text, or the answer text itself.
 /// </para>
 /// </summary>
-public sealed class RagAnswerService(IAiGateway aiGateway, IAuditWriter auditWriter, IClock clock)
+public sealed class RagAnswerService(
+    IAiGateway aiGateway, IAuditWriter auditWriter, IClock clock, AbstainGuard abstainGuard)
 {
     /// <summary>Same interim-actor placeholder as <c>Contigo.Documents.Contracts.Application
     /// .DocumentUploadService.UnattributedActor</c>: ADR-010 (Entra ID/OIDC) is not in this task's
@@ -115,25 +118,36 @@ public sealed class RagAnswerService(IAiGateway aiGateway, IAuditWriter auditWri
             .AnswerAsync(new AiAnswerRequest(decision.Question, evidence), cancellationToken)
             .ConfigureAwait(false);
 
-        if (result.IsSuccess)
+        if (!result.IsSuccess)
         {
-            // Recorded only for a successful gateway call — mirrors LoggingAiGateway.LogAsync's
-            // identical "only successful calls are logged" choice: a failed call (for example the
-            // gateway itself rejecting an empty question) never produced an answer to account for.
-            await auditWriter.WriteAsync(
-                new AuditEntry(
-                    tenantId,
-                    UnattributedActor,
-                    AuditAnsweredAction,
-                    AuditResourceType,
-                    result.Value.Metadata.InputHash,
-                    clock.UtcNow,
-                    $"canDetermine={result.Value.CanDetermine} " +
-                    $"citationCount={result.Value.Citations.Count} " +
-                    $"evidenceCount={evidence.Count}"),
-                cancellationToken).ConfigureAwait(false);
+            return result;
         }
 
-        return result;
+        // Task E02/F04/US02/T02 (abstain-guard): the gateway's own "true" verdict is not trusted
+        // blindly — every citation must actually be grounded in the evidence handed to it, or this
+        // downgrades to an honest "cannot determine" (see AbstainGuard's own doc comment). Already
+        // -honest abstentions (result.Value.CanDetermine == false) pass through unchanged.
+        var guarded = abstainGuard.Enforce(result.Value, evidence);
+
+        // Recorded only for a successful gateway call — mirrors LoggingAiGateway.LogAsync's
+        // identical "only successful calls are logged" choice: a failed call (for example the
+        // gateway itself rejecting an empty question) never produced an answer to account for.
+        // Every count below reflects the guarded result, not the gateway's raw claim, so the audit
+        // trail always matches what the caller actually received.
+        await auditWriter.WriteAsync(
+            new AuditEntry(
+                tenantId,
+                UnattributedActor,
+                AuditAnsweredAction,
+                AuditResourceType,
+                guarded.Result.Metadata.InputHash,
+                clock.UtcNow,
+                $"canDetermine={guarded.Result.CanDetermine} " +
+                $"citationCount={guarded.Result.Citations.Count} " +
+                $"evidenceCount={evidence.Count} " +
+                $"abstainGuardIntervened={guarded.Intervened}"),
+            cancellationToken).ConfigureAwait(false);
+
+        return Result<AiAnswerResult>.Success(guarded.Result);
     }
 }
