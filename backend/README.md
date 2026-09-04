@@ -33,7 +33,7 @@ backend/
     Contigo.AiGateway/           # IAiGateway + FixtureAiGateway (wired via DI) + LoggingAiGateway decorator — no Foundry SDK yet
     Contigo.Benchmark/           # IBenchmarkService only — fixture adapter is later (R3)
     Contigo.Suppliers.Products/  # scaffold (R1+)
-    Contigo.Renewals/            # deterministic renewal-date / cancellation-deadline engine (R2, task E03/F01/US01/T01; live)
+    Contigo.Renewals/            # deterministic renewal-date/cancellation-deadline engine (task E03/F01/US01/T01) + renewal-opportunity generation (task E03/F01/US01/T02) (R2; live)
     Contigo.Savings/             # scaffold (R3)
     Contigo.Quotes/              # scaffold (R4)
     Contigo.Chat/                # Ask Contigo structured-vs-semantic query router (R1, task E02/F04/US01/T01) + deterministic dates/spend query handlers (task E02/F04/US01/T02) + RagAnswerService (task E02/F04/US02/T01) + AbstainGuard no-fabrication guard (task E02/F04/US02/T02); AddChatModule wired into Contigo.Api by this last task
@@ -287,12 +287,12 @@ out of this task's file scope:
 
 1. No host endpoint or worker job calls `RenewalEngine` yet.
    `AddRenewalsModule` exists (`Infrastructure/ServiceCollectionExtensions.cs`)
-   so the three tasks that depend on `renewal-engine` in the wave-spec DAG
-   (renewal-opportunity generation, priority score, the cancellation-alerts
-   threshold scheduler) can resolve it from a container, but
-   `Contigo.Api`/`Contigo.Worker`'s `Program.cs` do not call it yet — the
-   same "wiring lands with the first real caller" sequencing `AddChatModule`
-   followed before `Contigo.Chat` had one (see that section above).
+   so the remaining tasks that depend on `renewal-engine` in the wave-spec DAG
+   (priority score, the cancellation-alerts threshold scheduler) can resolve
+   it from a container, but `Contigo.Api`/`Contigo.Worker`'s `Program.cs` do
+   not call it yet — the same "wiring lands with the first real caller"
+   sequencing `AddChatModule` followed before `Contigo.Chat` had one (see
+   that section above).
 2. `Contract` has no persisted `CancellationNoticeDays` column — its "dates"
    extraction stage (`StagedExtractionService.ApplyDatesFact`) still writes
    a raw `cancellationDeadline` date directly from extraction instead of a
@@ -302,6 +302,27 @@ out of this task's file scope:
    extraction a real `CancellationNoticeDays` field to populate — is
    follow-up work in `Contigo.Documents.Contracts`, a different module and
    a different task's file scope.
+
+`Contigo.Renewals.Application.RenewalOpportunityGenerator` (task
+E03/F01/US01/T02, us-01-deterministic-dates, the wave-spec's
+`renewal-opportunity` artifact) is the next daily-scheduler step from spec
+§9.1: "create/update renewal opportunity", built directly on top of
+`RenewalEngine.Calculate`'s output. `Generate`/`GenerateMany` take the same
+`ContractRenewalTerms` shape `RenewalEngine` does (constructor-injected, so
+`AddRenewalsModule` resolves both from one container); the static
+`FromCalculation` exposes the mapping rule alone for a caller that already
+ran the engine itself. Three-way `RenewalOpportunityStatus` mirrors
+`RenewalCalculationStatus` case-for-case (`NoRenewal`/`CannotDetermine` keep
+the same names; `Determined` becomes `Open` — an opportunity Procurement has
+something to act on) so a `CannotDetermine` calculation never turns into a
+fabricated opportunity — it abstains the same way, per parent story AC-3.
+Deliberately out of scope here, each a later task's own file: a priority
+score/component breakdown (us-02-priority-score), a threshold-alert flag
+(feature-02-cancellation-alerts), an owner/status/action
+(feature-03-renewal-dashboard's renewal-action task, spec Appendix A `POST
+/api/renewals/{id}/action`), and persistence — spec §9.1 says "create/update"
+(upsert semantics) but no task has given `Contigo.Renewals` a `DbContext` yet,
+so today `RenewalOpportunity` is an in-memory value, not a stored row.
 
 ## R1 demo smoke test
 
