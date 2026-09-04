@@ -20,6 +20,6 @@ variable "resource_group_name" {
 }
 
 variable "web_redirect_uri" {
-  description = "SPA redirect URI for the public-client Entra registration (ADR-010 / ADR-012). The env root passes https://<staticwebapp.default_host_name> from modules/staticwebapp."
+  description = "SPA redirect URI for the public-client Entra registration (ADR-010 / ADR-012). The env root passes https://<staticwebapp.default_host_name> from modules/staticwebapp. Origin-only values are stored with a trailing slash (Entra requirement)."
   type        = string
 }
