@@ -38,8 +38,18 @@ resource "azurerm_postgresql_flexible_server" "this" {
   # the server on public access (still firewalled -- no rule opens it by
   # default). Private networking through modules/network's postgres
   # subnet is wired in a later task.
+  #
+  # Azure assigns an availability zone on create. The config does not pin
+  # `zone` (Burstable has no HA), so a later plan would try to clear it
+  # and azurerm errors: "zone can only be changed when exchanged with
+  # high_availability.0.standby_availability_zone". Ignore the computed
+  # zone so apply stays idempotent.
 
   tags = local.tags
+
+  lifecycle {
+    ignore_changes = [zone]
+  }
 }
 
 resource "azurerm_postgresql_flexible_server_configuration" "pgvector" {
