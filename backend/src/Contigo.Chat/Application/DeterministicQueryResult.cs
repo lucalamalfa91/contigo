@@ -26,9 +26,22 @@ namespace Contigo.Chat.Application;
 /// shown to an end user as-is, but enough for a test (or a developer) to see *why* a result has
 /// the shape it does without re-deriving it, the same role <see cref="QueryRouteDecision.Reason"/>
 /// plays for routing.</param>
+/// <param name="SupplierScopeUnresolved">
+/// True only for <see cref="DeterministicQueryKind.AnnualSpend"/>, and only when the question
+/// named a specific supplier (<see cref="DeterministicQuery.AnnualSpend.RequestedSupplierName"/>)
+/// that could not be resolved to a <see cref="DeterministicQuery.AnnualSpend.SupplierId"/> —
+/// meaning <see cref="AggregateAnnualSpend"/> is a company-wide total, not a total for the named
+/// supplier, even though the question asked about one. A caller must not present the aggregate as
+/// if it answered the named-supplier question when this is true (Appendix C rule 10: return
+/// uncertainty, not fabricated precision, rather than silently answering a different question
+/// than the one asked). Always false when no supplier was named, when a resolved
+/// <c>SupplierId</c> was supplied, and for every <see cref="Kind"/> other than
+/// <see cref="DeterministicQueryKind.AnnualSpend"/>.
+/// </param>
 public sealed record DeterministicQueryResult(
     string Question,
     DeterministicQueryKind Kind,
     IReadOnlyList<EntityId> MatchedContractIds,
     decimal? AggregateAnnualSpend,
-    string Explanation);
+    string Explanation,
+    bool SupplierScopeUnresolved = false);

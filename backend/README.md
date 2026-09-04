@@ -135,6 +135,13 @@ E02/F04/US01/T02) turn a `Structured` decision into an actual answer for the
 two families spec §8.3 names as "dates" and "spend": "which contracts renew
 in the next N days" (a filter on `Contract.AutoRenewal`/`EndDate`) and
 "what is our annual spend [with a supplier]" (a sum of `Contract.AnnualSpend`).
+No supplier-name -> `SupplierId` resolution exists yet (Suppliers/Products is
+still an empty scaffold — the same root cause as the portfolio list's missing
+`category` filter above), so a question that names a specific supplier (for
+example "What is our Microsoft annual spend?") is still summed across
+**every** supplier today; `DeterministicQueryResult.SupplierScopeUnresolved`
+is `true` whenever that happened, so a caller can tell "$700,000 total" apart
+from "$700,000 with Microsoft" instead of presenting one as the other.
 A structured question outside those two families (for example "total
 contract value") is reported as `Unsupported` rather than answered against
 the wrong field.

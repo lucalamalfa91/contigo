@@ -28,6 +28,19 @@ public sealed class DeterministicQueryPlanner
         @"next\s+(\d+)\s+(day|days|month|months|year|years)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // A capitalized word (or run of capitalized words) that is not the question's first word is,
+    // for every phrasing this planner sees ("... Microsoft annual spend", "... with Acme Corp"),
+    // a proper noun: English only capitalizes an ordinary word when it opens the sentence, and
+    // AskContigoQueryRouter.Route trims the question before this planner ever sees it, so
+    // position 0 really is the first word. Used only to flag "this question names a specific
+    // supplier" — see the "spend" branch of Plan below for why that must not be silently ignored
+    // (Appendix C rule 10). Not full NLP: it can miss a lower-cased name and, given more than one
+    // capitalized run, only reports the first — good enough to stop a silent company-wide
+    // fallback from masquerading as a supplier-scoped answer, not a name extractor.
+    private static readonly Regex CapitalizedSupplierNamePattern = new(
+        @"(?<!^)[A-Z][A-Za-z0-9&'-]*(?:\s+[A-Z][A-Za-z0-9&'-]*)*",
+        RegexOptions.Compiled);
+
     private const int DaysPerMonth = 30;
     private const int DaysPerYear = 365;
 
@@ -72,7 +85,17 @@ public sealed class DeterministicQueryPlanner
             // "category"). A caller that already has a resolved SupplierId can still scope the
             // aggregation — see DeterministicQueryHandler — this planner just cannot derive one
             // from free text yet.
-            return new DeterministicQuery.AnnualSpend(question, SupplierId: null);
+            //
+            // What this planner CAN do from text alone is tell "no supplier named" apart from "a
+            // supplier is named but unresolved" (CapitalizedSupplierNamePattern above) — the
+            // second case is passed through as RequestedSupplierName so DeterministicQueryHandler
+            // can set DeterministicQueryResult.SupplierScopeUnresolved instead of silently
+            // returning a company-wide total under a question that names one supplier (Appendix C
+            // rule 10: uncertainty, not fabricated precision).
+            var supplierNameMatch = CapitalizedSupplierNamePattern.Match(question);
+            var requestedSupplierName = supplierNameMatch.Success ? supplierNameMatch.Value : null;
+
+            return new DeterministicQuery.AnnualSpend(question, SupplierId: null, requestedSupplierName);
         }
 
         return new DeterministicQuery.Unsupported(

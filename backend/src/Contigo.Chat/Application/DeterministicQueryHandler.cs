@@ -71,9 +71,19 @@ public sealed class DeterministicQueryHandler(IClock clock)
 
         var total = matches.Sum(c => c.AnnualSpend!.Value);
 
+        // The question named a supplier (RequestedSupplierName) but SupplierId never got resolved
+        // to it — the aggregate below is company-wide, not scoped to that supplier, and the
+        // caller must be told the difference rather than left to assume scoping worked (Appendix
+        // C rule 10; see DeterministicQueryResult.SupplierScopeUnresolved's doc comment).
+        var supplierScopeUnresolved = query.SupplierId is null && query.RequestedSupplierName is not null;
+
         var scope = query.SupplierId is { } supplierId
             ? $"supplier {supplierId}"
-            : "all suppliers (no supplier filter resolved yet — see DeterministicQueryPlanner)";
+            : supplierScopeUnresolved
+                ? $"all suppliers — question named '{query.RequestedSupplierName}' but no " +
+                  "supplier-name resolution exists yet (see DeterministicQueryPlanner); this " +
+                  $"total is NOT scoped to '{query.RequestedSupplierName}'"
+                : "all suppliers (no supplier named in the question)";
 
         return new DeterministicQueryResult(
             query.Question,
@@ -83,7 +93,8 @@ public sealed class DeterministicQueryHandler(IClock clock)
             $"Summed Contract.AnnualSpend across {matches.Count} contract(s) for {scope} " +
             "(deterministic aggregation, Appendix C rule 6 — no LLM; assumes a single reporting " +
             "currency — no cross-contract currency normalization exists anywhere in this " +
-            "codebase yet).");
+            "codebase yet).",
+            supplierScopeUnresolved);
     }
 
     private static DeterministicQueryResult HandleUnsupported(DeterministicQuery.Unsupported query) =>

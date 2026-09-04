@@ -41,7 +41,14 @@ public sealed class AskContigoDeterministicQueriesEndToEndTests
 
         var answer = AnswerAskContigo("What is our Microsoft annual spend?", contracts);
 
+        // No supplier-name -> SupplierId resolution exists yet (DeterministicQueryPlanner's doc
+        // comment), so this total is every contract in the snapshot, not a Microsoft-scoped
+        // figure — the fixture above never even ties either contract to a "Microsoft" SupplierId.
+        // SupplierScopeUnresolved is how a caller is required to notice that before presenting
+        // $700,000 as "your Microsoft spend" (Appendix C rule 10: uncertainty over fabricated
+        // precision).
         Assert.Equal(700_000m, answer.AggregateAnnualSpend);
+        Assert.True(answer.SupplierScopeUnresolved);
     }
 
     private DeterministicQueryResult AnswerAskContigo(string question, IReadOnlyList<ContractFact> contracts)

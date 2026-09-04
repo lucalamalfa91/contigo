@@ -37,6 +37,10 @@ public sealed class DeterministicQueryPlannerTests
 
         var annualSpend = Assert.IsType<DeterministicQuery.AnnualSpend>(plan);
         Assert.Null(annualSpend.SupplierId);
+        // Named supplier, not resolved to an id: DeterministicQueryHandler must not silently
+        // aggregate across every supplier as if this were an unscoped question (Appendix C
+        // rule 10) — see DeterministicQueryResult.SupplierScopeUnresolved.
+        Assert.Equal("Microsoft", annualSpend.RequestedSupplierName);
         Assert.Equal(decision.Question, annualSpend.Question);
     }
 
@@ -62,7 +66,23 @@ public sealed class DeterministicQueryPlannerTests
 
         var plan = _planner.Plan(decision);
 
-        Assert.IsType<DeterministicQuery.AnnualSpend>(plan);
+        var annualSpend = Assert.IsType<DeterministicQuery.AnnualSpend>(plan);
+        Assert.Null(annualSpend.SupplierId);
+        // Two-word supplier name, phrased as "with <Name>" rather than "<Name> annual spend" —
+        // proves the detection isn't hard-coded to the spec's exact example wording.
+        Assert.Equal("Acme Corp", annualSpend.RequestedSupplierName);
+    }
+
+    [Fact]
+    public void Does_not_flag_a_supplier_name_when_none_is_asked_for()
+    {
+        var decision = _router.Route("What is our annual spend?");
+
+        var plan = _planner.Plan(decision);
+
+        var annualSpend = Assert.IsType<DeterministicQuery.AnnualSpend>(plan);
+        Assert.Null(annualSpend.SupplierId);
+        Assert.Null(annualSpend.RequestedSupplierName);
     }
 
     // "Total contract value" is a structured field (AskContigoQueryRouter.StructuredKeywords

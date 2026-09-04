@@ -22,8 +22,19 @@ public abstract record DeterministicQuery(string Question)
     /// <summary>"What is our annual spend [with a given supplier]?"</summary>
     /// <param name="SupplierId">Null when no supplier filter could be resolved — see
     /// <see cref="DeterministicQueryPlanner"/>'s doc comment for why free text alone cannot
-    /// resolve one today.</param>
-    public sealed record AnnualSpend(string Question, EntityId? SupplierId) : DeterministicQuery(Question);
+    /// resolve one today. A caller that already has a resolved id (a future supplier-name
+    /// lookup, or a chat session already narrowed to one supplier) can set this directly;
+    /// <see cref="DeterministicQueryPlanner"/> itself never does.</param>
+    /// <param name="RequestedSupplierName">Non-null when the question text appears to name a
+    /// specific supplier (for example "Microsoft", "Acme Corp") that <paramref name="SupplierId"/>
+    /// could not be resolved to — see <see cref="DeterministicQueryPlanner"/>. Distinct from "no
+    /// supplier requested at all" (both this and <paramref name="SupplierId"/> null): that case is
+    /// honestly company-wide, this one is not. <see cref="DeterministicQueryHandler"/> turns this
+    /// into <see cref="DeterministicQueryResult.SupplierScopeUnresolved"/> so a caller must notice
+    /// before presenting the aggregate as if it answered the named-supplier question (Appendix C
+    /// rule 10).</param>
+    public sealed record AnnualSpend(string Question, EntityId? SupplierId, string? RequestedSupplierName = null)
+        : DeterministicQuery(Question);
 
     /// <summary>A <see cref="Domain.QueryIntent.Structured"/> question this task does not cover
     /// yet — see <see cref="Domain.DeterministicQueryKind.Unsupported"/> for why this case

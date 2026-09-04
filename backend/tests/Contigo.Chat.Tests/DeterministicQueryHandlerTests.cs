@@ -68,6 +68,9 @@ public sealed class DeterministicQueryHandlerTests
         Assert.Equal(DeterministicQueryKind.AnnualSpend, result.Kind);
         Assert.Equal(350_000m, result.AggregateAnnualSpend);
         Assert.Equal([withSpend1.ContractId, withSpend2.ContractId], result.MatchedContractIds);
+        // No supplier was named at all (RequestedSupplierName null, same as SupplierId here) —
+        // a genuinely company-wide question, not an unresolved one.
+        Assert.False(result.SupplierScopeUnresolved);
     }
 
     [Fact]
@@ -85,6 +88,25 @@ public sealed class DeterministicQueryHandlerTests
 
         Assert.Equal(100_000m, result.AggregateAnnualSpend);
         Assert.Equal([supplierAContract.ContractId], result.MatchedContractIds);
+        // A resolved SupplierId was supplied (however it got resolved) — scoping actually
+        // happened, so this is not the unresolved case.
+        Assert.False(result.SupplierScopeUnresolved);
+    }
+
+    [Fact]
+    public void Flags_supplier_scope_unresolved_when_the_question_names_a_supplier_the_planner_could_not_resolve()
+    {
+        var result = _handler.Handle(
+            new DeterministicQuery.AnnualSpend(
+                "What is our Microsoft annual spend?", SupplierId: null, RequestedSupplierName: "Microsoft"),
+            [NewFact(annualSpend: 100_000m)]);
+
+        Assert.Equal(DeterministicQueryKind.AnnualSpend, result.Kind);
+        // The aggregate is still computed — every contract in the snapshot, not just
+        // "Microsoft"'s — but the flag tells the caller not to present it as if it were.
+        Assert.Equal(100_000m, result.AggregateAnnualSpend);
+        Assert.True(result.SupplierScopeUnresolved);
+        Assert.Contains("Microsoft", result.Explanation);
     }
 
     [Fact]

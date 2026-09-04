@@ -21,7 +21,10 @@ public enum DeterministicQueryKind
     /// <summary>
     /// "What is our annual spend [with &lt;supplier&gt;]?" — a deterministic sum of
     /// <c>Contract.AnnualSpend</c>, optionally scoped to one supplier (spec §8.3 "structured
-    /// aggregation on supplier + contract values").
+    /// aggregation on supplier + contract values"). Scoping only happens when a caller already
+    /// supplies a resolved supplier id — see
+    /// <c>Contigo.Chat.Application.DeterministicQueryResult.SupplierScopeUnresolved</c> for the
+    /// case where the question names a supplier this module cannot yet resolve on its own.
     /// </summary>
     AnnualSpend,
 
