@@ -22,6 +22,21 @@ namespace Contigo.Documents.Contracts.Migrations
     /// note on <see cref="Up"/> for why that half was deleted; migration
     /// <c>20260904133500_AddEvidenceConfidenceVersionColumns</c> is the sole owner of those
     /// columns now.
+    /// enable/force/policy statements are bundled into this same migration rather than a
+    /// separate follow-up, so there is no migration history state where it exists without RLS
+    /// (ADR-009). <c>Contigo.Tenancy.Tests.TenantRlsMigrationCheckTests</c>/
+    /// <c>TenantRlsDeployableScriptCheckTests</c> discover it automatically (every
+    /// <c>TenantScopedEntity</c> subclass) and would fail the build if this were omitted.
+    ///
+    /// This migration originally also (redundantly) added source-span/page/confidence columns to
+    /// <c>risk</c>/<c>obligation</c>/<c>contract_line_item</c> — the same columns
+    /// <see cref="AddEvidenceConfidenceVersionColumns"/> (task E02/F02/US01/T02, an earlier
+    /// migration by timestamp) already adds. Both migrations were authored independently on
+    /// parallel wave branches and merged without reconciling; running this one second (its
+    /// timestamp sorts after <see cref="AddEvidenceConfidenceVersionColumns"/>'s) would have
+    /// failed with "column already exists". Task E02/F03/US01/T02 found and removed the
+    /// duplicate <c>AddColumn</c>/<c>DropColumn</c> calls, keeping only this migration's own,
+    /// non-overlapping contribution: <c>extraction_evidence</c>.
     /// </summary>
     public partial class AddStagedExtractionEvidence : Migration
     {

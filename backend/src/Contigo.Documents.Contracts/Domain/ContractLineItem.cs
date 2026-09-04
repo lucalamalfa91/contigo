@@ -52,6 +52,13 @@ public sealed class ContractLineItem : TenantScopedEntity
     /// each property (identical types/nullability on both sides, so nothing was lost) purely to
     /// get a green build for its own, unrelated change — see that task's implementer notes.
     /// </summary>
+    /// <summary>Evidence pointer + confidence (Appendix C rule 2; spec §7.3 "every extracted
+    /// fact carries source span + confidence"), mirroring <see cref="Clause.SourceDocumentId"/>/
+    /// <see cref="Clause.SourceSpan"/>/<see cref="Clause.SourcePage"/>. Added by task
+    /// E02/F01/US02/T01 (us-02-staged-extraction, AC-2) — this task's `price/SKU` stage is the
+    /// first writer of this entity that needs it; the original contract-schema task
+    /// (E02/F02/US01/T01) had no extraction caller yet.</summary>
+    public EntityId? SourceDocumentId { get; set; }
     public string? SourceSpan { get; set; }
     public int? SourcePage { get; set; }
     public double? Confidence { get; set; }
