@@ -17,6 +17,8 @@ namespace Contigo.Renewals.Tests;
 /// <see cref="RenewalEngine"/> — resolving it from the same container proves the constructor
 /// dependency is satisfied by this one <c>AddRenewalsModule</c> call, not by some other module's
 /// registration.
+/// rely on once a task adds the first real caller. Task E03/F01/US02/T01 (priority-score) extends
+/// this same proof to <see cref="PriorityScoreCalculator"/>.
 /// </summary>
 public sealed class ServiceCollectionExtensionsTests
 {
@@ -37,6 +39,7 @@ public sealed class ServiceCollectionExtensionsTests
 
     [Fact]
     public void AddRenewalsModule_resolves_RenewalOpportunityGenerator_with_no_captive_dependency()
+    public void AddRenewalsModule_resolves_PriorityScoreCalculator_with_no_captive_dependency()
     {
         var services = new ServiceCollection();
 
@@ -47,6 +50,7 @@ public sealed class ServiceCollectionExtensionsTests
         using var scope = provider.CreateScope();
 
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<RenewalOpportunityGenerator>());
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<PriorityScoreCalculator>());
     }
 
     [Fact]

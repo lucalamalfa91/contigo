@@ -34,6 +34,7 @@ backend/
     Contigo.Benchmark/           # IBenchmarkService only — fixture adapter is later (R3)
     Contigo.Suppliers.Products/  # scaffold (R1+)
     Contigo.Renewals/            # deterministic renewal-date/cancellation-deadline engine (task E03/F01/US01/T01) + renewal-opportunity generation (task E03/F01/US01/T02) (R2; live)
+    Contigo.Renewals/            # deterministic renewal-date / cancellation-deadline engine (R2, task E03/F01/US01/T01) + explainable priority score (task E03/F01/US02/T01; live)
     Contigo.Savings/             # scaffold (R3)
     Contigo.Quotes/              # scaffold (R4)
     Contigo.Chat/                # Ask Contigo structured-vs-semantic query router (R1, task E02/F04/US01/T01) + deterministic dates/spend query handlers (task E02/F04/US01/T02) + RagAnswerService (task E02/F04/US02/T01) + AbstainGuard no-fabrication guard (task E02/F04/US02/T02); AddChatModule wired into Contigo.Api by this last task
@@ -323,6 +324,43 @@ score/component breakdown (us-02-priority-score), a threshold-alert flag
 /api/renewals/{id}/action`), and persistence — spec §9.1 says "create/update"
 (upsert semantics) but no task has given `Contigo.Renewals` a `DbContext` yet,
 so today `RenewalOpportunity` is an in-memory value, not a stored row.
+## Renewal Intelligence — explainable priority score
+
+`Contigo.Renewals.Application.PriorityScoreCalculator` (task E03/F01/US02/T01,
+us-02-priority-score) is product spec §9.2's formula made concrete: `"Priority
+Score = Spend Weight + Time Urgency + Benchmark Opportunity + Price Increase
+Risk + Contract Risk"`. Same determinism convention as `RenewalEngine` (pure,
+synchronous, no database/HTTP/LLM call) — `Calculate` takes one
+`RenewalCalculationResult` (so "days until renewal" is always
+`RenewalEngine`'s own arithmetic, never a second copy of it) plus one
+`RenewalPriorityInputs` (the raw spend/uplift/contract-risk/benchmark-position
+facts `RenewalEngine` does not compute) and returns a `PriorityScoreResult`:
+a `TotalScore` (0–100) plus each of the five components as its own named,
+explained `PriorityScoreComponent` (score 0–20 each) — spec §9.2's "Store
+both total score and component scores so the recommendation is explainable
+and tunable" (AC-2), not a single opaque number.
+
+A component whose raw input is unknown never fabricates a guess (Appendix C
+rule 10): every component except benchmark opportunity defaults to the
+minimum (0); benchmark opportunity defaults to the documented neutral
+midpoint (`PriorityScoreCalculator.NeutralComponentScore`, 10) specifically,
+because parent story AC-3 names that exact rule — `"Benchmark-opportunity
+component reads the R3 benchmark only when available (else neutral)"`. Today
+that is *always* the neutral case: `Contigo.Benchmark.IBenchmarkService` is
+still an R0 placeholder with no query operations, so
+`RenewalPriorityInputs.BenchmarkMarketPositionPercent` has no real producer
+yet — the same "caller supplies it however it likes today, a real mapping
+lands later" gap `ContractRenewalTerms` already documents for this module.
+Every tier boundary (spend, uplift %, benchmark %) and the time-urgency
+tiers (aligned to spec §9.1's own 365/270/180/120/90/60/30-day windows) are
+this task's first-pass, documented defaults — task-02
+(priority-explainability) is where they become tunable configuration, not a
+re-derivation of the formula.
+
+`AddRenewalsModule` registers `PriorityScoreCalculator` the same way it
+registers `RenewalEngine` — no constructor dependencies at all, so it needs
+no `IClock`. Like `RenewalEngine`, no host endpoint or worker job calls it
+yet.
 
 ## R1 demo smoke test
 
