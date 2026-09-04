@@ -88,6 +88,7 @@ RLS policies are added in those migrations, not in Terraform.
 | GET | `/api/contracts` | portfolio list; spec §8.1 columns; `X-Tenant-Id` header; optional filters `supplierId`, `status`, `risk` (Low/Medium/High/Critical), `autoRenewal`, `minAnnualSpend`, `maxAnnualSpend`, `renewalFrom`/`renewalTo` (yyyy-MM-dd) — no `category` filter yet, see `PortfolioFilter`'s doc comment; optional paging `page` (default 1), `pageSize` (default 25, max 100); response is `{ items, page, pageSize, totalCount }`, not a bare array |
 | GET | `/api/contracts/{id}` | Contract 360 aggregate; spec §8.2 header + tabs (overview, commercials, products, clauses, obligations, risks, documents, benchmark, renewal, activity); `X-Tenant-Id` header; 404 when the contract does not exist or belongs to another tenant; `benchmark`/`activity` are always empty arrays until R3/R4 — see `Contract360Result`'s doc comment |
 | POST | `/api/chat/query` | Ask Contigo (spec §8.3); `{ question: string }` + `X-Tenant-Id` header; routes via `AskContigoQueryRouter`. `Semantic` questions run the real RAG pipeline (`EmbeddingRetrievalService.SearchAsync` tenant-scoped retrieval → `RagAnswerService` → `IAiGateway.AnswerAsync`) and respond `{ question, intent, canDetermine, answer, citations: [{documentId, page, section}], message }` — `citations` empty and `canDetermine: false` when authorized retrieval finds nothing (spec §8.4 "no evidence, no claim"), never a fabricated answer. `Structured` questions get an honest `canDetermine: false` + explanatory `message` — no task has yet mapped a real, tenant-scoped `Contract` row into `Contigo.Chat.Application.ContractFact` for `DeterministicQueryHandler` to run against, see that type's own doc comment |
+| GET | `/api/renewals` | Renewal pipeline + insight card (spec §9.3/§10.1); `X-Tenant-Id` header; auto-renewing contracts only, most urgent first; response is `{ items, totalCount }`, each item `{ contractId, supplierId, status, renewalDate, daysUntilRenewal, annualSpend, cancellationDeadline, daysUntilCancellationDeadline, autoRenewal, action, insightCard: { facts, recommendations } }` — `insightCard.recommendations`' benchmark/savings fields (`annualUpliftPercent`, `marketPosition`, `potentialSavingsRange`) are honestly `null` until the Benchmark/Savings modules land (R3); `action`/`recommendedAction` is a deterministic urgency rule, not the full spec §9.2 Priority Score — see `Contigo.Renewals.Application.RenewalPipelineBuilder`'s own doc comment |
 
 **Interim auth:** every endpoint above that takes an `X-Tenant-Id` header
 (all except `GET /api/audit`, which already expects a claims principal)
@@ -282,26 +283,40 @@ scheduler for each active contract" shape; deciding which contracts are
 `Contigo.Documents.Contracts.Domain.Contract` — ADR-002 forbids
 `Contigo.Renewals` from referencing `Contigo.Documents.Contracts` at all
 (same reason `Contigo.Chat.Application.ContractFact` is its own small DTO,
-not the real `Contract` entity). Two honest gaps follow, both deliberately
-out of this task's file scope:
+not the real `Contract` entity).
 
-1. No host endpoint or worker job calls `RenewalEngine` yet.
-   `AddRenewalsModule` exists (`Infrastructure/ServiceCollectionExtensions.cs`)
-   so the three tasks that depend on `renewal-engine` in the wave-spec DAG
-   (renewal-opportunity generation, priority score, the cancellation-alerts
-   threshold scheduler) can resolve it from a container, but
-   `Contigo.Api`/`Contigo.Worker`'s `Program.cs` do not call it yet — the
-   same "wiring lands with the first real caller" sequencing `AddChatModule`
-   followed before `Contigo.Chat` had one (see that section above).
-2. `Contract` has no persisted `CancellationNoticeDays` column — its "dates"
-   extraction stage (`StagedExtractionService.ApplyDatesFact`) still writes
-   a raw `cancellationDeadline` date directly from extraction instead of a
-   notice-period day count (product spec §7.3's own extraction-evidence
-   example names `cancellation_notice_days`, not a computed date). Mapping
-   a real `Contract` row onto `ContractRenewalTerms` — and giving
-   extraction a real `CancellationNoticeDays` field to populate — is
-   follow-up work in `Contigo.Documents.Contracts`, a different module and
-   a different task's file scope.
+`Contigo.Renewals.Application.RenewalPipelineBuilder` (task E03/F03/US01/T01,
+us-01-renewal-dashboard-api) is `RenewalEngine`'s first real caller and backs
+`GET /api/renewals` (see the HTTP surface table above): it turns a batch of
+`RenewalDashboardCandidate` (another small DTO, the same dependency-direction
+shape as `ContractRenewalTerms`) into a pipeline row plus a facts/
+recommendations insight card (spec §9.3), ordered most-urgent-first by days
+until the relevant date. `Contigo.Api.RenewalsEndpointExtensions` is the
+composition root that maps a real, tenant-scoped `PortfolioListItem`
+(Documents/Contracts) onto `RenewalDashboardCandidate` — the one mapping
+neither module may do itself, same pattern `ChatEndpointExtensions` already
+uses for `EmbeddingSearchResult` → `AiEvidenceSnippet`. `AddRenewalsModule`
+is now called by `Contigo.Api`'s `Program.cs` — the same "wiring lands with
+the first real caller" sequencing `AddChatModule` followed before
+`Contigo.Chat` had one. `Contigo.Worker`'s `Program.cs` still does not call
+it — no worker job (the renewal-opportunity generation / cancellation-alerts
+threshold scheduler wave-spec tasks) depends on `renewal-engine` yet.
+
+One honest gap remains, deliberately out of this task's file scope:
+`Contract` has no persisted `CancellationNoticeDays` column — its "dates"
+extraction stage (`StagedExtractionService.ApplyDatesFact`) still writes a
+raw `cancellationDeadline` date directly from extraction instead of a
+notice-period day count (product spec §7.3's own extraction-evidence example
+names `cancellation_notice_days`, not a computed date), so `RenewalEngine`
+itself still cannot derive a cancellation deadline for any real contract.
+`RenewalPipelineBuilder` works around this for the dashboard specifically by
+carrying `Contract.CancellationDeadline` (the already-extracted raw fact)
+straight through as its own field, independent of `RenewalEngine`'s
+notice-day derivation — see `RenewalDashboardCandidate.CancellationDeadline`'s
+own doc comment. Giving extraction a real `CancellationNoticeDays` field (so
+`RenewalEngine.Calculate` itself can derive the deadline, the way it already
+derives `RenewalDate`) is follow-up work in `Contigo.Documents.Contracts`, a
+different module and a different task's file scope.
 
 ## R1 demo smoke test
 

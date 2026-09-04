@@ -8,6 +8,7 @@ using Contigo.Documents.Contracts.Application;
 using Contigo.Documents.Contracts.Application.Extraction;
 using Contigo.Documents.Contracts.Infrastructure;
 using Contigo.Identity.Workspace.Infrastructure;
+using Contigo.Renewals.Infrastructure;
 using Contigo.SharedKernel;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -65,6 +66,12 @@ builder.Services.AddAuditModule(auditConnectionString);
 // registration order does not matter, only that every AddXxxModule call below happens before
 // builder.Build().
 builder.Services.AddChatModule();
+
+// Task E03/F03/US01/T01 (renewal-dashboard, GET /api/renewals): the Renewals module's own
+// AddRenewalsModule(IServiceCollection) (ADR-002) — task E03/F01/US01/T01 registered RenewalEngine
+// here already but nothing called it; this task is that first real caller (same "wiring lands with
+// the first real caller" sequencing AddChatModule followed above).
+builder.Services.AddRenewalsModule();
 
 builder.Services.AddHealthChecks();
 
@@ -229,6 +236,13 @@ app.MapAuditEndpoints();
 // see PortfolioEndpointExtensions and those endpoints' own comments for why this gap is not
 // promoted to reports/open-questions.md by this task.
 app.MapPortfolioEndpoints();
+
+// Task E03/F03/US01/T01 (us-01-renewal-dashboard-api, AC-1/AC-2): GET /api/renewals, the spec
+// §9.3/§10.1 renewal pipeline + insight card, tenant-scoped (ADR-009). Same interim X-Tenant-Id
+// placeholder as the endpoints above (ADR-010 is not in force for this task either) — see
+// RenewalsEndpointExtensions and PortfolioEndpointExtensions' own comments for why this gap is not
+// promoted to reports/open-questions.md by this task.
+app.MapRenewalsEndpoints();
 
 // Task E02/F04/US02/T01 (us-02-rag-citations, AC-1/AC-2/AC-3): POST /api/chat/query — the RAG
 // retrieval + grounded-answer-with-citations path for Ask Contigo semantic questions (spec §8.3).
