@@ -72,6 +72,16 @@ YAML constants. They are ADR output of the council.
 | After a green slice, PR to GitHub `main` | `execution-fanout.hooks` `on_orchestration_stop` → `command: scripts/open_fanout_pr.py` (`gh pr create` `integration` → `origin/main`) | **RIPRODOTTA** (`fan_out.write_back` is inert; this is the write-back) |
 | Phase-barrier conflicts resolved in-process | `merge_auto` → `merge_resolver: merge-resolve` (agent `conflict-fixer`) → abort; `merge_verify` | **RIPRODOTTA** — operator does not merge by hand |
 
+Product domain READMEs (`infra/README.md`, `backend/README.md`,
+`web/README.md`, `mobile/README.md`, root `README.md`) are **standing
+hygiene**, not a per-task file claim. Skill `readme-hygiene` is mounted
+on implementer, reviewer, and conflict-fixer. An implementer who changes
+operator-visible surface updates the matching README in the same commit;
+the reviewer treats a stale or missing domain README as blocking. Those
+paths stay out of `## Files to create or modify` so same-phase tasks do
+not collide on one markdown file (D1 single-writer). Barrier merges union
+both sides' factual updates.
+
 No three-pass test pipeline (bit-flow passata 3). Contigo stops at a green
 decomposition; code is a separate pass the operator launches. Testing, if added
 later, is a **third** top-level target — not this artifact's job.

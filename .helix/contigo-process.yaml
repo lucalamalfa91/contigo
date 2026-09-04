@@ -124,6 +124,7 @@ skills:
   - { id: decompose-workitems,     instructions_file: skills/decompose-workitems.md }
   - { id: wavespec-schema,         instructions_file: skills/wavespec-schema.md }
   - { id: afi,                     instructions_file: skills/afi.md }
+  - { id: readme-hygiene,          instructions_file: skills/readme-hygiene.md }
 
 # -----------------------------------------------------------------------------
 # Agents
@@ -203,7 +204,7 @@ agents:
 
   - id: implementer
     model: coding-primary  # Claude Sonnet (claude-sonnet-5)
-    skills: [kb-contract, marker-discipline, afi]
+    skills: [kb-contract, marker-discipline, afi, readme-hygiene]
     instructions_file: agents/implementer.md
     harness:
       backend: { kind: external-coding-agent, provider: claude-code, mode: harness, transport: agent-sdk }
@@ -214,7 +215,7 @@ agents:
 
   - id: reviewer
     model: coding-primary
-    skills: [kb-contract, marker-discipline, afi]
+    skills: [kb-contract, marker-discipline, afi, readme-hygiene]
     instructions_file: agents/reviewer.md
     harness:
       backend: { kind: external-coding-agent, provider: claude-code, mode: harness, transport: agent-sdk }
@@ -225,7 +226,7 @@ agents:
 
   - id: conflict-fixer
     model: coding-primary
-    skills: [kb-contract]
+    skills: [kb-contract, readme-hygiene]
     instructions_file: agents/conflict-fixer.md
     harness:
       backend: { kind: external-coding-agent, provider: claude-code, mode: harness, transport: agent-sdk }
