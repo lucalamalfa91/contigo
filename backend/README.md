@@ -71,8 +71,9 @@ on Testcontainers inside `dotnet test`.
 
 EF migrations live in each module that owns a DbContext
 (`Contigo.Identity.Workspace`, `Contigo.Documents.Contracts`,
-`Contigo.Audit`). Apply them against the same database the hosts use;
-RLS policies are added in those migrations, not in Terraform.
+`Contigo.Audit`, `Contigo.Renewals`). Apply them against the same database
+the hosts use; RLS policies are added in those migrations, not in
+Terraform.
 
 ## HTTP surface today
 
@@ -90,6 +91,7 @@ RLS policies are added in those migrations, not in Terraform.
 | GET | `/api/contracts/{id}` | Contract 360 aggregate; spec §8.2 header + tabs (overview, commercials, products, clauses, obligations, risks, documents, benchmark, renewal, activity); `X-Tenant-Id` header; 404 when the contract does not exist or belongs to another tenant; `benchmark`/`activity` are always empty arrays until R3/R4 — see `Contract360Result`'s doc comment |
 | POST | `/api/chat/query` | Ask Contigo (spec §8.3); `{ question: string }` + `X-Tenant-Id` header; routes via `AskContigoQueryRouter`. `Semantic` questions run the real RAG pipeline (`EmbeddingRetrievalService.SearchAsync` tenant-scoped retrieval → `RagAnswerService` → `IAiGateway.AnswerAsync`) and respond `{ question, intent, canDetermine, answer, citations: [{documentId, page, section}], message }` — `citations` empty and `canDetermine: false` when authorized retrieval finds nothing (spec §8.4 "no evidence, no claim"), never a fabricated answer. `Structured` questions get an honest `canDetermine: false` + explanatory `message` — no task has yet mapped a real, tenant-scoped `Contract` row into `Contigo.Chat.Application.ContractFact` for `DeterministicQueryHandler` to run against, see that type's own doc comment |
 | GET | `/api/renewals` | Renewal pipeline + insight card (spec §9.3/§10.1); `X-Tenant-Id` header; auto-renewing contracts only, most urgent first; response is `{ items, totalCount }`, each item `{ contractId, supplierId, status, renewalDate, daysUntilRenewal, annualSpend, cancellationDeadline, daysUntilCancellationDeadline, autoRenewal, action, insightCard: { facts, recommendations } }` — `insightCard.recommendations`' benchmark/savings fields (`annualUpliftPercent`, `marketPosition`, `potentialSavingsRange`) are honestly `null` until the Benchmark/Savings modules land (R3); `action`/`recommendedAction` is a deterministic urgency rule, not the full spec §9.2 Priority Score — see `Contigo.Renewals.Application.RenewalPipelineBuilder`'s own doc comment |
+| POST | `/api/renewals/{id}/action` | Updates owner/status/action for one renewal (spec Appendix A; story us-01-renewal-dashboard-api AC-3); `X-Tenant-Id` header; `{id}` is the same `contractId` the GET above returns per row, not a separate stored "renewal" id; body `{ owner, status, action }` — `status` is one of `NotStarted`/`InProgress`/`Completed`; upserts one row (never a second for the same contract) and writes one `IAuditWriter` entry (`renewal.action_updated`); 400 (not 404) for a missing/invalid tenant header or route id, or for an empty `owner`/`action`/unrecognized `status` — see `Contigo.Renewals.Application.RenewalActionService`'s own doc comment for the honest gap this leaves (no check that `{id}` names an existing, tenant-owned contract; `Contigo.Renewals` cannot reference `Contigo.Documents.Contracts` at all) |
 
 **Interim auth:** every endpoint above that takes an `X-Tenant-Id` header
 (all except `GET /api/audit`, which already expects a claims principal)
@@ -362,12 +364,19 @@ the same names; `Determined` becomes `Open` — an opportunity Procurement has
 something to act on) so a `CannotDetermine` calculation never turns into a
 fabricated opportunity — it abstains the same way, per parent story AC-3.
 Deliberately out of scope here, each a later task's own file: a priority
-score/component breakdown (us-02-priority-score), a threshold-alert flag
-(feature-02-cancellation-alerts), an owner/status/action
-(feature-03-renewal-dashboard's renewal-action task, spec Appendix A `POST
-/api/renewals/{id}/action`), and persistence — spec §9.1 says "create/update"
-(upsert semantics) but no task has given `Contigo.Renewals` a `DbContext` yet,
-so today `RenewalOpportunity` is an in-memory value, not a stored row.
+score/component breakdown (us-02-priority-score) and a threshold-alert flag
+(feature-02-cancellation-alerts) remain follow-up work. The other two gaps
+this paragraph used to list here are now closed by task E03/F03/US01/T02
+(renewal-action, feature-03-renewal-dashboard): an owner/status/action —
+`POST /api/renewals/{id}/action`, spec Appendix A, see the HTTP surface
+table above — and `Contigo.Renewals`'s first `DbContext`
+(`RenewalsDbContext`), which backs that endpoint's
+`Contigo.Renewals.Domain.RenewalAction` row. That `DbContext` does not,
+though, give `RenewalOpportunity` itself a persisted identity: spec §9.1's
+"create/update renewal opportunity" upsert semantics land on the separate
+`RenewalAction` (owner/status/action) row, keyed by `ContractId` alone, not
+on a stored "renewal" entity — see `RenewalAction`'s own doc comment.
+`RenewalOpportunity` remains an in-memory value, not a stored row.
 ## Renewal Intelligence — explainable priority score
 
 `Contigo.Renewals.Application.PriorityScoreCalculator` (task E03/F01/US02/T01,
@@ -497,7 +506,7 @@ contract against a scripted gateway that returns real, schema-shaped facts.
 Images are tagged with `github.sha`. Container Apps listen on **8080**
 (`ASPNETCORE_URLS=http://+:8080`). Deployed connection strings are
 environment variables (`ConnectionStrings__IdentityWorkspace`,
-`DocumentsContracts`, `Audit`, `Storage`) — never committed.
+`DocumentsContracts`, `Audit`, `Renewals`, `Storage`) — never committed.
 
 Image pull uses this environment's workload identity (`AcrPull` on
 `modules/acr`, `registry {}` on `modules/containerapps`). Confirm the

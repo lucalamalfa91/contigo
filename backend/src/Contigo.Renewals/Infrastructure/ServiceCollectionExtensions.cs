@@ -1,6 +1,8 @@
 using Contigo.Renewals.Application;
 using Contigo.Renewals.Configuration;
 using Contigo.SharedKernel;
+using Contigo.SharedKernel.Tenancy;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -49,10 +51,27 @@ namespace Contigo.Renewals.Infrastructure;
 /// comment describes for that module. <c>Contigo.Worker.csproj</c> still only carries a
 /// <c>ProjectReference</c> to <c>Contigo.Renewals.csproj</c> in anticipation — no worker job calls
 /// this module yet (the threshold scheduler remains a follow-up task).
+///
+/// Task E03/F03/US01/T02 (renewal-action, <c>POST /api/renewals/{id}/action</c>) gives this module
+/// its first <c>DbContext</c> (<see cref="RenewalsDbContext"/>, backing
+/// <see cref="RenewalActionService"/>) — the persistence gap
+/// <c>Contigo.Renewals.Application.RenewalOpportunity</c>'s own doc comment named ("no task has
+/// given Contigo.Renewals a DbContext yet"). This method's signature therefore now takes a
+/// <paramref name="connectionString"/>, the same shape every other module's own
+/// <c>AddXxxModule(IServiceCollection, string)</c> already has once it owns a DbContext
+/// (<c>Contigo.Audit.Infrastructure.ServiceCollectionExtensions.AddAuditModule</c>,
+/// <c>Contigo.Documents.Contracts.Infrastructure.ServiceCollectionExtensions
+/// .AddDocumentsContractsModule</c>) — both existing callers (<c>Contigo.Api.Program</c>,
+/// <c>Contigo.Worker.WorkerServiceCollectionExtensions.AddWorkerHost</c>) and every
+/// <c>ServiceCollectionExtensionsTests</c> call site update in lockstep with this change.
+/// <see cref="ITenantContext"/>/<see cref="TenantContext"/> registration mirrors
+/// <c>AddAuditModule</c>'s own <c>TryAddSingleton</c> exactly — the same ambient tenant claim
+/// every module's DbContext shares (ADR-009), so whichever module's <c>AddXxxModule</c> runs first
+/// in a given host wins the single registration, harmlessly, for every module after it.
 /// </summary>
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddRenewalsModule(this IServiceCollection services)
+    public static IServiceCollection AddRenewalsModule(this IServiceCollection services, string connectionString)
     {
         // TryAdd: any module (or the host) may call this defensively; only the first registration
         // wins, and every module shares the same "now" (IClock) — mirrors
@@ -123,6 +142,23 @@ public static class ServiceCollectionExtensions
         // RenewalPipelineBuilder (task E03/F03/US01/T01) only depends on RenewalEngine + IClock,
         // both already registered above — same Scoped lifetime for the same reason.
         services.AddScoped<RenewalPipelineBuilder>();
+
+        // Task E03/F03/US01/T02 (renewal-action): same ambient-tenant-claim registration every
+        // other module's own AddXxxModule uses once it owns a DbContext (see this method's own
+        // doc comment) — TryAdd, so whichever module's AddXxxModule runs first in a given host
+        // wins, harmlessly, for every module after it.
+        services.TryAddSingleton<ITenantContext, TenantContext>();
+
+        services.AddDbContext<RenewalsDbContext>(
+            (sp, options) => RenewalsDbContextOptions.Configure(
+                options, connectionString, sp.GetRequiredService<ITenantContext>()));
+
+        // RenewalActionService depends on the Scoped RenewalsDbContext above plus IAuditWriter —
+        // any host that calls this method must also call Contigo.Audit's AddAuditModule for that
+        // to resolve, the same landmine this method's own doc comment already flags for
+        // RenewalThresholdScheduler (both Contigo.Api.Program and
+        // Contigo.Worker.WorkerServiceCollectionExtensions.AddWorkerHost already do).
+        services.AddScoped<RenewalActionService>();
 
         return services;
     }
