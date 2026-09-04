@@ -164,6 +164,11 @@ app.MapGet("/api/documents/{id}", async Task<IResult> (
     });
 });
 
+// Task E02/F05/US01/T01 (us-01-correction-history, AC-1): versioned PATCH /api/contracts/{id}.
+// See ContractsEndpointExtensions for the endpoint itself and ContractCorrectionService for the
+// versioning/history decisions (never a destructive overwrite — Appendix C rule 5).
+app.MapContractsEndpoints();
+
 // Task E01/F06/US02/T02 (us-02-audit-baseline, AC-2): authorized, tenant-scoped GET /api/audit.
 // See AuditEndpointExtensions for the endpoint itself and WorkspacePrincipalAuthorization for
 // the authorization decision (401 vs 403 vs the tenant-scoped read).

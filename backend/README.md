@@ -21,6 +21,7 @@ backend/
     Contigo.SharedKernel/        # TenantId, EntityId, Result<T>, IClock, IAuditWriter, IDocumentStorage
     Contigo.Identity.Workspace/  # workspace, membership, roles (live)
     Contigo.Documents.Contracts/ # upload, metadata, staged extraction pipeline (live)
+    Contigo.Documents.Contracts/ # upload, metadata, extraction job, contract correction (live)
     Contigo.Audit/               # append-only audit events (live)
     Contigo.AiGateway/           # IAiGateway + LoggingAiGateway decorator — no Foundry SDK yet
     Contigo.AiGateway/           # IAiGateway + FixtureAiGateway, wired via DI — no Foundry SDK yet
@@ -66,7 +67,7 @@ EF migrations live in each module that owns a DbContext
 `Contigo.Audit`). Apply them against the same database the hosts use;
 RLS policies are added in those migrations, not in Terraform.
 
-## HTTP surface today (R0)
+## HTTP surface today
 
 | Method | Path | Notes |
 |--------|------|-------|
@@ -75,6 +76,7 @@ RLS policies are added in those migrations, not in Terraform.
 | POST | `/api/workspaces/{tenantId}/invites` | invite; roles Admin / Procurement / Legal / Finance / ReadOnly |
 | POST | `/api/documents` | multipart `file` + `X-Tenant-Id` header |
 | GET | `/api/documents/{id}` | metadata/status; same header |
+| PATCH | `/api/contracts/{id}` | `{ corrections: { <field>: <string\|null> }, reason? }` + `X-Tenant-Id` header; versioned correction (ADR-003 `ContractVersion`/`CorrectionHistory`, ADR-009 RLS) — see `Contigo.Documents.Contracts.Application.ContractCorrectionService.CorrectableFieldNames` for the accepted field list |
 | GET | `/api/audit` | tenant-scoped; expects a claims principal (integration tests inject one) |
 | GET | `/api/contracts` | portfolio list; spec §8.1 columns; `X-Tenant-Id` header; optional filters `supplierId`, `status`, `risk` (Low/Medium/High/Critical), `autoRenewal`, `minAnnualSpend`, `maxAnnualSpend`, `renewalFrom`/`renewalTo` (yyyy-MM-dd) — no `category` filter yet, see `PortfolioFilter`'s doc comment |
 
@@ -82,6 +84,10 @@ RLS policies are added in those migrations, not in Terraform.
 tenant from `X-Tenant-Id`, not from a validated JWT. ADR-010 (Entra ID /
 OIDC on the API) is not wired in the host yet. Do not treat the header as
 the long-term contract.
+**Interim auth:** document upload/read and the contract correction PATCH
+take the tenant from `X-Tenant-Id`, not from a validated JWT. ADR-010
+(Entra ID / OIDC on the API) is not wired in the host yet. Do not treat
+the header as the long-term contract.
 
 The web client generates TypeScript types from
 `web/openapi/contigo-api.v1.json`. The API does **not** yet self-publish

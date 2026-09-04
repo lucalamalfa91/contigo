@@ -30,6 +30,9 @@ namespace Contigo.Documents.Contracts.Infrastructure;
 /// either host's code.
 /// adds <see cref="DocumentQueryService"/> alongside it. Task E02/F03/US01/T01's
 /// <c>GET /api/contracts</c> reuses it again and adds <see cref="PortfolioQueryService"/>.
+/// adds <see cref="DocumentQueryService"/> alongside it. Task E02/F05/US01/T01's `PATCH
+/// /api/contracts/{id}` (<see cref="ContractCorrectionService"/>) reuses the same registration
+/// again.
 /// </summary>
 public static class ServiceCollectionExtensions
 {
@@ -55,6 +58,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<DocumentQueryService>();
         services.AddScoped<StagedExtractionService>();
         services.AddScoped<PortfolioQueryService>();
+        services.AddScoped<ContractCorrectionService>();
 
         return services;
     }
