@@ -36,6 +36,11 @@ namespace Contigo.Documents.Contracts.Infrastructure;
 /// <see cref="EmbeddingRetrievalService"/> alongside it — no new dependency to wire, since the
 /// module's own <see cref="IAiGateway"/> registration (this method's own
 /// <c>AddAiGatewayModule</c> call, above) already resolves everything that service needs.
+/// Task E02/F03/US01/T01's <c>GET /api/contracts</c> reuses the same registration and adds
+/// <see cref="PortfolioQueryService"/>; task E02/F05/US01/T01's `PATCH /api/contracts/{id}` adds
+/// <see cref="ContractCorrectionService"/>; task E02/F03/US02/T01's `GET /api/contracts/{id}`
+/// (Contract 360) adds <see cref="Contract360QueryService"/> — all reuse the same DbContext
+/// registration, never a second one.
 /// </summary>
 public static class ServiceCollectionExtensions
 {
@@ -71,6 +76,7 @@ public static class ServiceCollectionExtensions
         // convenient.
         services.TryAddSingleton<INativeDocumentTextExtractor, NativeDocumentTextExtractor>();
         services.AddScoped<HybridDocumentParsingService>();
+        services.AddScoped<Contract360QueryService>();
 
         return services;
     }

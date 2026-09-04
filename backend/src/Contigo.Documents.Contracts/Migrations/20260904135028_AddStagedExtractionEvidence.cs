@@ -37,6 +37,22 @@ namespace Contigo.Documents.Contracts.Migrations
     /// failed with "column already exists". Task E02/F03/US01/T02 found and removed the
     /// duplicate <c>AddColumn</c>/<c>DropColumn</c> calls, keeping only this migration's own,
     /// non-overlapping contribution: <c>extraction_evidence</c>.
+    /// This migration originally also (re)added source-span/page/confidence evidence columns on
+    /// <c>risk</c>/<c>obligation</c>/<c>contract_line_item</c> — the same columns the
+    /// sibling task E02/F02/US01/T02 was independently adding in
+    /// <see cref="AddEvidenceConfidenceVersionColumns"/> (timestamped earlier, so it runs first).
+    /// The two tasks' migrations converged on the same target columns without either seeing the
+    /// other's work; the phase-barrier merge kept both files, which made every
+    /// <c>Database.MigrateAsync()</c> call fail with Postgres error 42701 ("column ... already
+    /// exists") from this migration re-adding what the earlier one had already added — 100% of
+    /// this bounded context's Testcontainers-backed tests, not just this task's. Task
+    /// E02/F03/US02/T01 removed the redundant <c>AddColumn</c>/<c>DropColumn</c> calls here
+    /// (verified column-for-column against <see cref="AddEvidenceConfidenceVersionColumns"/>'s
+    /// own <c>Up()</c>); the end-state schema is unchanged; only the broken duplicate add is
+    /// gone. <c>Migrations/Scripts/documents-contracts.sql</c> was regenerated from this fix via
+    /// `dotnet ef migrations script --idempotent` (was itself corrupted by the same merge —
+    /// mismatched `IF`/`END IF` nesting from interleaving two independently-generated script
+    /// halves).
     /// </summary>
     public partial class AddStagedExtractionEvidence : Migration
     {
