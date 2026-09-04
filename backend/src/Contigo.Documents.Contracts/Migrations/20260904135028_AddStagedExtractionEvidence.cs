@@ -7,70 +7,39 @@ namespace Contigo.Documents.Contracts.Migrations
 {
     /// <summary>
     /// Task E02/F01/US02/T01 (us-02-staged-extraction, AC-2 "every extracted fact carries source
-    /// span + confidence"): completes source-span/page/confidence evidence on
-    /// <c>risk</c>/<c>obligation</c>/<c>contract_line_item</c> (already-existing "one row = one
-    /// fact" tables that were missing one or more of those columns — see
-    /// <c>Domain.Risk</c>/<c>Domain.Obligation</c>/<c>Domain.ContractLineItem</c>'s own doc
-    /// comments), and adds <c>extraction_evidence</c> for the scalar <c>contract</c> fields that
-    /// have no "one row = one fact" table of their own (see <c>Domain.ExtractionEvidence</c>'s
-    /// doc comment). <c>extraction_evidence</c> is a new tenant-scoped table, so — exactly like
-    /// <c>AddContractLineItem</c> before it — its RLS enable/force/policy statements are bundled
-    /// into this same migration rather than a separate follow-up, so there is no migration
-    /// history state where it exists without RLS (ADR-009).
+    /// span + confidence"): adds <c>extraction_evidence</c> for the scalar <c>contract</c> fields
+    /// that have no "one row = one fact" table of their own (see
+    /// <c>Domain.ExtractionEvidence</c>'s doc comment). <c>extraction_evidence</c> is a new
+    /// tenant-scoped table, so — exactly like <c>AddContractLineItem</c> before it — its RLS
+    /// enable/force/policy statements are bundled into this same migration rather than a separate
+    /// follow-up, so there is no migration history state where it exists without RLS (ADR-009).
     /// <c>Contigo.Tenancy.Tests.TenantRlsMigrationCheckTests</c>/<c>TenantRlsDeployableScriptCheckTests</c>
     /// discover it automatically (every <c>TenantScopedEntity</c> subclass) and would fail the
     /// build if this were omitted.
+    ///
+    /// Does <em>not</em> also add source-span/page/confidence evidence columns to the pre-existing
+    /// <c>risk</c>/<c>obligation</c>/<c>contract_line_item</c> tables, even though this task's own
+    /// domain-model change (<c>Domain.Risk</c>/<c>Domain.Obligation</c>/
+    /// <c>Domain.ContractLineItem</c>) added exactly those properties: the concurrently-developed
+    /// task E02/F02/US01/T02 (contract-evidence-schema) added the identical columns to the same
+    /// three tables one migration earlier, in <c>AddEvidenceConfidenceVersionColumns</c> — both
+    /// tasks branched before either's change existed, so each authored its own copy independently.
+    /// Fan-out merged both migration files (each is a distinct, uniquely-timestamped file, so
+    /// there was nothing for the merge itself to flag), which left this migration's <c>Up()</c>
+    /// re-issuing <c>AddColumn</c> for columns <c>AddEvidenceConfidenceVersionColumns</c> already
+    /// created — fatal ("column already exists") against any database that applies migrations in
+    /// order, i.e. every database, since EF Core never applies a later migration before an earlier
+    /// pending one. The de-duplicated result the domain model and
+    /// <c>DocumentsContractsDbContextModelSnapshot</c> already agree on (one <c>SourceSpan</c>/
+    /// <c>SourcePage</c>/<c>Confidence</c> per entity) is unaffected — removing the duplicate
+    /// <c>AddColumn</c> calls here does not change the final schema, only how many times it is
+    /// (attempted to be) created.
     /// </summary>
     public partial class AddStagedExtractionEvidence : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<int>(
-                name: "source_page",
-                table: "risk",
-                type: "integer",
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "source_span",
-                table: "risk",
-                type: "character varying(500)",
-                maxLength: 500,
-                nullable: true);
-
-            migrationBuilder.AddColumn<int>(
-                name: "source_page",
-                table: "obligation",
-                type: "integer",
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "source_span",
-                table: "obligation",
-                type: "character varying(500)",
-                maxLength: 500,
-                nullable: true);
-
-            migrationBuilder.AddColumn<double>(
-                name: "confidence",
-                table: "contract_line_item",
-                type: "double precision",
-                nullable: true);
-
-            migrationBuilder.AddColumn<int>(
-                name: "source_page",
-                table: "contract_line_item",
-                type: "integer",
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "source_span",
-                table: "contract_line_item",
-                type: "character varying(500)",
-                maxLength: 500,
-                nullable: true);
-
             migrationBuilder.CreateTable(
                 name: "extraction_evidence",
                 columns: table => new
@@ -155,34 +124,6 @@ namespace Contigo.Documents.Contracts.Migrations
 
             migrationBuilder.DropTable(
                 name: "extraction_evidence");
-
-            migrationBuilder.DropColumn(
-                name: "source_page",
-                table: "risk");
-
-            migrationBuilder.DropColumn(
-                name: "source_span",
-                table: "risk");
-
-            migrationBuilder.DropColumn(
-                name: "source_page",
-                table: "obligation");
-
-            migrationBuilder.DropColumn(
-                name: "source_span",
-                table: "obligation");
-
-            migrationBuilder.DropColumn(
-                name: "confidence",
-                table: "contract_line_item");
-
-            migrationBuilder.DropColumn(
-                name: "source_page",
-                table: "contract_line_item");
-
-            migrationBuilder.DropColumn(
-                name: "source_span",
-                table: "contract_line_item");
         }
     }
 }

@@ -34,24 +34,21 @@ public sealed class ContractLineItem : TenantScopedEntity
     public decimal? AnnualCost { get; set; }
     public decimal? TotalCost { get; set; }
 
-    /// <summary>Page/section evidence pointer + confidence (Appendix C rule 2; spec §7.3 "every
-    /// extracted fact carries source span + confidence"). Added by task E02/F01/US02/T01
-    /// (us-02-staged-extraction, AC-2) — this task's `price/SKU` stage is the first writer of
-    /// this entity that needs it; the original contract-schema task (E02/F02/US01/T01) had no
-    /// extraction caller yet, matching <see cref="Clause"/>'s already-evidenced shape.</summary>
+    /// <summary>Evidence pointer + page/section span + confidence (Appendix C rule 2; spec §7.3
+    /// "every extracted fact carries source span + confidence"), mirroring
+    /// <see cref="Clause.SourceDocumentId"/>/<see cref="Clause.SourceSpan"/>/
+    /// <see cref="Clause.SourcePage"/>/<see cref="Clause.Confidence"/>. Added by task
+    /// E02/F01/US02/T01 (us-02-staged-extraction, AC-2) — this task's `price/SKU` stage is the
+    /// first writer of this entity that needs it; the original contract-schema task
+    /// (E02/F02/US01/T01) had no extraction caller yet. <see cref="SourceDocumentId"/> itself
+    /// (which of a contract's documents) landed with task E02/F02/US01/T02's evidence-schema
+    /// pass, alongside <see cref="Version"/>.</summary>
+    public EntityId? SourceDocumentId { get; set; }
     public string? SourceSpan { get; set; }
     public int? SourcePage { get; set; }
     public double? Confidence { get; set; }
 
     public required DateTimeOffset CreatedAt { get; set; }
-
-    /// <summary>Evidence pointer (Appendix C rule 2), mirroring <see cref="Clause.SourceDocumentId"/>.</summary>
-    public EntityId? SourceDocumentId { get; set; }
-
-    /// <summary>Page/section evidence pointer (Appendix C rule 2).</summary>
-    public string? SourceSpan { get; set; }
-    public int? SourcePage { get; set; }
-    public double? Confidence { get; set; }
 
     /// <summary>Optimistic-concurrency guard — see <see cref="Contract.Version"/>.</summary>
     public int Version { get; set; } = 1;

@@ -5,22 +5,29 @@ namespace Contigo.Api;
 
 /// <summary>
 /// Maps `PATCH /api/contracts/{id}` (product spec Appendix A API table: "Validated field
-/// corrections"; story us-01-correction-history AC-1, task E02/F05/US01/T01). Thin composition
-/// per ADR-002 — <see cref="ContractCorrectionService"/> owns the actual versioning/history
-/// decisions; this file only translates HTTP &lt;-&gt; the service call, same shape as
-/// <see cref="WorkspaceEndpointExtensions"/>/<see cref="AuditEndpointExtensions"/>.
+/// corrections"; story us-01-correction-history AC-1, task E02/F05/US01/T01) and `GET
+/// /api/contracts/{id}/corrections` (story us-01-correction-history AC-2 "correction history is
+/// queryable", task E02/F05/US01/T02 — no dedicated Appendix A row exists for this sub-resource,
+/// unlike e.g. `GET /api/quotes/{id}/assessment`'s own nested-route precedent). Thin composition
+/// per ADR-002 — <see cref="ContractCorrectionService"/> / <see cref="ContractCorrectionHistoryQueryService"/>
+/// own the actual versioning/history decisions; this file only translates HTTP &lt;-&gt; the
+/// service call, same shape as <see cref="WorkspaceEndpointExtensions"/>/<see cref="AuditEndpointExtensions"/>.
 ///
 /// Same interim `X-Tenant-Id` header placeholder as <c>Program.cs</c>'s document endpoints and
 /// <see cref="WorkspaceEndpointExtensions"/> (ADR-010 is not in this task's "Architecture
 /// decisions in force" list, so there is no validated caller principal yet) — see
 /// <c>Program.cs</c>'s own comment on why this interim gap is not promoted to
-/// reports/open-questions.md by this task.
+/// reports/open-questions.md by this task. Deliberately not <see cref="AuditEndpointExtensions"/>'s
+/// own <c>ClaimsPrincipal</c>/<c>WorkspacePrincipalAuthorization</c> shape: that endpoint already
+/// has a validated-identity model this module does not, and mixing the two auth conventions inside
+/// one file would be a worse inconsistency than the interim gap itself.
 /// </summary>
 public static class ContractsEndpointExtensions
 {
     public static IEndpointRouteBuilder MapContractsEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapPatch("/api/contracts/{id}", CorrectContractAsync);
+        endpoints.MapGet("/api/contracts/{id}/corrections", GetCorrectionHistoryAsync);
         return endpoints;
     }
 
@@ -69,5 +76,48 @@ public static class ContractsEndpointExtensions
             correctedFields = correction.CorrectedFields,
             correctedAt = correction.CorrectedAt,
         });
+    }
+
+    /// <summary>
+    /// `GET /api/contracts/{id}/corrections` (task E02/F05/US01/T02, AC-2 "correction history is
+    /// queryable"). Same guard-clause shape as <see cref="CorrectContractAsync"/> above; 404 when
+    /// <see cref="ContractCorrectionHistoryQueryService.GetHistoryAsync"/> returns <c>null</c>
+    /// (no such contract for this tenant) — a contract that exists but has never been corrected
+    /// returns 200 with an empty array, not 404 (see that service's own doc comment).
+    /// </summary>
+    private static async Task<IResult> GetCorrectionHistoryAsync(
+        string id,
+        HttpRequest httpRequest,
+        ContractCorrectionHistoryQueryService historyQueryService,
+        CancellationToken cancellationToken)
+    {
+        if (!httpRequest.Headers.TryGetValue("X-Tenant-Id", out var tenantHeaderValues)
+            || !Guid.TryParse(tenantHeaderValues.ToString(), out var tenantGuid))
+        {
+            return Results.BadRequest("A valid 'X-Tenant-Id' header (a GUID) is required.");
+        }
+
+        if (!Guid.TryParse(id, out var contractGuid))
+        {
+            return Results.BadRequest("The contract id in the route must be a GUID.");
+        }
+
+        var history = await historyQueryService.GetHistoryAsync(
+            new TenantId(tenantGuid), new EntityId(contractGuid), cancellationToken).ConfigureAwait(false);
+
+        if (history is null)
+        {
+            return Results.NotFound();
+        }
+
+        return Results.Ok(history.Select(entry => new
+        {
+            fieldName = entry.FieldName,
+            previousValue = entry.PreviousValue,
+            newValue = entry.NewValue,
+            correctedBy = entry.CorrectedBy,
+            correctedAt = entry.CorrectedAt,
+            reason = entry.Reason,
+        }));
     }
 }

@@ -35,9 +35,21 @@ namespace Contigo.Documents.Contracts.Application;
 /// other Application-layer service in this module (ADR-009 belt-and-suspenders: the explicit
 /// <c>tenant_id</c> predicate below plus Postgres RLS are two independent reasons a cross-tenant
 /// contract id reads back as "not found", not one).
+///
+/// Task E02/F05/US01/T02 (correction-audit) added the <see cref="IAuditWriter"/> dependency:
+/// every successful correction also writes one append-only <see cref="AuditEntry"/> (same
+/// gateway-abstraction shape <see cref="DocumentUploadService"/> already uses for its own
+/// "upload -> audit event" write — <see cref="IAuditWriter"/> lives in
+/// <c>Contigo.SharedKernel</c>, not <c>Contigo.Audit</c>, so this does not cross the ADR-002
+/// module boundary). This is a distinct read surface from <see cref="CorrectionHistory"/> itself:
+/// the audit trail (<c>GET /api/audit</c>) answers "who changed something, when, on which
+/// resource" across every module, while <see cref="CorrectionHistory"/> /
+/// <c>ContractCorrectionHistoryQueryService</c> answers "what exactly changed on this contract,
+/// field by field" — see <c>Contigo.Audit.Domain.AuditEvent</c>'s own doc comment on why the two
+/// are allowed to diverge rather than one subsuming the other.
 /// </summary>
 public sealed class ContractCorrectionService(
-    DocumentsContractsDbContext dbContext, ITenantContext tenantContext, IClock clock)
+    DocumentsContractsDbContext dbContext, ITenantContext tenantContext, IClock clock, IAuditWriter auditWriter)
 {
     /// <summary>Returned by <see cref="CorrectAsync"/> when no contract with the given id exists
     /// for the caller's tenant. <c>Contigo.Api.ContractsEndpointExtensions</c> maps exactly this
@@ -47,6 +59,20 @@ public sealed class ContractCorrectionService(
     private const int InitialVersionNumber = 1;
     private const string ContractEntityType = nameof(Contract);
     private const string OriginalExtractionChangeReason = "Original extraction (pre-correction baseline).";
+
+    /// <summary><see cref="AuditEntry.Action"/> for every correction (task E02/F05/US01/T02).
+    /// Past-tense, matching this codebase's established convention
+    /// (<see cref="DocumentUploadService"/>'s <c>"document.uploaded"</c>,
+    /// <c>Contigo.AiGateway.Logging.LoggingAiGateway</c>'s <c>"ai.{role}"</c> role names) rather
+    /// than <c>Contigo.Audit.Domain.AuditEvent.Action</c>'s own doc-comment example
+    /// (<c>"contract.correction"</c>), which is illustrative, not a pinned literal.</summary>
+    private const string AuditCorrectedAction = "contract.corrected";
+
+    /// <summary><see cref="AuditEntry.ResourceType"/> for every correction — lowercase, matching
+    /// <see cref="DocumentUploadService"/>'s own <c>"document"</c> (not
+    /// <see cref="ContractEntityType"/>'s PascalCase, which is this module's own
+    /// <see cref="CorrectionHistory.TargetEntityType"/> discriminator, a separate convention).</summary>
+    private const string AuditResourceType = "contract";
 
     /// <summary>Same placeholder actor as <c>DocumentUploadService.UnattributedActor</c> — see
     /// the type doc comment above for why this task does not accept/trust a caller-supplied
@@ -214,8 +240,36 @@ public sealed class ContractCorrectionService(
 
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
+        // Task E02/F05/US01/T02 (correction-audit): recorded only once the correction itself is
+        // durable, still inside this call's own tenant scope (see the type doc comment), same
+        // placement as DocumentUploadService.UploadAsync's own "upload -> audit event" write. A
+        // failure here throws and fails the whole request rather than silently dropping the audit
+        // record — ADR-011 treats audit as a compliance control, not a best-effort side-channel.
+        await auditWriter.WriteAsync(
+            new AuditEntry(
+                tenantId,
+                UnattributedActor,
+                AuditCorrectedAction,
+                AuditResourceType,
+                contract.Id.Value.ToString(),
+                now,
+                BuildAuditDetail(newVersionNumber, correctedFields, reason)),
+            cancellationToken).ConfigureAwait(false);
+
         return Result<ContractCorrectionResult>.Success(
             new ContractCorrectionResult(contract.Id, newVersionNumber, correctedFields, now));
+    }
+
+    /// <summary><see cref="AuditEntry.Detail"/> for a correction: the resulting version number
+    /// and which fields changed, plus the caller's own free-text reason when supplied. Recording
+    /// <paramref name="reason"/> here is not a new exposure — it is already stored, verbatim, on
+    /// every affected <see cref="CorrectionHistory.Reason"/> row written just above. Space-separated
+    /// key=value pairs, same convention as <c>Contigo.AiGateway.Logging.LoggingAiGateway.LogAsync</c>'s
+    /// own <c>Detail</c> string.</summary>
+    private static string BuildAuditDetail(int versionNumber, IReadOnlyList<string> correctedFields, string? reason)
+    {
+        var detail = $"versionNumber={versionNumber} correctedFields={string.Join(",", correctedFields)}";
+        return reason is null ? detail : $"{detail} reason={reason}";
     }
 
     /// <summary>Point-in-time JSON snapshot of every material <see cref="Contract"/> field,

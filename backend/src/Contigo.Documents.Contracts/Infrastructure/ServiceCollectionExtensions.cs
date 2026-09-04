@@ -27,12 +27,16 @@ namespace Contigo.Documents.Contracts.Infrastructure;
 /// comment for why calling it from here, rather than adding it to every host's own composition
 /// (<c>Contigo.Api/Program.cs</c>, <c>Contigo.Worker.WorkerServiceCollectionExtensions</c>),
 /// keeps <see cref="IAiGateway"/> resolvable everywhere this module already is without changing
-/// either host's code.
-/// adds <see cref="DocumentQueryService"/> alongside it. Task E02/F03/US01/T01's
-/// <c>GET /api/contracts</c> reuses it again and adds <see cref="PortfolioQueryService"/>.
-/// adds <see cref="DocumentQueryService"/> alongside it. Task E02/F05/US01/T01's `PATCH
-/// /api/contracts/{id}` (<see cref="ContractCorrectionService"/>) reuses the same registration
-/// again.
+/// either host's code. Task E02/F03/US01/T01's <c>GET /api/contracts</c> reuses it again and adds
+/// <see cref="PortfolioQueryService"/>. Task E02/F05/US01/T01's `PATCH /api/contracts/{id}`
+/// (<see cref="ContractCorrectionService"/>) reuses the same registration again. Task
+/// E02/F05/US01/T02 (correction-audit) adds
+/// <see cref="ContractCorrectionHistoryQueryService"/> (`GET /api/contracts/{id}/corrections`) and
+/// gives <see cref="ContractCorrectionService"/> a required <see cref="IAuditWriter"/> dependency
+/// — already resolvable in both hosts (<c>Contigo.Api</c>/<c>Contigo.Worker</c>) because each
+/// already calls <c>AddAuditModule</c> alongside this method (see
+/// <see cref="Contigo.Worker.WorkerServiceCollectionExtensions.AddWorkerHost"/>'s own doc comment
+/// on why <see cref="DocumentUploadService"/>'s identical dependency is already safe there).
 /// </summary>
 public static class ServiceCollectionExtensions
 {
@@ -59,6 +63,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<StagedExtractionService>();
         services.AddScoped<PortfolioQueryService>();
         services.AddScoped<ContractCorrectionService>();
+        services.AddScoped<ContractCorrectionHistoryQueryService>();
 
         return services;
     }
