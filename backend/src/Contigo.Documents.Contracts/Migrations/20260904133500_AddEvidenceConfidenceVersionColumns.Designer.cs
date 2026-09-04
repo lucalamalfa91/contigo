@@ -3,6 +3,7 @@ using System;
 using Contigo.Documents.Contracts.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Pgvector;
@@ -12,9 +13,11 @@ using Pgvector;
 namespace Contigo.Documents.Contracts.Migrations
 {
     [DbContext(typeof(DocumentsContractsDbContext))]
-    partial class DocumentsContractsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260904133500_AddEvidenceConfidenceVersionColumns")]
+    partial class AddEvidenceConfidenceVersionColumns
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -609,73 +612,6 @@ namespace Contigo.Documents.Contracts.Migrations
                     b.ToTable("embedding", (string)null);
                 });
 
-            modelBuilder.Entity("Contigo.Documents.Contracts.Domain.ExtractionEvidence", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<double?>("Confidence")
-                        .HasColumnType("double precision")
-                        .HasColumnName("confidence");
-
-                    b.Property<Guid>("ContractId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("contract_id");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<Guid?>("ExtractionJobId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("extraction_job_id");
-
-                    b.Property<string>("FieldName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("field_name");
-
-                    b.Property<Guid?>("SourceDocumentId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("source_document_id");
-
-                    b.Property<int?>("SourcePage")
-                        .HasColumnType("integer")
-                        .HasColumnName("source_page");
-
-                    b.Property<string>("SourceSpan")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
-                        .HasColumnName("source_span");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("tenant_id");
-
-                    b.Property<string>("Value")
-                        .HasColumnType("text")
-                        .HasColumnName("value");
-
-                    b.HasKey("Id")
-                        .HasName("pk_extraction_evidence");
-
-                    b.HasIndex("ExtractionJobId")
-                        .HasDatabaseName("ix_extraction_evidence_extraction_job_id");
-
-                    b.HasIndex("SourceDocumentId")
-                        .HasDatabaseName("ix_extraction_evidence_source_document_id");
-
-                    b.HasIndex("TenantId")
-                        .HasDatabaseName("ix_extraction_evidence_tenant_id");
-
-                    b.HasIndex("ContractId", "FieldName")
-                        .HasDatabaseName("ix_extraction_evidence_contract_id_field_name");
-
-                    b.ToTable("extraction_evidence", (string)null);
-                });
-
             modelBuilder.Entity("Contigo.Documents.Contracts.Domain.ExtractionJob", b =>
                 {
                     b.Property<Guid>("Id")
@@ -987,28 +923,6 @@ namespace Contigo.Documents.Contracts.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_document_version_document_document_id");
-                });
-
-            modelBuilder.Entity("Contigo.Documents.Contracts.Domain.ExtractionEvidence", b =>
-                {
-                    b.HasOne("Contigo.Documents.Contracts.Domain.Contract", null)
-                        .WithMany()
-                        .HasForeignKey("ContractId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_extraction_evidence_contract_contract_id");
-
-                    b.HasOne("Contigo.Documents.Contracts.Domain.ExtractionJob", null)
-                        .WithMany()
-                        .HasForeignKey("ExtractionJobId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .HasConstraintName("fk_extraction_evidence_extraction_job_extraction_job_id");
-
-                    b.HasOne("Contigo.Documents.Contracts.Domain.Document", null)
-                        .WithMany()
-                        .HasForeignKey("SourceDocumentId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .HasConstraintName("fk_extraction_evidence_document_source_document_id");
                 });
 
             modelBuilder.Entity("Contigo.Documents.Contracts.Domain.ExtractionJob", b =>

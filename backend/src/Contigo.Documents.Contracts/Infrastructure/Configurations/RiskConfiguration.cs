@@ -20,15 +20,21 @@ public sealed class RiskConfiguration : IEntityTypeConfiguration<Risk>
             .HasConversion(ValueConverters.EntityIdConverter);
         builder.Property(e => e.ClauseId)
             .HasConversion(ValueConverters.NullableEntityIdConverter);
+        builder.Property(e => e.SourceDocumentId)
+            .HasConversion(ValueConverters.NullableEntityIdConverter);
 
         builder.Property(e => e.RiskType).HasMaxLength(100);
         builder.Property(e => e.Severity).HasConversion<string>().HasMaxLength(20);
         builder.Property(e => e.Status).HasMaxLength(30);
         builder.Property(e => e.SourceSpan).HasMaxLength(500);
 
+        // Optimistic-concurrency guard (Appendix C rule 5) — see Contract.Version.
+        builder.Property(e => e.Version).HasDefaultValue(1).IsConcurrencyToken();
+
         builder.HasIndex(e => e.TenantId);
         builder.HasIndex(e => e.ContractId);
         builder.HasIndex(e => e.ClauseId);
+        builder.HasIndex(e => e.SourceDocumentId);
 
         // Owned by the contract: a risk has no meaning without it.
         builder.HasOne<Contract>()
@@ -41,6 +47,13 @@ public sealed class RiskConfiguration : IEntityTypeConfiguration<Risk>
         builder.HasOne<Clause>()
             .WithMany()
             .HasForeignKey(e => e.ClauseId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Direct evidence pointer (Appendix C rule 2), independent of ClauseId — see
+        // ClauseConfiguration; deleting the source document must not silently delete the risk.
+        builder.HasOne<Document>()
+            .WithMany()
+            .HasForeignKey(e => e.SourceDocumentId)
             .OnDelete(DeleteBehavior.Restrict);
     }
 }
