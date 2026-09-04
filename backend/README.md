@@ -28,7 +28,7 @@ backend/
     Contigo.Renewals/            # scaffold (R2)
     Contigo.Savings/             # scaffold (R3)
     Contigo.Quotes/              # scaffold (R4)
-    Contigo.Chat/                # scaffold (R1 Ask Contigo)
+    Contigo.Chat/                # Ask Contigo structured-vs-semantic query router (R1, task E02/F04/US01/T01)
   tests/                         # per-module + architecture + R0 integration
 ```
 
