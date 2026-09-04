@@ -5,6 +5,7 @@ using Contigo.Api.Infrastructure;
 using Contigo.Audit.Infrastructure;
 using Contigo.Chat.Infrastructure;
 using Contigo.Documents.Contracts.Application;
+using Contigo.Documents.Contracts.Application.Extraction;
 using Contigo.Documents.Contracts.Infrastructure;
 using Contigo.Identity.Workspace.Infrastructure;
 using Contigo.SharedKernel;
@@ -80,6 +81,19 @@ app.MapWorkspaceEndpoints();
 // (DocumentUploadService owns the actual business logic; this delegate only translates
 // HTTP <-> the service call, per ADR-002's "host is a thin composition root").
 //
+// Task E02/F06/US01/T01 (r1-integration, AC-1 "upload -> parse/OCR -> classify -> extract"):
+// once the upload itself is durable, this handler also runs DocumentProcessingPipeline —
+// hybrid parse -> classify -> staged extraction -> Ask Contigo indexing — synchronously, in
+// this same request, before responding. See DocumentProcessingPipeline's own doc comment for
+// why synchronous/in-request is this task's deliberate interim choice (nothing in this
+// codebase dispatches the queued Classification job to a handler off a durable queue yet). The
+// file bytes are read into memory once, up front: DocumentUploadService needs a stream for
+// storage and DocumentProcessingPipeline needs the same bytes again afterward, and an
+// IFormFile's own stream is not guaranteed re-readable after the first copy. A pipeline
+// failure is reported honestly in the response (processingStatus/contractId fall back to the
+// just-uploaded, pre-processing values) but never turns an already-successful upload into an
+// HTTP error — the bytes are safely stored and the document row already exists either way.
+//
 // ADR-010 (Entra ID/OIDC) is not in the "architecture decisions in force" list for this task,
 // so there is no validated caller identity/JWT yet. The tenant is taken from an explicit
 // X-Tenant-Id header instead of a token claim — a deliberate interim placeholder (paired with
@@ -92,6 +106,7 @@ app.MapWorkspaceEndpoints();
 app.MapPost("/api/documents", async Task<IResult> (
     HttpRequest request,
     DocumentUploadService uploadService,
+    DocumentProcessingPipeline processingPipeline,
     CancellationToken cancellationToken) =>
 {
     if (!request.Headers.TryGetValue("X-Tenant-Id", out var tenantHeaderValues)
@@ -112,9 +127,19 @@ app.MapPost("/api/documents", async Task<IResult> (
         return Results.BadRequest("A non-empty 'file' form field is required.");
     }
 
-    await using var content = file.OpenReadStream();
+    byte[] fileBytes;
+    await using (var uploadStream = file.OpenReadStream())
+    await using (var buffer = new MemoryStream())
+    {
+        await uploadStream.CopyToAsync(buffer, cancellationToken);
+        fileBytes = buffer.ToArray();
+    }
+
+    var tenantId = new TenantId(tenantGuid);
+
+    using var storageContent = new MemoryStream(fileBytes);
     var result = await uploadService.UploadAsync(
-        new TenantId(tenantGuid), file.FileName, file.ContentType, content, cancellationToken);
+        tenantId, file.FileName, file.ContentType, storageContent, cancellationToken);
 
     if (result.IsFailure)
     {
@@ -122,12 +147,22 @@ app.MapPost("/api/documents", async Task<IResult> (
     }
 
     var uploaded = result.Value;
+
+    var processingResult = await processingPipeline.ProcessAsync(
+        tenantId, uploaded.DocumentId, uploaded.FileName, uploaded.MimeType, fileBytes, cancellationToken);
+
+    var processingStatus = processingResult.IsSuccess
+        ? processingResult.Value.ProcessingStatus
+        : uploaded.ProcessingStatus;
+    var contractId = processingResult.IsSuccess ? processingResult.Value.ContractId.Value : (Guid?)null;
+
     return Results.Created($"/api/documents/{uploaded.DocumentId}", new
     {
         id = uploaded.DocumentId.Value,
+        contractId,
         fileName = uploaded.FileName,
         mimeType = uploaded.MimeType,
-        processingStatus = uploaded.ProcessingStatus.ToString(),
+        processingStatus = processingStatus.ToString(),
         createdAt = uploaded.CreatedAt,
     });
 });

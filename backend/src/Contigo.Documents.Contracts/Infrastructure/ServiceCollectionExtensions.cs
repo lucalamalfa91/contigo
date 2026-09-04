@@ -89,6 +89,13 @@ public static class ServiceCollectionExtensions
         services.AddScoped<Contract360QueryService>();
         services.AddScoped<ContractCorrectionHistoryQueryService>();
 
+        // Task E02/F06/US01/T01 (r1-integration): the orchestrator that finally calls
+        // HybridDocumentParsingService/StagedExtractionService/EmbeddingRetrievalService together
+        // (see DocumentProcessingPipeline's own doc comment for why nothing did before this task).
+        // Scoped for the same reason every service above is: it shares this registration's own
+        // DbContext instance, not a second one.
+        services.AddScoped<DocumentProcessingPipeline>();
+
         return services;
     }
 }

@@ -80,7 +80,7 @@ RLS policies are added in those migrations, not in Terraform.
 | GET | `/health` | ASP.NET health checks |
 | POST | `/api/workspaces` | create workspace |
 | POST | `/api/workspaces/{tenantId}/invites` | invite; roles Admin / Procurement / Legal / Finance / ReadOnly |
-| POST | `/api/documents` | multipart `file` + `X-Tenant-Id` header |
+| POST | `/api/documents` | multipart `file` + `X-Tenant-Id` header; also runs `DocumentProcessingPipeline` (classify → hybrid parse → staged extraction → RAG indexing) synchronously before responding (task E02/F06/US01/T01, r1-integration) — response `processingStatus`/`contractId` reflect that run's outcome, not just the initial "Uploaded" write |
 | GET | `/api/documents/{id}` | metadata/status; same header |
 | PATCH | `/api/contracts/{id}` | `{ corrections: { <field>: <string\|null> }, reason? }` + `X-Tenant-Id` header; versioned correction (ADR-003 `ContractVersion`/`CorrectionHistory`, ADR-009 RLS) — see `Contigo.Documents.Contracts.Application.ContractCorrectionService.CorrectableFieldNames` for the accepted field list; also writes one `IAuditWriter` entry (`contract.corrected`) |
 | GET | `/api/contracts/{id}/corrections` | `X-Tenant-Id` header; field-level correction history for one contract, newest first (`Contigo.Documents.Contracts.Application.ContractCorrectionHistoryQueryService`) — 404 if the contract does not exist for the tenant, `[]` if it exists but was never corrected |
@@ -104,8 +104,12 @@ OpenAPI; that document is hand-authored and must grow with these routes.
 `Contigo.Worker` references the same application libraries as the API.
 The R0 default queue is an **in-process** `InMemoryQueueConsumer` — Azure
 Service Bus exists in Terraform (`modules/servicebus`) but is not consumed
-here yet. Extraction / renewal / benchmark / quote handlers land with
-those features.
+here yet, and `QueueConsumerHostedService` still never dispatches a
+received message to a domain handler. Extraction runs synchronously inside
+`Contigo.Api`'s `POST /api/documents` today instead (`DocumentProcessingPipeline`,
+above) — not through this Worker — a documented interim choice pending a
+real durable-queue producer/consumer pair. Renewal / benchmark / quote
+handlers land with those features.
 
 ## AI Gateway
 
@@ -136,9 +140,27 @@ clauses → obligations → risk) over the resulting page-mapped text
 (`DocumentPageText`) and persists every fact with source span/page +
 confidence (spec §7.3) — directly on `ContractLineItem`/`Clause`/
 `Obligation`/`Risk`, or via the `ExtractionEvidence` table for `Contract`'s
-own scalar fields. Nothing yet calls either service from an HTTP endpoint
-or the queue; wiring a caller (the Worker's classification-job dispatch)
-is a later task.
+own scalar fields.
+
+`Contigo.Documents.Contracts.Application.Extraction.DocumentProcessingPipeline`
+(task E02/F06/US01/T01, r1-integration) is that caller: given the just-
+uploaded bytes, it runs the hybrid parse, then `IAiGateway.ClassifyAsync`
+over the resulting text (setting `Document.DocumentType` and completing
+the `Classification` job `DocumentUploadService` queues at upload), then
+`StagedExtractionService`, then indexes every parsed page into the
+`embedding` table (see `EmbeddingRetrievalService` below) — one call proves
+the whole spec §7.1 pipeline. `POST /api/documents` (`Contigo.Api.Program`)
+runs it synchronously, in the same request, right after the upload itself
+is durable — a deliberate interim choice (see `DocumentProcessingPipeline`'s
+own doc comment): nothing in this codebase dispatches the queued
+`Classification` job off a durable queue yet (`Contigo.Worker.Queue
+.QueueConsumerHostedService` still never dispatches a received message to a
+domain handler — see the Worker section below), so synchronous/in-request
+is the smallest honest way to make R1's "upload → ... → Ask Contigo" promise
+true on `dev`/`demo` today. A pipeline failure never turns an already-
+successful upload into an HTTP error — it is recorded on the `Document`/
+`ExtractionJob` rows and reported in the response, same as any other
+per-stage failure in this pipeline.
 
 `Contigo.Documents.Contracts.Application.EmbeddingRetrievalService`
 (us-02-embedding-search-index) is the pgvector half of Ask Contigo RAG:
@@ -148,11 +170,14 @@ same way and returns the tenant's nearest chunks by cosine distance
 (`Vector.CosineDistance`), explicitly filtered by `tenant_id` on top of
 that table's own RLS policy. Embedding generation never touches a
 provider SDK directly — always through `IAiGateway`. `SearchAsync`'s first
-caller is `POST /api/chat/query` (task E02/F04/US02/T01, below); nothing
-yet calls `IndexChunkAsync` outside tests — no production pipeline chunks
-an uploaded/extracted document into the `embedding` table yet, so a fresh
-tenant's Ask Contigo queries honestly return "cannot determine" until a
-later task wires that write side.
+caller is `POST /api/chat/query` (task E02/F04/US02/T01, below).
+`IndexChunkAsync`'s first production caller is `DocumentProcessingPipeline`
+(task E02/F06/US01/T01, r1-integration, above) — one `Embedding` row per
+parsed page, `SourceType="Document"`/`SourceId=<documentId>`, so a document
+is retrievable for Ask Contigo immediately after it finishes processing. A
+tenant that has never uploaded anything (or whose upload is still
+processing/failed) still honestly returns "cannot determine" — there is
+simply nothing indexed for it yet, not a bug.
 
 ## Ask Contigo — query router + deterministic queries + RAG citations
 
@@ -223,6 +248,45 @@ page/section resolution (joining back to `Clause.SourcePage`/`SourceSpan`) is
 a follow-up gap, not attempted by this task. No task has yet mapped a real,
 tenant-scoped `Contract` row into `ContractFact`, so the endpoint's
 `Structured` branch reports an honest "not wired yet" instead of guessing.
+
+## R1 demo smoke test
+
+The automated proof of task E02/F06/US01/T01 (r1-integration) is
+`dotnet test` — `Contigo.IntegrationTests.R1EndToEndTests` (AC-1/AC-2/AC-4:
+upload → parse/OCR → classify → extract → portfolio → 360 → Ask Contigo
+with citations → correction, plus a scanned/image fixture through the
+`ocr` gateway role) and `R1CrossTenantIsolationTests` (AC-3, across the
+whole path). To manually smoke-test the same path against a running
+`dev`/`demo` deployment:
+
+```bash
+API=https://<api-host>
+TENANT=$(curl -s -X POST "$API/api/workspaces" -H 'Content-Type: application/json' \
+  -d '{"name":"Smoke Test Co"}' | jq -r .id)
+
+DOC=$(curl -s -X POST "$API/api/documents" -H "X-Tenant-Id: $TENANT" \
+  -F "file=@contract.pdf;type=application/pdf" | jq -r .id)
+
+# processingStatus/contractId reflect DocumentProcessingPipeline's own run
+# (classify -> hybrid parse -> staged extraction -> RAG indexing) -- POST
+# /api/documents runs it synchronously before responding.
+curl -s "$API/api/documents/$DOC" -H "X-Tenant-Id: $TENANT" | jq .
+CONTRACT=$(curl -s "$API/api/documents/$DOC" -H "X-Tenant-Id: $TENANT" | jq -r .contractId)
+
+curl -s "$API/api/contracts" -H "X-Tenant-Id: $TENANT" | jq .
+curl -s "$API/api/contracts/$CONTRACT" -H "X-Tenant-Id: $TENANT" | jq .
+
+curl -s -X POST "$API/api/chat/query" -H "X-Tenant-Id: $TENANT" \
+  -H 'Content-Type: application/json' -d '{"question":"What does this contract cover?"}' | jq .
+```
+
+Honest caveat: `IAiGateway` still binds to `FixtureAiGateway` (no live
+Foundry/Document Intelligence endpoint exists yet, ADR-004/ADR-017) and its
+`ExtractAsync` always returns an empty `{}` — a real `demo` upload today
+lands `NeedsReview` with zero extracted facts. This smoke path proves the
+*pipeline wiring* end-to-end (every stage runs, links, and is queryable),
+not extraction accuracy; `R1EndToEndTests` proves the persistence/HTTP
+contract against a scripted gateway that returns real, schema-shaped facts.
 
 ## Containers and CI
 
