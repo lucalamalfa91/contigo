@@ -14,6 +14,15 @@ namespace Contigo.Api;
 /// decision; this file only translates HTTP &lt;-&gt; the service call, same shape as
 /// <see cref="RenewalsEndpointExtensions"/>/<see cref="ContractsEndpointExtensions"/>.
 ///
+/// Task E04/F03/US01/T02 (savings-list, the wave-spec's own artifact of that name) — parent story
+/// us-01-savings-kpis AC-2 ("`GET /api/savings` returns the opportunity list with tenant scoping",
+/// already true since task E04/F02/US02/T01, unchanged here) and AC-3 ("Returns provenance +
+/// confidence, never fabricated precision") — adds <c>confidenceLevel</c> to
+/// <see cref="ToResponse"/>'s wire shape; see <see cref="SavingsOpportunityResult.ConfidenceLevel"/>'s
+/// own doc comment for why that tier, and not the fuller benchmark-shaped
+/// <see cref="Contigo.Savings.Application.SavingsProvenance"/>, is the honest provenance signal to
+/// add here.
+///
 /// Same interim `X-Tenant-Id` header placeholder as every other endpoint in this host (ADR-010 is
 /// not in this task's "Architecture decisions in force" list, so there is no validated caller
 /// principal yet) — see <c>Program.cs</c>'s own comment on why this interim gap is not promoted to
@@ -29,9 +38,14 @@ public static class SavingsEndpointExtensions
     }
 
     /// <summary>
-    /// `GET /api/savings` (AC-1 "lists opportunities") — every opportunity for the caller's tenant,
-    /// newest identified first. Never 404s (an empty list is a valid, honest answer for a tenant
-    /// with none yet) — same convention <c>GET /api/audit</c>'s own tenant-scoped read follows.
+    /// `GET /api/savings` (AC-1 "lists opportunities"; parent story us-01-savings-kpis AC-2/AC-3) —
+    /// every opportunity for the caller's tenant, newest identified first. Never 404s (an empty list
+    /// is a valid, honest answer for a tenant with none yet) — same convention <c>GET /api/audit</c>'s
+    /// own tenant-scoped read follows. Tenant scoping is <see cref="SavingsOpportunityService.ListAsync"/>'s
+    /// own application-level `WHERE tenant_id` filter plus the non-bypassable RLS backstop (ADR-009;
+    /// proven by <c>Contigo.Savings.Tests.SavingsOpportunityRlsCrossTenantIsolationTests</c>) — nothing
+    /// new for task E04/F03/US01/T02 to add there. See <see cref="ToResponse"/> for this task's own
+    /// addition (AC-3's confidence tier).
     /// </summary>
     private static async Task<IResult> GetSavingsOpportunitiesAsync(
         HttpRequest request,
@@ -109,7 +123,8 @@ public static class SavingsEndpointExtensions
     /// Wire-shapes <see cref="SavingsOpportunityResult"/> (AC-2's own captured-field list). Enum
     /// members and <see cref="EntityId"/>? wrapper values are projected to plain strings/GUIDs —
     /// the same convention <see cref="RenewalsEndpointExtensions"/>/<see cref="PortfolioEndpointExtensions"/>
-    /// already use.
+    /// already use. Shared by both `GET /api/savings` (list) and `PATCH /api/savings/{id}`, so task
+    /// E04/F03/US01/T02's own <c>confidenceLevel</c> addition below covers both responses identically.
     /// </summary>
     private static object ToResponse(SavingsOpportunityResult result) => new
     {
@@ -122,6 +137,13 @@ public static class SavingsEndpointExtensions
         estimatedSavingsLow = result.EstimatedSavingsLow,
         estimatedSavingsHigh = result.EstimatedSavingsHigh,
         confidence = result.Confidence,
+        // Task E04/F03/US01/T02 (savings-list): parent story AC-3 "Returns provenance + confidence,
+        // never fabricated precision" -- the qualitative High/Medium/Low tier alongside the raw
+        // score above, so a caller never has to interpret a bare decimal unaided. See
+        // SavingsOpportunityResult.ConfidenceLevel's own doc comment for why this tier, and not a
+        // fuller source/sample-size/updated-at provenance object this opportunity does not actually
+        // have on file, is what is added here.
+        confidenceLevel = result.ConfidenceLevel.ToString(),
         status = result.Status.ToString(),
         owner = result.Owner,
         createdAt = result.CreatedAt,

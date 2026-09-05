@@ -88,6 +88,10 @@ public sealed class SavingsOpportunityServiceTests : IAsyncLifetime
             Assert.Equal(8_000m, result.Value.EstimatedSavingsLow);
             Assert.Equal(15_000m, result.Value.EstimatedSavingsHigh);
             Assert.Equal(0.72, result.Value.Confidence);
+            // Task E04/F03/US01/T02 (savings-list): the confidence tier flows through the real
+            // service, not just the record's own unit tests -- 0.72 is above
+            // SavingsProvenanceClassifier.HighConfidenceThreshold (0.7).
+            Assert.Equal(SavingsConfidenceLevel.High, result.Value.ConfidenceLevel);
             Assert.Equal(SavingsOpportunityStatus.Identified, result.Value.Status);
             Assert.Null(result.Value.Owner);
             Assert.Equal(clock.UtcNow, result.Value.CreatedAt);

@@ -79,7 +79,15 @@ public sealed class SavingsKpiQueryServiceTests : IAsyncLifetime
             // One InProgress/USD opportunity for this tenant — must land in a different bucket
             // than the Identified/USD rows above, even though it shares their currency.
             var inProgress = await service.CreateAsync(tenantId, ValidRequest("USD", low: 500m, high: 800m));
-            await service.UpdateAsync(tenantId, inProgress.Value.Id, owner: null, status: "InProgress");
+            // realizedAmount: null -- this call only advances status, same shape
+            // SavingsOpportunityServiceTests' own status-only UpdateAsync calls use. Pre-existing gap
+            // fixed in passing by task E04/F03/US01/T02 (savings-list): SavingsOpportunityService
+            // .UpdateAsync gained its required realizedAmount parameter from the concurrently
+            // developed task E04/F02/US02/T02 (realized-savings, same wave-spec phase as this file's
+            // own task E04/F03/US01/T01), so the two branches' non-conflicting textual diffs still
+            // left this call site failing to compile once merged -- restoring the build all of this
+            // module's tests (including this task's own) depend on, not a behavior change.
+            await service.UpdateAsync(tenantId, inProgress.Value.Id, owner: null, status: "InProgress", realizedAmount: null);
 
             // Another tenant's own opportunity — must never leak into the first tenant's summary
             // (ADR-009 RLS + the application-level tenant filter, same guarantee
