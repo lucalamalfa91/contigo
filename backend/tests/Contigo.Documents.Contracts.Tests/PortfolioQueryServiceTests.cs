@@ -124,6 +124,33 @@ public sealed class PortfolioQueryServiceTests : IAsyncLifetime
         await db.SaveChangesAsync();
     }
 
+    private static Document NewDocument(
+        TenantId tenantId, EntityId? contractId, DocumentProcessingStatus processingStatus) => new()
+    {
+        TenantId = tenantId,
+        ContractId = contractId,
+        FileName = "test-contract.pdf",
+        MimeType = "application/pdf",
+        StoragePath = $"{tenantId.Value}/test-contract.pdf",
+        Checksum = "test-checksum",
+        ProcessingStatus = processingStatus,
+        CreatedAt = DateTimeOffset.UtcNow,
+    };
+
+    /// <summary>Seeds a document via the real app role, inside its own tenant scope, so RLS's
+    /// `WITH CHECK` is satisfied on insert — same rationale as <see cref="SeedContractAsync"/>.
+    /// Used by <see cref="GetAnalysisSummaryAsync"/>'s own tests (task E04/F03/US01/T01,
+    /// savings-kpis) to control <see cref="Document.ProcessingStatus"/> independently of the
+    /// linked <see cref="Contract"/>.</summary>
+    private async Task SeedDocumentAsync(ITenantContext tenantContext, Document document)
+    {
+        await using var db = CreateAppContext(tenantContext);
+        using var scope = tenantContext.BeginScope(document.TenantId);
+
+        db.Documents.Add(document);
+        await db.SaveChangesAsync();
+    }
+
     [Fact]
     public async Task Returns_spec_columns_and_derives_renewal_date_from_auto_renewal()
     {
@@ -147,7 +174,7 @@ public sealed class PortfolioQueryServiceTests : IAsyncLifetime
         await SeedContractAsync(tenantContext, expiring); // no risk seeded
 
         await using var db = CreateAppContext(tenantContext);
-        var service = new PortfolioQueryService(db, tenantContext);
+        var service = new PortfolioQueryService(db, tenantContext, new PortfolioAnalysisCalculator());
 
         var result = await service.GetPortfolioAsync(tenantId, PortfolioFilter.None);
         var items = result.Items;
@@ -182,7 +209,7 @@ public sealed class PortfolioQueryServiceTests : IAsyncLifetime
         await SeedContractAsync(tenantContext, NewContract(tenantA));
 
         await using var db = CreateAppContext(tenantContext);
-        var service = new PortfolioQueryService(db, tenantContext);
+        var service = new PortfolioQueryService(db, tenantContext, new PortfolioAnalysisCalculator());
 
         // AC-3: RLS and the app-level tenant predicate both independently deny a cross-tenant
         // read, even though the row genuinely exists (seeded above) for tenant A.
@@ -216,7 +243,7 @@ public sealed class PortfolioQueryServiceTests : IAsyncLifetime
         await SeedContractAsync(tenantContext, c3);
 
         await using var db = CreateAppContext(tenantContext);
-        var service = new PortfolioQueryService(db, tenantContext);
+        var service = new PortfolioQueryService(db, tenantContext, new PortfolioAnalysisCalculator());
 
         // Assert.Equivalent (not Assert.Equal) throughout: it compares collections as unordered
         // bags, and GetPortfolioAsync makes no ordering guarantee to rely on here. The default
@@ -263,7 +290,7 @@ public sealed class PortfolioQueryServiceTests : IAsyncLifetime
         }
 
         await using var db = CreateAppContext(tenantContext);
-        var service = new PortfolioQueryService(db, tenantContext);
+        var service = new PortfolioQueryService(db, tenantContext, new PortfolioAnalysisCalculator());
 
         var firstPage = await service.GetPortfolioAsync(
             tenantId, PortfolioFilter.None, new PortfolioPageRequest(Page: 1, PageSize: 2));
@@ -313,7 +340,7 @@ public sealed class PortfolioQueryServiceTests : IAsyncLifetime
         await SeedContractAsync(tenantContext, noRisk); // excluded by the Risk filter below
 
         await using var db = CreateAppContext(tenantContext);
-        var service = new PortfolioQueryService(db, tenantContext);
+        var service = new PortfolioQueryService(db, tenantContext, new PortfolioAnalysisCalculator());
 
         // Risk is computed and filtered in memory, after the SQL-pushable filters run (see
         // PortfolioQueryService's own doc comment on why) — this pins that paging is computed
@@ -325,5 +352,61 @@ public sealed class PortfolioQueryServiceTests : IAsyncLifetime
         Assert.Equal(2, page.TotalCount);
         Assert.Single(page.Items);
         Assert.Equal(RiskSeverity.High, page.Items[0].Risk);
+    }
+
+    // ----- GetAnalysisSummaryAsync (task E04/F03/US01/T01, savings-kpis) -----
+
+    [Fact]
+    public async Task GetAnalysisSummaryAsync_counts_only_contracts_with_a_completed_processing_document()
+    {
+        var tenantId = TenantId.New();
+        var tenantContext = new TenantContext();
+
+        // Analyzed: its document reached Completed.
+        var analyzed = NewContract(tenantId, annualSpend: 100_000m);
+        await SeedContractAsync(tenantContext, analyzed);
+        await SeedDocumentAsync(tenantContext, NewDocument(tenantId, analyzed.Id, DocumentProcessingStatus.Completed));
+
+        // Not analyzed: extraction has started (StagedExtractionService.EnsureContractAsync's own
+        // bootstrap-shell Contract row already exists) but its document has not reached Completed
+        // yet — must not count toward either KPI, even though a Contract row genuinely exists.
+        var stillProcessing = NewContract(tenantId, annualSpend: 999_999m);
+        await SeedContractAsync(tenantContext, stillProcessing);
+        await SeedDocumentAsync(
+            tenantContext, NewDocument(tenantId, stillProcessing.Id, DocumentProcessingStatus.Processing));
+
+        await using var db = CreateAppContext(tenantContext);
+        var service = new PortfolioQueryService(db, tenantContext, new PortfolioAnalysisCalculator());
+
+        var summary = await service.GetAnalysisSummaryAsync(tenantId);
+
+        Assert.Equal(1, summary.ContractsAnalyzedCount);
+        var usd = Assert.Single(summary.AnnualSpendAnalyzed);
+        Assert.Equal("USD", usd.Currency);
+        Assert.Equal(100_000m, usd.Amount);
+        Assert.Equal(1, usd.ContractCount);
+    }
+
+    [Fact]
+    public async Task GetAnalysisSummaryAsync_is_tenant_scoped()
+    {
+        var tenantA = TenantId.New();
+        var tenantB = TenantId.New();
+        var tenantContext = new TenantContext();
+
+        var contractA = NewContract(tenantA, annualSpend: 50_000m);
+        await SeedContractAsync(tenantContext, contractA);
+        await SeedDocumentAsync(tenantContext, NewDocument(tenantA, contractA.Id, DocumentProcessingStatus.Completed));
+
+        await using var db = CreateAppContext(tenantContext);
+        var service = new PortfolioQueryService(db, tenantContext, new PortfolioAnalysisCalculator());
+
+        // AC-3 (parent story us-01-savings-kpis): a different tenant sees none of tenant A's rows,
+        // even though they genuinely exist — same RLS-plus-application-filter guarantee
+        // GetPortfolioAsync's own Different_tenant_sees_no_rows test already pins above.
+        var summary = await service.GetAnalysisSummaryAsync(tenantB);
+
+        Assert.Equal(0, summary.ContractsAnalyzedCount);
+        Assert.Empty(summary.AnnualSpendAnalyzed);
     }
 }

@@ -273,6 +273,15 @@ app.MapRenewalsEndpoints();
 // promoted to reports/open-questions.md by this task.
 app.MapSavingsEndpoints();
 
+// Task E04/F03/US01/T01 (savings-kpis, AC-1): GET /api/savings/kpis — the procurement-homepage
+// KPI row (spec §4.3/§10.1), tenant-scoped (ADR-009). Composes PortfolioQueryService
+// (Documents/Contracts) and SavingsKpiQueryService (Savings); see SavingsKpiEndpointExtensions'
+// own comment for why "Upcoming Renewals" reuses GET /api/renewals's own candidate query instead
+// of adding a Contigo.Renewals dependency here. Same interim X-Tenant-Id placeholder as the
+// endpoints above (ADR-010 is not in force for this task either) — see that file's own comment
+// for why this gap is not promoted to reports/open-questions.md by this task.
+app.MapSavingsKpiEndpoints();
+
 // Task E02/F04/US02/T01 (us-02-rag-citations, AC-1/AC-2/AC-3): POST /api/chat/query — the RAG
 // retrieval + grounded-answer-with-citations path for Ask Contigo semantic questions (spec §8.3).
 // See ChatEndpointExtensions for the endpoint itself; AskContigoQueryRouter (task

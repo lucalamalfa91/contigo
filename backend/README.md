@@ -94,6 +94,8 @@ migrations, not in Terraform.
 | POST | `/api/renewals/{id}/action` | Updates owner/status/action for one renewal (spec Appendix A; story us-01-renewal-dashboard-api AC-3); `X-Tenant-Id` header; `{id}` is the same `contractId` the GET above returns per row, not a separate stored "renewal" id; body `{ owner, status, action }` — `status` is one of `NotStarted`/`InProgress`/`Completed`; upserts one row (never a second for the same contract) and writes one `IAuditWriter` entry (`renewal.action_updated`); 400 (not 404) for a missing/invalid tenant header or route id, or for an empty `owner`/`action`/unrecognized `status` — see `Contigo.Renewals.Application.RenewalActionService`'s own doc comment for the honest gap this leaves (no check that `{id}` names an existing, tenant-owned contract; `Contigo.Renewals` cannot reference `Contigo.Documents.Contracts` at all) |
 | GET | `/api/savings` | Lists the caller's tenant-scoped `SavingsOpportunity` rows, newest identified first (spec §4.3/§6; module-map.md "Savings \| SavingsOpportunity, RealizedSavings \| /api/savings"; story us-02-savings-opportunity AC-1, task E04/F02/US02/T01); `X-Tenant-Id` header; response `{ items, totalCount }`; no filters yet — see `Contigo.Savings.Application.SavingsOpportunityService.ListAsync`'s own doc comment |
 | PATCH | `/api/savings/{id}` | Updates `owner`, `status` (`Identified`/`InProgress`/`Realized`) and/or `realizedAmount` on one `SavingsOpportunity` (AC-1 "updates status/owner..."; AC-3 "realized value is captured and audit-tracked", task E04/F02/US02/T02); `X-Tenant-Id` header; body `{ owner?, status?, realizedAmount? }` — a genuine partial update, any subset of the three fields; 404 when `{id}` does not name an opportunity for this tenant, 400 for every other validation failure (empty owner, unrecognized status, a negative `realizedAmount`, a `realizedAmount` combined with an explicit `status` other than `Realized`, or none of the three fields supplied); writes one `IAuditWriter` entry per successful call — `savings_opportunity.updated`, or `savings_opportunity.realized` instead when `realizedAmount` was supplied (never both). Supplying `realizedAmount` also inserts a new, append-only `Contigo.Savings.Domain.RealizedSavings` row (in the opportunity's own `currency`) and finalizes `status` as `Realized` — either because the caller's own explicit `status` already said so, or automatically when `status` was omitted (see `SavingsOpportunityService.UpdateAsync`'s own doc comment). The response's `realizedAmount` field is non-`null` only on the call that just recorded one — it is not a rolled-up read of this opportunity's full realized-value history, see `SavingsOpportunityResult.RealizedAmount`'s own doc comment |
+| PATCH | `/api/savings/{id}` | Updates `owner` and/or `status` (`Identified`/`InProgress`/`Realized`) on one `SavingsOpportunity` (AC-1 "updates status/owner..."); `X-Tenant-Id` header; body `{ owner?, status? }` — a genuine partial update, either or both fields; 404 when `{id}` does not name an opportunity for this tenant, 400 for every other validation failure (empty owner, unrecognized status, or neither field supplied); writes one `IAuditWriter` entry (`savings_opportunity.updated`) per successful call — setting `status` to `Realized` here does **not** yet create an audit-tracked realized-value record, see `Contigo.Savings.Domain.SavingsOpportunityStatus.Realized`'s own doc comment for the gap task E04/F02/US02/T02 (`RealizedSavings`) closes |
+| GET | `/api/savings/kpis` | Procurement-homepage KPI row (spec §4.3/§10.1; story us-01-savings-kpis AC-1, task E04/F03/US01/T01); `X-Tenant-Id` header; response `{ annualSpendAnalyzed: [{ currency, amount, contractCount }], contractsAnalyzedCount, savingsIdentified/savingsInProgress/savingsRealized: [{ currency, low, high, count, averageConfidence }], upcomingRenewalsCount }` — every money value is grouped by currency, never summed across currencies (no exchange-rate service exists anywhere in this codebase); `contractsAnalyzedCount` counts contracts whose linked document reached `DocumentProcessingStatus.Completed` (a `Contract` row can exist before that — see `Contigo.Documents.Contracts.Application.PortfolioAnalysisCalculator`'s own doc comment); `savingsRealized` reflects each opportunity's own estimated range, not yet the separate, audit-tracked `RealizedSavings` value (task E04/F02/US02/T02's own gap, see `SavingsOpportunityStatus.Realized`'s doc comment); `upcomingRenewalsCount` is the same auto-renewing-contract count `GET /api/renewals`'s own `totalCount` already reports (same 100-contract-per-tenant cap) — see `Contigo.Api.SavingsKpiEndpointExtensions`'s own comment for why it is not a second, independently-computed number |
 
 **Interim auth:** every endpoint above that takes an `X-Tenant-Id` header
 (all except `GET /api/audit`, which already expects a claims principal)
@@ -790,6 +792,37 @@ history — only the `PATCH` response that just recorded one does (see
 `SavingsOpportunityResult.RealizedAmount`'s own doc comment) — a rolled-up read (e.g. for the
 dashboard's own "savings realized" KPI, spec §4.3) is a follow-up, the same "wiring lands with the
 first real caller" gap this section's other paragraphs already document.
+
+## Savings Intelligence — procurement homepage KPIs
+
+Task E04/F03/US01/T01 (savings-kpis, the wave-spec's `savings-kpis` artifact; parent story
+us-01-savings-kpis AC-1) adds `GET /api/savings/kpis` — see the HTTP surface table above for the
+response shape. Two new pure calculators do the actual arithmetic, each unit-tested independently
+of any database (same convention `Contigo.Renewals.Application.RenewalPipelineBuilder`/
+`PriorityScoreCalculator` already establish):
+
+- `Contigo.Savings.Application.SavingsKpiCalculator` groups every tenant-scoped
+  `SavingsOpportunity` by `Status` then `Currency` for the "Savings Identified"/"Savings In
+  Progress"/"Savings Realized" thirds (`SavingsKpiQueryService` is its thin EF-backed fetch half).
+- `Contigo.Documents.Contracts.Application.PortfolioAnalysisCalculator` computes "Contracts
+  Analyzed"/"Annual Spend Analyzed" from every tenant-scoped `Contract`, flagged by whether any
+  linked `Document` reached `DocumentProcessingStatus.Completed` — a `Contract` row alone is not
+  "analyzed" (`StagedExtractionService.EnsureContractAsync` creates one as a bootstrap shell before
+  extraction even starts) — see that calculator's own doc comment.
+  (`PortfolioQueryService.GetAnalysisSummaryAsync` is its fetch half.)
+
+Every money value in the response is grouped by currency, never summed across currencies — the
+same "no exchange-rate service anywhere in this codebase" reasoning
+`Contigo.Savings.Domain.SavingsOpportunity.Currency`'s own doc comment already gives. "Upcoming
+Renewals" adds no dependency on `Contigo.Renewals` at all: `Contigo.Api.SavingsKpiEndpointExtensions`
+reuses the exact same auto-renewing-contract query `GET /api/renewals` already runs for its own
+`totalCount`, so the homepage KPI and the renewal pipeline list can never silently disagree.
+
+Honest gap, deliberately out of this task's own file scope: `savingsRealized` is computed from each
+`SavingsOpportunity`'s own `EstimatedSavingsLow`/`EstimatedSavingsHigh` range, not the separate,
+audit-tracked `RealizedSavings` entity — this task's wave-spec dependency is `savings-opportunity`
+only (`RealizedSavings` is task E04/F02/US02/T02's own deliverable, scheduled the same wave-spec
+phase, so it is not a dependency this task can assume has landed).
 
 ## Containers and CI
 

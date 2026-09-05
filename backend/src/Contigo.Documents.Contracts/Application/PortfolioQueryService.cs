@@ -22,8 +22,13 @@ namespace Contigo.Documents.Contracts.Application;
 /// carry (added by the migration that produced the `contract-schema` artifact this task depends
 /// on) — belt-and-suspenders, never removed even though RLS alone would already narrow the
 /// result set.
+///
+/// Task E04/F03/US01/T01 (savings-kpis) adds <see cref="GetAnalysisSummaryAsync"/> — the
+/// "Contracts Analyzed"/"Annual Spend Analyzed" fetch half of the procurement-homepage KPIs (see
+/// that method's own doc comment and <see cref="PortfolioAnalysisCalculator"/>, the pure half).
 /// </summary>
-public sealed class PortfolioQueryService(DocumentsContractsDbContext dbContext, ITenantContext tenantContext)
+public sealed class PortfolioQueryService(
+    DocumentsContractsDbContext dbContext, ITenantContext tenantContext, PortfolioAnalysisCalculator analysisCalculator)
 {
     public async Task<PortfolioPage> GetPortfolioAsync(
         TenantId tenantId,
@@ -149,5 +154,53 @@ public sealed class PortfolioQueryService(DocumentsContractsDbContext dbContext,
         var pageItems = matched.Skip(skip).Take(pageRequest.PageSize).ToList();
 
         return new PortfolioPage(pageItems, pageRequest.Page, pageRequest.PageSize, totalCount);
+    }
+
+    /// <summary>
+    /// Backs the "Contracts Analyzed"/"Annual Spend Analyzed" pair of `GET /api/savings/kpis`
+    /// (task E04/F03/US01/T01, savings-kpis; product spec §10.1; parent story us-01-savings-kpis
+    /// AC-1). A <see cref="Domain.Contract"/> row exists as soon as extraction *starts*, not once
+    /// it finishes (<see cref="Extraction.StagedExtractionService.EnsureContractAsync"/> creates a
+    /// bootstrap shell before any pipeline stage has run — see that method's own doc comment), so
+    /// "analyzed" cannot mean "a Contract row exists for this tenant"; it means at least one linked
+    /// <see cref="Domain.Document"/> reached <see cref="Domain.DocumentProcessingStatus.Completed"/>
+    /// — spec §10.1's own KPI meaning, verbatim: "Contracts with completed processing". Two queries
+    /// (documents-with-a-completed-status, then every contract), not one join, mirroring
+    /// <see cref="GetPortfolioAsync"/>'s own "bulk-load the join set, then shape in memory" style
+    /// above; tenant data volumes here are the same order of magnitude that method already accepts
+    /// materializing in full.
+    /// </summary>
+    public async Task<PortfolioAnalysisSummary> GetAnalysisSummaryAsync(
+        TenantId tenantId, CancellationToken cancellationToken = default)
+    {
+        using var _ = tenantContext.BeginScope(tenantId);
+
+        // Plain-column projection only (no nullable-EntityId unwrap inside the translated query) —
+        // the "materialize the join set first, then shape it in memory" convention GetPortfolioAsync
+        // already uses above for its own Risk-severity join, extended here to the same
+        // ProcessingStatus/ContractId narrowing.
+        var documents = await dbContext.Documents
+            .AsNoTracking()
+            .Where(d => d.TenantId == tenantId)
+            .Select(d => new { d.ProcessingStatus, d.ContractId })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var analyzedContractIdSet = documents
+            .Where(d => d.ProcessingStatus == DocumentProcessingStatus.Completed && d.ContractId is not null)
+            .Select(d => d.ContractId!.Value)
+            .ToHashSet();
+
+        var contracts = await dbContext.Contracts
+            .AsNoTracking()
+            .Where(c => c.TenantId == tenantId)
+            .Select(c => new { c.Id, c.Currency, c.AnnualSpend })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var snapshots = contracts.Select(c => new ContractAnalysisSnapshot(
+            c.Id.Value, c.Currency, c.AnnualSpend, analyzedContractIdSet.Contains(c.Id)));
+
+        return analysisCalculator.Summarize(snapshots);
     }
 }
