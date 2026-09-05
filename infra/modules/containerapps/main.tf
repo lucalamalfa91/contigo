@@ -78,6 +78,14 @@ resource "azurerm_container_app" "api" {
         secret_name = "pg-cs"
       }
 
+      # Task E03/F03/US01/T02 (renewal-action): Contigo.Renewals's first DbContext
+      # (RenewalActionService/RenewalAction) -- Contigo.Api.Program throws at startup
+      # without this, the same fail-fast shape as the other ConnectionStrings__* above.
+      env {
+        name        = "ConnectionStrings__Renewals"
+        secret_name = "pg-cs"
+      }
+
       env {
         name        = "ConnectionStrings__Storage"
         secret_name = "st-cs"
@@ -153,6 +161,13 @@ resource "azurerm_container_app" "worker" {
 
       env {
         name        = "ConnectionStrings__Audit"
+        secret_name = "pg-cs"
+      }
+
+      # Task E03/F03/US01/T02 (renewal-action): Contigo.Renewals's first DbContext --
+      # Contigo.Worker.Program throws at startup without this, same as the api app above.
+      env {
+        name        = "ConnectionStrings__Renewals"
         secret_name = "pg-cs"
       }
     }

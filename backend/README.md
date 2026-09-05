@@ -33,7 +33,7 @@ backend/
     Contigo.AiGateway/           # IAiGateway + FixtureAiGateway (wired via DI) + LoggingAiGateway decorator — no Foundry SDK yet
     Contigo.Benchmark/           # IBenchmarkService only — fixture adapter is later (R3)
     Contigo.Suppliers.Products/  # scaffold (R1+)
-    Contigo.Renewals/            # scaffold (R2)
+    Contigo.Renewals/            # renewal engine + opportunity + explainable priority score + threshold scheduler + dashboard pipeline + action (R2; live) — see "Renewal Intelligence" below
     Contigo.Savings/             # scaffold (R3)
     Contigo.Quotes/              # scaffold (R4)
     Contigo.Chat/                # Ask Contigo structured-vs-semantic query router (R1, task E02/F04/US01/T01) + deterministic dates/spend query handlers (task E02/F04/US01/T02) + RagAnswerService (task E02/F04/US02/T01) + AbstainGuard no-fabrication guard (task E02/F04/US02/T02); AddChatModule wired into Contigo.Api by this last task
@@ -70,8 +70,9 @@ on Testcontainers inside `dotnet test`.
 
 EF migrations live in each module that owns a DbContext
 (`Contigo.Identity.Workspace`, `Contigo.Documents.Contracts`,
-`Contigo.Audit`). Apply them against the same database the hosts use;
-RLS policies are added in those migrations, not in Terraform.
+`Contigo.Audit`, `Contigo.Renewals`). Apply them against the same database
+the hosts use; RLS policies are added in those migrations, not in
+Terraform.
 
 ## HTTP surface today
 
@@ -88,6 +89,9 @@ RLS policies are added in those migrations, not in Terraform.
 | GET | `/api/contracts` | portfolio list; spec §8.1 columns; `X-Tenant-Id` header; optional filters `supplierId`, `status`, `risk` (Low/Medium/High/Critical), `autoRenewal`, `minAnnualSpend`, `maxAnnualSpend`, `renewalFrom`/`renewalTo` (yyyy-MM-dd) — no `category` filter yet, see `PortfolioFilter`'s doc comment; optional paging `page` (default 1), `pageSize` (default 25, max 100); response is `{ items, page, pageSize, totalCount }`, not a bare array |
 | GET | `/api/contracts/{id}` | Contract 360 aggregate; spec §8.2 header + tabs (overview, commercials, products, clauses, obligations, risks, documents, benchmark, renewal, activity); `X-Tenant-Id` header; 404 when the contract does not exist or belongs to another tenant; `benchmark`/`activity` are always empty arrays until R3/R4 — see `Contract360Result`'s doc comment |
 | POST | `/api/chat/query` | Ask Contigo (spec §8.3); `{ question: string }` + `X-Tenant-Id` header; routes via `AskContigoQueryRouter`. `Semantic` questions run the real RAG pipeline (`EmbeddingRetrievalService.SearchAsync` tenant-scoped retrieval → `RagAnswerService` → `IAiGateway.AnswerAsync`) and respond `{ question, intent, canDetermine, answer, citations: [{documentId, page, section}], message }` — `citations` empty and `canDetermine: false` when authorized retrieval finds nothing (spec §8.4 "no evidence, no claim"), never a fabricated answer. `Structured` questions get an honest `canDetermine: false` + explanatory `message` — no task has yet mapped a real, tenant-scoped `Contract` row into `Contigo.Chat.Application.ContractFact` for `DeterministicQueryHandler` to run against, see that type's own doc comment |
+| GET | `/api/renewals` | Renewal pipeline + insight card (spec §9.3/§10.1); `X-Tenant-Id` header; auto-renewing contracts only, most urgent first; response is `{ items, totalCount }`, each item `{ contractId, supplierId, status, renewalDate, daysUntilRenewal, annualSpend, cancellationDeadline, daysUntilCancellationDeadline, autoRenewal, action, insightCard: { facts, recommendations } }` — `insightCard.recommendations`' benchmark/savings fields (`annualUpliftPercent`, `marketPosition`, `potentialSavingsRange`) are honestly `null` until the Benchmark/Savings modules land (R3); `action`/`recommendedAction` is a deterministic urgency rule, not the full spec §9.2 Priority Score — see `Contigo.Renewals.Application.RenewalPipelineBuilder`'s own doc comment |
+| GET | `/api/renewals/{contractId}/priority` | Explainable priority-score breakdown for one contract (spec §9.2; story us-02-priority-score AC-1/AC-2, task E03/F01/US02/T02); `X-Tenant-Id` header; 404 when the contract does not exist or belongs to another tenant (same rule as `GET /api/contracts/{id}`); response is `{ contractId, totalScore, components: { spendWeight, timeUrgency, benchmarkOpportunity, priceIncreaseRisk, contractRisk } }`, each component `{ score, explanation }` — component weights are configurable, see `Contigo.Renewals.Configuration.PriorityScoreWeightsOptions` below; `priceIncreaseRisk`/`benchmarkOpportunity` use their honest no-data default (minimum / neutral respectively) since no uplift or benchmark-position data is wired to real contracts yet |
+| POST | `/api/renewals/{id}/action` | Updates owner/status/action for one renewal (spec Appendix A; story us-01-renewal-dashboard-api AC-3); `X-Tenant-Id` header; `{id}` is the same `contractId` the GET above returns per row, not a separate stored "renewal" id; body `{ owner, status, action }` — `status` is one of `NotStarted`/`InProgress`/`Completed`; upserts one row (never a second for the same contract) and writes one `IAuditWriter` entry (`renewal.action_updated`); 400 (not 404) for a missing/invalid tenant header or route id, or for an empty `owner`/`action`/unrecognized `status` — see `Contigo.Renewals.Application.RenewalActionService`'s own doc comment for the honest gap this leaves (no check that `{id}` names an existing, tenant-owned contract; `Contigo.Renewals` cannot reference `Contigo.Documents.Contracts` at all) |
 
 **Interim auth:** every endpoint above that takes an `X-Tenant-Id` header
 (all except `GET /api/audit`, which already expects a claims principal)
@@ -108,8 +112,12 @@ here yet, and `QueueConsumerHostedService` still never dispatches a
 received message to a domain handler. Extraction runs synchronously inside
 `Contigo.Api`'s `POST /api/documents` today instead (`DocumentProcessingPipeline`,
 above) — not through this Worker — a documented interim choice pending a
-real durable-queue producer/consumer pair. Renewal / benchmark / quote
-handlers land with those features.
+real durable-queue producer/consumer pair. Benchmark / quote handlers land
+with those features; renewal threshold scheduling (task E03/F02/US01/T01)
+is the first of the four `13.3 Background jobs` categories this host
+actually runs — see "Renewal threshold scheduler" above for
+`RenewalThresholdSchedulerHostedService` and its own honest gap (no real
+cross-tenant contract source wired yet).
 
 ## AI Gateway
 
@@ -249,6 +257,246 @@ a follow-up gap, not attempted by this task. No task has yet mapped a real,
 tenant-scoped `Contract` row into `ContractFact`, so the endpoint's
 `Structured` branch reports an honest "not wired yet" instead of guessing.
 
+## Renewal Intelligence — deterministic renewal engine
+
+`Contigo.Renewals.Application.RenewalEngine` (task E03/F01/US01/T01,
+us-01-deterministic-dates) is product spec §9.1's "calculate renewal date,
+calculate cancellation deadline, calculate days remaining" made concrete:
+pure, synchronous arithmetic over a `ContractRenewalTerms` snapshot — no
+database, no HTTP call, no LLM call (Appendix C rule 6) — returning a
+`RenewalCalculationResult` with a three-way `RenewalCalculationStatus`:
+
+- `Determined` — `RenewalDate` equals `EndDate` when `AutoRenewal` is true
+  (the same convention `PortfolioListItem.RenewalDate` /
+  `Contract360Header.RenewalDate` already use, reproduced here on purpose).
+  `CancellationDeadline` additionally needs `CancellationNoticeDays`
+  (`EndDate` minus that many days) and can stay null even inside a
+  `Determined` result when that one input is missing or negative — a
+  renewal date and its cancellation deadline are independently
+  determinable.
+- `NoRenewal` — `AutoRenewal` is false: a known fact, not a data gap, so it
+  is not folded into `CannotDetermine`.
+- `CannotDetermine` — `EndDate` itself is unknown: nothing can be computed
+  without fabricating it (Appendix C rule 10; parent story AC-3).
+
+`DaysUntilRenewal`/`DaysUntilCancellationDeadline` are signed, unclamped
+day counts relative to `IClock.UtcNow` — a negative value honestly means
+the date already passed, rather than being hidden behind a floor of zero.
+`RenewalEngine.CalculateMany` is the batch form for spec §9.1's "daily
+scheduler for each active contract" shape; deciding which contracts are
+"active" (in scope to call it with) is the caller's job, not the engine's.
+
+`ContractRenewalTerms` deliberately does not reference
+`Contigo.Documents.Contracts.Domain.Contract` — ADR-002 forbids
+`Contigo.Renewals` from referencing `Contigo.Documents.Contracts` at all
+(same reason `Contigo.Chat.Application.ContractFact` is its own small DTO,
+not the real `Contract` entity). Two honest gaps follow, both deliberately
+out of this task's file scope:
+
+1. No host endpoint or worker job calls `RenewalEngine` yet.
+   `AddRenewalsModule` exists (`Infrastructure/ServiceCollectionExtensions.cs`)
+   so the remaining tasks that depend on `renewal-engine` in the wave-spec DAG
+   (priority score, the cancellation-alerts threshold scheduler) can resolve
+   it from a container, but `Contigo.Api`/`Contigo.Worker`'s `Program.cs` do
+   not call it yet — the same "wiring lands with the first real caller"
+   sequencing `AddChatModule` followed before `Contigo.Chat` had one (see
+   that section above).
+2. `Contract` has no persisted `CancellationNoticeDays` column — its "dates"
+not the real `Contract` entity). One of the two gaps this section used to
+describe is now closed (see "Renewal threshold scheduler" below); the other
+remains, deliberately out of that task's file scope too:
+
+1. `Contract` has no persisted `CancellationNoticeDays` column — its "dates"
+   extraction stage (`StagedExtractionService.ApplyDatesFact`) still writes
+   a raw `cancellationDeadline` date directly from extraction instead of a
+   notice-period day count (product spec §7.3's own extraction-evidence
+   example names `cancellation_notice_days`, not a computed date). Mapping
+   a real `Contract` row onto `ContractRenewalTerms` — and giving
+   extraction a real `CancellationNoticeDays` field to populate — is
+   follow-up work in `Contigo.Documents.Contracts`, a different module and
+   a different task's file scope.
+not the real `Contract` entity).
+
+`Contigo.Renewals.Application.RenewalPipelineBuilder` (task E03/F03/US01/T01,
+us-01-renewal-dashboard-api) is `RenewalEngine`'s first real caller and backs
+`GET /api/renewals` (see the HTTP surface table above): it turns a batch of
+`RenewalDashboardCandidate` (another small DTO, the same dependency-direction
+shape as `ContractRenewalTerms`) into a pipeline row plus a facts/
+recommendations insight card (spec §9.3), ordered most-urgent-first by days
+until the relevant date. `Contigo.Api.RenewalsEndpointExtensions` is the
+composition root that maps a real, tenant-scoped `PortfolioListItem`
+(Documents/Contracts) onto `RenewalDashboardCandidate` — the one mapping
+neither module may do itself, same pattern `ChatEndpointExtensions` already
+uses for `EmbeddingSearchResult` → `AiEvidenceSnippet`. `AddRenewalsModule`
+is now called by `Contigo.Api`'s `Program.cs` — the same "wiring lands with
+the first real caller" sequencing `AddChatModule` followed before
+`Contigo.Chat` had one. `Contigo.Worker`'s `Program.cs` still does not call
+it — no worker job (the renewal-opportunity generation / cancellation-alerts
+threshold scheduler wave-spec tasks) depends on `renewal-engine` yet.
+
+One honest gap remains, deliberately out of this task's file scope:
+`Contract` has no persisted `CancellationNoticeDays` column — its "dates"
+extraction stage (`StagedExtractionService.ApplyDatesFact`) still writes a
+raw `cancellationDeadline` date directly from extraction instead of a
+notice-period day count (product spec §7.3's own extraction-evidence example
+names `cancellation_notice_days`, not a computed date), so `RenewalEngine`
+itself still cannot derive a cancellation deadline for any real contract.
+`RenewalPipelineBuilder` works around this for the dashboard specifically by
+carrying `Contract.CancellationDeadline` (the already-extracted raw fact)
+straight through as its own field, independent of `RenewalEngine`'s
+notice-day derivation — see `RenewalDashboardCandidate.CancellationDeadline`'s
+own doc comment. Giving extraction a real `CancellationNoticeDays` field (so
+`RenewalEngine.Calculate` itself can derive the deadline, the way it already
+derives `RenewalDate`) is follow-up work in `Contigo.Documents.Contracts`, a
+different module and a different task's file scope.
+
+`Contigo.Renewals.Application.RenewalOpportunityGenerator` (task
+E03/F01/US01/T02, us-01-deterministic-dates, the wave-spec's
+`renewal-opportunity` artifact) is the next daily-scheduler step from spec
+§9.1: "create/update renewal opportunity", built directly on top of
+`RenewalEngine.Calculate`'s output. `Generate`/`GenerateMany` take the same
+`ContractRenewalTerms` shape `RenewalEngine` does (constructor-injected, so
+`AddRenewalsModule` resolves both from one container); the static
+`FromCalculation` exposes the mapping rule alone for a caller that already
+ran the engine itself. Three-way `RenewalOpportunityStatus` mirrors
+`RenewalCalculationStatus` case-for-case (`NoRenewal`/`CannotDetermine` keep
+the same names; `Determined` becomes `Open` — an opportunity Procurement has
+something to act on) so a `CannotDetermine` calculation never turns into a
+fabricated opportunity — it abstains the same way, per parent story AC-3.
+Deliberately out of scope here, each a later task's own file: a priority
+score/component breakdown (us-02-priority-score), a threshold-alert flag
+(feature-02-cancellation-alerts), an owner/status/action
+(feature-03-renewal-dashboard's renewal-action task, spec Appendix A `POST
+/api/renewals/{id}/action`), and persistence — spec §9.1 says "create/update"
+(upsert semantics) but no task has given `Contigo.Renewals` a `DbContext` yet,
+so today `RenewalOpportunity` is an in-memory value, not a stored row.
+## Renewal Intelligence — explainable, tunable priority score
+score/component breakdown (us-02-priority-score) and a threshold-alert flag
+(feature-02-cancellation-alerts) remain follow-up work. The other two gaps
+this paragraph used to list here are now closed by task E03/F03/US01/T02
+(renewal-action, feature-03-renewal-dashboard): an owner/status/action —
+`POST /api/renewals/{id}/action`, spec Appendix A, see the HTTP surface
+table above — and `Contigo.Renewals`'s first `DbContext`
+(`RenewalsDbContext`), which backs that endpoint's
+`Contigo.Renewals.Domain.RenewalAction` row. That `DbContext` does not,
+though, give `RenewalOpportunity` itself a persisted identity: spec §9.1's
+"create/update renewal opportunity" upsert semantics land on the separate
+`RenewalAction` (owner/status/action) row, keyed by `ContractId` alone, not
+on a stored "renewal" entity — see `RenewalAction`'s own doc comment.
+`RenewalOpportunity` remains an in-memory value, not a stored row.
+## Renewal Intelligence — explainable priority score
+
+`Contigo.Renewals.Application.PriorityScoreCalculator` (task E03/F01/US02/T01,
+us-02-priority-score) is product spec §9.2's formula made concrete: `"Priority
+Score = Spend Weight + Time Urgency + Benchmark Opportunity + Price Increase
+Risk + Contract Risk"`. Same determinism convention as `RenewalEngine` (pure,
+synchronous, no database/HTTP/LLM call) — `Calculate` takes one
+`RenewalCalculationResult` (so "days until renewal" is always
+`RenewalEngine`'s own arithmetic, never a second copy of it) plus one
+`RenewalPriorityInputs` (the raw spend/uplift/contract-risk/benchmark-position
+facts `RenewalEngine` does not compute) and returns a `PriorityScoreResult`:
+a `TotalScore` (0–100 under the spec-default weights) plus each of the five
+components as its own named, explained `PriorityScoreComponent` — spec
+§9.2's "Store both total score and component scores so the recommendation is
+explainable and tunable" (AC-2), not a single opaque number.
+
+A component whose raw input is unknown never fabricates a guess (Appendix C
+rule 10): every component except benchmark opportunity defaults to the
+minimum (0); benchmark opportunity defaults to the documented neutral
+midpoint (`PriorityScoreCalculator.NeutralComponentScore`, 10 under the spec
+default) specifically, because parent story AC-3 names that exact rule —
+`"Benchmark-opportunity component reads the R3 benchmark only when available
+(else neutral)"`. Today that is *always* the neutral case:
+`Contigo.Benchmark.IBenchmarkService` is still an R0 placeholder with no
+query operations, so `RenewalPriorityInputs.BenchmarkMarketPositionPercent`
+has no real producer yet — the same "caller supplies it however it likes
+today, a real mapping lands later" gap `ContractRenewalTerms` already
+documents for this module. Every tier boundary (spend, uplift %,
+benchmark %) and the time-urgency tiers (aligned to spec §9.1's own
+365/270/180/120/90/60/30-day windows) are fixed, product-spec-cited defaults
+— task-02 deliberately did not re-derive that tiering (see next paragraph
+for what it did make tunable).
+
+**Task E03/F01/US02/T02 (priority-explainability)** closed both gaps the
+paragraph above used to name. *Tunable*: each of the five components' own
+*maximum* contribution is now
+`Contigo.Renewals.Configuration.PriorityScoreWeightsOptions` (config section
+`Renewals:PriorityWeights`, `SpendWeightMax`/`TimeUrgencyMax`/
+`BenchmarkOpportunityMax`/`PriceIncreaseRiskMax`/`ContractRiskMax`, each
+defaulting to 20 — the untouched spec default) — `PriorityScoreCalculator` rescales every tier's
+fixed contribution proportionally (the tier's fraction of the spec-default
+20, times the configured maximum), so the tiering itself is unchanged but
+each term's weight in the sum is an operator decision, not a compile-time
+literal. *Explainable, queryable*: `Contigo.Api.RenewalsEndpointExtensions`
+now maps `GET /api/renewals/{contractId}/priority` (see the HTTP surface
+table above) — `PriorityScoreCalculator`'s first real host caller, composing
+`Contract360QueryService`'s tenant-scoped contract lookup (annual spend, end
+date, auto-renewal, risk) the same way `GET /api/renewals` composes
+`PortfolioQueryService`; `AnnualUpliftPercent`/`BenchmarkMarketPositionPercent`
+stay honestly `null` for the same reason `GET /api/renewals`'s own insight
+card does (neither has a real producer yet).
+
+`AddRenewalsModule` registers `PriorityScoreWeightsOptions` the same
+"bind lazily from `IConfiguration`, property initializers supply the spec
+default" way as `ThresholdWindowOptions` (see below), then registers
+`PriorityScoreCalculator` as before — its one constructor parameter is now
+that options singleton, injected automatically.
+
+### Renewal threshold scheduler
+
+`Contigo.Renewals.Application.RenewalThresholdScheduler` (task
+E03/F02/US01/T01, us-01-threshold-scheduler AC-1/AC-2) is product spec
+§9.1's "daily scheduler ... emit threshold events if applicable" made
+concrete: it runs `RenewalEngine.CalculateMany` over a tenant's
+`ContractRenewalTerms`, then checks each result's `DaysUntilRenewal`/
+`DaysUntilCancellationDeadline` against `Contigo.Renewals.Configuration
+.ThresholdWindowOptions.DaysBeforeDeadline` (config section
+`Renewals:Thresholds`, default 365/270/180/120/90/60/30 days — AC-1,
+"configurable"). An exact day-count match raises a `RenewalApproachingEvent`
+(`RenewalMilestoneKind.RenewalDate` or `.CancellationDeadline` — a contract
+can raise one, both, or neither on a given run) and writes it through
+`IAuditWriter` as one `renewal.approaching` entry (spec Appendix B; same
+"an audit entry is this codebase's actual event mechanism" convention as
+`document.uploaded`/`contract.corrected` — no in-process mediator exists
+yet, and picking one is council-owned, not this task's call) — durable and
+queryable via `GET /api/audit` even before a real consumer exists.
+
+`Contigo.Worker.Scheduling.RenewalThresholdSchedulerHostedService` is this
+module's first real host caller: `WorkerServiceCollectionExtensions
+.AddWorkerHost` now calls `AddRenewalsModule` (closing gap 1 that used to
+be listed above) and registers this `BackgroundService`, which ticks every
+`Worker:RenewalThresholdScheduler:Interval` (default 24h) and, per tenant
+batch, calls `RenewalThresholdScheduler.EvaluateThresholdsAsync` from a
+fresh DI scope (it must be Scoped, not injected directly into the Singleton
+hosted service — it depends on the Scoped `IAuditWriter`). Honest gap: its
+`IActiveRenewalContractsSource` port has no real implementation yet — the
+default `NoActiveRenewalContractsSource` always returns zero tenants.
+Enumerating every tenant's active contracts needs a cross-tenant workspace
+listing (`Contigo.Identity.Workspace`, not referenced by `Contigo.Worker`
+today) plus a per-tenant RLS-scoped contract query
+(`Contigo.Documents.Contracts`) — wiring a real adapter is follow-up
+composition work, the same category of gap this section's remaining item
+above describes. The timer loop itself is real and proven end to end
+(`Contigo.Worker.Tests.RenewalThresholdSchedulerHostedServiceTests`); AC-3
+("Scheduler recomputes when a contract/term is corrected") is parent story
+task-02's scope ("Alert creation + re-compute on correction"), not this
+task's.
+
+**Task E03/F04/US01/T01 (r2-integration) fix:** `RenewalThresholdScheduler
+.EvaluateThresholdsAsync` wrote its `renewal.approaching` audit entry
+without ever opening an `ITenantContext` scope, so
+`TenantRlsConnectionInterceptor` left `app.tenant_id` unset and the Audit
+module's own `AddTenantRowLevelSecurity` `WITH CHECK` policy rejected the
+insert outright — a real threshold crossing would throw instead of being
+recorded. Neither `RenewalThresholdSchedulerTests` (a `RecordingAuditWriter`,
+no database) nor `RenewalThresholdSchedulerHostedServiceTests` (a
+syntactically-valid-but-never-dialled connection string, by design) ever
+exercised a real RLS-enforced connection on this path, so this went
+undetected until r2-integration's own real-Postgres proof
+(`Contigo.IntegrationTests.R2EndToEndTests`) surfaced it. The method now
+opens its own scope before writing, the same convention
+`RenewalActionService.SetActionAsync` already follows.
+
 ## R1 demo smoke test
 
 The automated proof of task E02/F06/US01/T01 (r1-integration) is
@@ -288,6 +536,35 @@ lands `NeedsReview` with zero extracted facts. This smoke path proves the
 not extraction accuracy; `R1EndToEndTests` proves the persistence/HTTP
 contract against a scripted gateway that returns real, schema-shaped facts.
 
+## R2 demo smoke test
+
+The automated proof of task E03/F04/US01/T01 (r2-integration) is
+`dotnet test` — `Contigo.IntegrationTests.R2EndToEndTests` (AC-1/AC-2: every
+active contract gets a deterministic renewal date/cancellation deadline
+where data exists, an explainable component-scored priority via `GET
+/api/renewals/{id}/priority`, a `renewal.approaching` threshold event that
+is durably recorded — never fabricated for a contract with an unknown end
+date — and a `POST /api/renewals/{id}/action` upsert) and
+`R2CrossTenantIsolationTests` (AC-3, across the whole `GET
+/api/renewals` / `GET /api/renewals/{id}/priority` / `POST
+/api/renewals/{id}/action` surface). Contracts are seeded directly against
+the real, RLS-enforced `DocumentsContractsDbContext` (see
+`R2IntegrationFixture.SeedContractAsync`) rather than through the R1 upload
+path — R2's own leaf artifacts all take already-validated contract data as
+an input, never produce it.
+
+**Honest scope note:** this task's own wave-spec `depends_on` names
+`renewal-alerts` (task E03/F02/US01/T02, "Alert creation + re-compute on
+correction"), but that task has not landed any code as of this task's own
+run. The only "alert" artifact that actually exists is the
+`renewal.approaching` **threshold event** (task E03/F02/US01/T01,
+`threshold-scheduler`, see above) — a durable, queryable audit entry, not a
+persisted, de-duplicated `RenewalAlert` row with recompute-on-correction.
+`R2EndToEndTests` proves exactly the former (parent story AC-2's own literal
+wording, "Threshold events fire") and no more; a persisted alert entity
+with recompute-on-correction remains task E03/F02/US01/T02's own, still-open
+file scope.
+
 ## Containers and CI
 
 `.github/workflows/backend.yml` (path-filtered to `backend/**`):
@@ -301,7 +578,7 @@ contract against a scripted gateway that returns real, schema-shaped facts.
 Images are tagged with `github.sha`. Container Apps listen on **8080**
 (`ASPNETCORE_URLS=http://+:8080`). Deployed connection strings are
 environment variables (`ConnectionStrings__IdentityWorkspace`,
-`DocumentsContracts`, `Audit`, `Storage`) — never committed.
+`DocumentsContracts`, `Audit`, `Renewals`, `Storage`) — never committed.
 
 Image pull uses this environment's workload identity (`AcrPull` on
 `modules/acr`, `registry {}` on `modules/containerapps`). Confirm the

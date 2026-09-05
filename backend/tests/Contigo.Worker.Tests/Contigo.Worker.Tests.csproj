@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Contigo.Worker\Contigo.Worker.csproj" />
     <ProjectReference Include="..\..\src\Contigo.Documents.Contracts\Contigo.Documents.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Contigo.Renewals\Contigo.Renewals.csproj" />
     <ProjectReference Include="..\..\src\Contigo.SharedKernel\Contigo.SharedKernel.csproj" />
   </ItemGroup>
 
