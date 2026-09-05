@@ -31,7 +31,7 @@ backend/
     Contigo.Documents.Contracts/ # upload, metadata, staged extraction, portfolio, contract correction + history (live)
     Contigo.Audit/               # append-only audit events (live)
     Contigo.AiGateway/           # IAiGateway + FixtureAiGateway (wired via DI) + LoggingAiGateway decorator — no Foundry SDK yet
-    Contigo.Benchmark/           # IBenchmarkService.GetBenchmarkAsync + normalized Contracts DTOs (task E04/F01/US01/T01) — no adapter/DI registration yet (R3)
+    Contigo.Benchmark/           # IBenchmarkService.GetBenchmarkAsync + normalized Contracts DTOs (T01); BenchmarkAdapterRegistry + IBenchmarkProviderAdapter + AddBenchmarkModule DI wiring (T02) — no concrete adapter registered yet (R3)
     Contigo.Suppliers.Products/  # scaffold (R1+)
     Contigo.Renewals/            # renewal engine + opportunity + explainable priority score + threshold scheduler + dashboard pipeline + action (R2; live) — see "Renewal Intelligence" below
     Contigo.Savings/             # scaffold (R3)
@@ -186,6 +186,32 @@ is retrievable for Ask Contigo immediately after it finishes processing. A
 tenant that has never uploaded anything (or whose upload is still
 processing/failed) still honestly returns "cannot determine" — there is
 simply nothing indexed for it yet, not a bug.
+
+## Benchmark Service
+
+`Contigo.Benchmark.IBenchmarkService.GetBenchmarkAsync` (task E04/F01/US01/T01)
+is the normalized `getBenchmark` contract product spec §10.3 names — P25/P50/P75
+plus metric/currency/confidence/source/updated/comparison, so Renewals/Savings/
+Quotes never depend on a provider schema. Task E04/F01/US01/T02 adds
+`Contigo.Benchmark.BenchmarkAdapterRegistry`, the pluggable
+`IBenchmarkProviderAdapter` registry behind that interface, wired into DI by
+`Contigo.Benchmark.ServiceCollectionExtensions.AddBenchmarkModule` — it
+config-selects the active adapter by name (`Benchmark:Adapter:ActiveAdapter`,
+env var form `Benchmark__Adapter__ActiveAdapter`, default `"fixture"` —
+`BenchmarkAdapterOptions`), the same "config-selected, swap without a code
+change" convention `AiGatewayModelOptions` already uses for ADR-004.
+
+No concrete adapter is registered yet: this task's own wave-spec phase runs
+alongside us-02-fixture-adapter's task (parallel, neither depends on the
+other), so it could not wire that adapter in even if it wanted to. A host that
+calls `AddBenchmarkModule()` today gets a real, resolvable `IBenchmarkService`
+whose `GetBenchmarkAsync` honestly fails every call — never a fabricated
+result (ADR-001) — until a module registers an `IBenchmarkProviderAdapter`
+under the configured name. Only a concrete adapter may ever reference a
+provider SDK; `Contigo.Benchmark`'s own project file carries none today, and
+`Contigo.ArchitectureTests.DependencyDirectionTests
+.Benchmark_module_must_not_reference_provider_sdks` fails the build if that
+changes without an adapter to justify it.
 
 ## Ask Contigo — query router + deterministic queries + RAG citations
 
