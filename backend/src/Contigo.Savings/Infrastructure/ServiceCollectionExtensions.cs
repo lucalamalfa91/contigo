@@ -26,6 +26,12 @@ namespace Contigo.Savings.Infrastructure;
 /// call `Contigo.Audit`'s `AddAuditModule` for <see cref="SavingsOpportunityService"/>'s own
 /// <see cref="IAuditWriter"/> dependency to resolve — the same landmine
 /// <c>RenewalActionService</c>'s own registration already flags.
+///
+/// Task E04/F03/US01/T01 (savings-kpis) adds <see cref="SavingsKpiCalculator"/> (stateless,
+/// dependency-free — <c>TryAddSingleton</c>, same treatment
+/// <c>Contigo.Renewals.Application.RenewalEngine</c>/<c>PriorityScoreCalculator</c> already get) and
+/// <see cref="SavingsKpiQueryService"/> (Scoped — shares the request's own
+/// <see cref="SavingsDbContext"/> instance, same as <see cref="SavingsOpportunityService"/> above).
 /// </summary>
 public static class ServiceCollectionExtensions
 {
@@ -49,6 +55,10 @@ public static class ServiceCollectionExtensions
         // any host that calls this method must also call Contigo.Audit's AddAuditModule for that to
         // resolve (see the type doc comment).
         services.AddScoped<SavingsOpportunityService>();
+
+        // Task E04/F03/US01/T01 (savings-kpis): `GET /api/savings/kpis` — see the type doc comment.
+        services.TryAddSingleton<SavingsKpiCalculator>();
+        services.AddScoped<SavingsKpiQueryService>();
 
         return services;
     }

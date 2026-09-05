@@ -75,6 +75,12 @@ public static class ServiceCollectionExtensions
         services.AddScoped<DocumentUploadService>();
         services.AddScoped<DocumentQueryService>();
         services.AddScoped<StagedExtractionService>();
+
+        // Task E04/F03/US01/T01 (savings-kpis): PortfolioQueryService's own
+        // GetAnalysisSummaryAsync needs this stateless, dependency-free calculator — TryAddSingleton,
+        // same treatment Contigo.Renewals.Application.RenewalEngine/PriorityScoreCalculator already
+        // get — registered before the Scoped service below so constructor injection resolves it.
+        services.TryAddSingleton<PortfolioAnalysisCalculator>();
         services.AddScoped<PortfolioQueryService>();
         services.AddScoped<ContractCorrectionService>();
         services.AddScoped<EmbeddingRetrievalService>();
