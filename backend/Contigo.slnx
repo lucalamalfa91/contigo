@@ -25,6 +25,7 @@
     <Project Path="tests/Contigo.Identity.Workspace.Tests/Contigo.Identity.Workspace.Tests.csproj" />
     <Project Path="tests/Contigo.IntegrationTests/Contigo.IntegrationTests.csproj" />
     <Project Path="tests/Contigo.Renewals.Tests/Contigo.Renewals.Tests.csproj" />
+    <Project Path="tests/Contigo.Savings.Tests/Contigo.Savings.Tests.csproj" />
     <Project Path="tests/Contigo.Tenancy/Contigo.Tenancy.csproj" />
     <Project Path="tests/Contigo.Worker.Tests/Contigo.Worker.Tests.csproj" />
   </Folder>
