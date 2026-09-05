@@ -15,6 +15,29 @@ namespace Contigo.Benchmark.Tests;
 /// says "story us-02-fixture-adapter adds the first adapter" — this is that registration, mirroring
 /// <c>Contigo.AiGateway.Tests.ServiceCollectionExtensionsTests</c>' identical proof for
 /// <c>AddAiGatewayModule</c>.
+///
+/// <para>
+/// Incidental fix (task E04/F02/US01/T02, out of that task's own module but blocking
+/// <c>dotnet build Contigo.slnx</c> for every task): this file failed to compile — a prior merge
+/// had spliced <c>AddBenchmarkModule_resolves_a_registry_backed_service_with_the_default_adapter_name</c>'s
+/// closing brace together with a second, differently-named test method's signature line, silently
+/// discarding that second method's own body. The body restored below is verified against
+/// <see cref="ServiceCollectionExtensions.AddBenchmarkModule"/>'s and
+/// <see cref="BenchmarkAdapterRegistry"/>'s actual current source, not reconstructed from guesswork.
+/// The second, differently-named test could not be recovered (its body is gone, not just
+/// misplaced) and is not reinvented here. While diagnosing this, a separate, pre-existing gap
+/// surfaced in <c>Contigo.Benchmark</c>'s own DI wiring — <c>AddBenchmarkModule</c> still
+/// <c>TryAddSingleton</c>-registers <see cref="Fixtures.FixtureBenchmarkAdapter"/> directly as
+/// <see cref="IBenchmarkService"/>, which the preceding <c>TryAddSingleton&lt;IBenchmarkService,
+/// BenchmarkAdapterRegistry&gt;</c> call already shadows (first registration wins), and
+/// <see cref="Fixtures.FixtureBenchmarkAdapter"/> does not implement
+/// <see cref="Adapters.IBenchmarkProviderAdapter"/>, so <see cref="BenchmarkAdapterRegistry"/> can
+/// never reach it through its <c>IEnumerable&lt;IBenchmarkProviderAdapter&gt;</c> constructor
+/// parameter either — <see cref="IBenchmarkService"/> resolves to an always-adapter-less
+/// <see cref="BenchmarkAdapterRegistry"/> today, not <see cref="Fixtures.FixtureBenchmarkAdapter"/>.
+/// That is a <c>Contigo.Benchmark</c> module wiring decision, not this (Savings) task's file scope
+/// to redesign — left exactly as found, flagged here for that module's own owner.
+/// </para>
 /// </summary>
 public class ServiceCollectionExtensionsTests
 {
@@ -23,9 +46,6 @@ public class ServiceCollectionExtensionsTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
-    public void AddBenchmarkModule_resolves_a_fixture_backed_benchmark_service()
-    {
-        var services = new ServiceCollection();
 
         services.AddBenchmarkModule();
 
