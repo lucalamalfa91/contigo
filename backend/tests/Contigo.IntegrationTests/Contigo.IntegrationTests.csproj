@@ -39,6 +39,15 @@
          construct DTOs by hand — Contigo.Api already references this module transitively, but a
          test file needs the compile-time type names, not just the transitive runtime assembly. -->
     <ProjectReference Include="..\..\src\Contigo.Renewals\Contigo.Renewals.csproj" />
+    <!-- Task E04/F04/US01/T01 (r3-integration): R3EndToEndTests/R3CrossTenantIsolationTests resolve
+         Contigo.Savings.Application/Domain types (SavingsOpportunityService,
+         CreateSavingsOpportunityRequest, SavingsOpportunityStatus, ...) and Contigo.Benchmark.Contracts/
+         Adapters types (IBenchmarkService, BenchmarkQuery, IBenchmarkProviderAdapter,
+         FixtureBenchmarkAdapter, ...) directly from the host's own container and construct DTOs by
+         hand — same "Contigo.Api already references this transitively, but a test file needs the
+         compile-time type names" reasoning as the Contigo.Renewals reference just above. -->
+    <ProjectReference Include="..\..\src\Contigo.Savings\Contigo.Savings.csproj" />
+    <ProjectReference Include="..\..\src\Contigo.Benchmark\Contigo.Benchmark.csproj" />
   </ItemGroup>
 
 </Project>

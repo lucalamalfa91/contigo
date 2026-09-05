@@ -1,3 +1,4 @@
+using Contigo.Benchmark;
 using Contigo.Savings.Application;
 using Contigo.SharedKernel;
 using Contigo.SharedKernel.Tenancy;
@@ -32,6 +33,26 @@ namespace Contigo.Savings.Infrastructure;
 /// <c>Contigo.Renewals.Application.RenewalEngine</c>/<c>PriorityScoreCalculator</c> already get) and
 /// <see cref="SavingsKpiQueryService"/> (Scoped — shares the request's own
 /// <see cref="SavingsDbContext"/> instance, same as <see cref="SavingsOpportunityService"/> above).
+///
+/// <para>
+/// Task E04/F04/US01/T01 (r3-integration) closes the last open wiring gap `backend/README.md`'s own
+/// "Benchmark Service" section named ("no host calls <c>AddBenchmarkModule</c> yet ... the same
+/// 'wiring lands with the first real caller' gap <c>Contigo.Savings</c> ... will close"): this method
+/// now also calls <see cref="Contigo.Benchmark.ServiceCollectionExtensions.AddBenchmarkModule"/> —
+/// the exact same "a module that depends on another module's interface registers that dependency's
+/// own DI wiring transitively" convention
+/// <c>Contigo.Documents.Contracts.Infrastructure.ServiceCollectionExtensions.AddDocumentsContractsModule</c>
+/// already established for <c>Contigo.AiGateway.ServiceCollectionExtensions.AddAiGatewayModule</c>
+/// (see that method's own doc comment; also <c>Contigo.Api.Program</c>'s own remark on
+/// <c>AddChatModule</c>). <see cref="Contigo.Benchmark.ServiceCollectionExtensions.AddBenchmarkModule"/>
+/// is itself all <c>TryAdd</c>/<c>TryAddEnumerable</c> (idempotent), so calling it here is safe even if
+/// a future task also calls it from <c>Contigo.Renewals</c>'s or <c>Contigo.Quotes</c>'s own
+/// <c>AddXxxModule</c> — whichever runs first in a given host wins the single registration, harmlessly,
+/// for every module after it (mirrors this method's own <see cref="ITenantContext"/> remark above). No
+/// host-side (<c>Contigo.Api.Program</c>/<c>Contigo.Worker.Program</c>) change is required: both
+/// already call <c>AddSavingsModule</c>, so <see cref="Contigo.Benchmark.IBenchmarkService"/> becomes
+/// resolvable as a side effect of that existing call, not a new call list entry.
+/// </para>
 /// </summary>
 public static class ServiceCollectionExtensions
 {
@@ -46,6 +67,15 @@ public static class ServiceCollectionExtensions
         // Same ambient tenant claim every module's DbContext shares (ADR-009) — see the type doc
         // comment.
         services.TryAddSingleton<ITenantContext, TenantContext>();
+
+        // Task E04/F04/US01/T01 (r3-integration) — see the type doc comment's own paragraph on why
+        // this call, not a Contigo.Api.Program change, is what makes IBenchmarkService resolvable.
+        // PriceNormalizationCalculator/SavingsProvenanceClassifier already depend on
+        // Contigo.Benchmark.Contracts types at compile time (Contigo.Savings.csproj's own
+        // ProjectReference, part of this module's allowed [SharedKernel, Benchmark] reference set —
+        // Contigo.ArchitectureTests.DependencyDirectionTests); this is that same dependency's runtime
+        // DI registration.
+        services.AddBenchmarkModule();
 
         services.AddDbContext<SavingsDbContext>(
             (sp, options) => SavingsDbContextOptions.Configure(

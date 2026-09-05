@@ -87,7 +87,7 @@ migrations, not in Terraform.
 | GET | `/api/contracts/{id}/corrections` | `X-Tenant-Id` header; field-level correction history for one contract, newest first (`Contigo.Documents.Contracts.Application.ContractCorrectionHistoryQueryService`) — 404 if the contract does not exist for the tenant, `[]` if it exists but was never corrected |
 | GET | `/api/audit` | tenant-scoped; expects a claims principal (integration tests inject one) |
 | GET | `/api/contracts` | portfolio list; spec §8.1 columns; `X-Tenant-Id` header; optional filters `supplierId`, `status`, `risk` (Low/Medium/High/Critical), `autoRenewal`, `minAnnualSpend`, `maxAnnualSpend`, `renewalFrom`/`renewalTo` (yyyy-MM-dd) — no `category` filter yet, see `PortfolioFilter`'s doc comment; optional paging `page` (default 1), `pageSize` (default 25, max 100); response is `{ items, page, pageSize, totalCount }`, not a bare array |
-| GET | `/api/contracts/{id}` | Contract 360 aggregate; spec §8.2 header + tabs (overview, commercials, products, clauses, obligations, risks, documents, benchmark, renewal, activity); `X-Tenant-Id` header; 404 when the contract does not exist or belongs to another tenant; `benchmark`/`activity` are always empty arrays until R3/R4 — see `Contract360Result`'s doc comment |
+| GET | `/api/contracts/{id}` | Contract 360 aggregate; spec §8.2 header + tabs (overview, commercials, products, clauses, obligations, risks, documents, benchmark, renewal, activity); `X-Tenant-Id` header; 404 when the contract does not exist or belongs to another tenant; `benchmark`/`activity` are always empty arrays — no task has yet mapped a real contract's line items into a `Contigo.Benchmark.Contracts.BenchmarkQuery` (no supplier-name/geography field exists on `Contract` today), so this tab stays empty even though R3's own benchmark comparison is real and provable elsewhere (see "R3 demo smoke test" below); `activity` remains an R4 placeholder — see `Contract360Result`'s doc comment |
 | POST | `/api/chat/query` | Ask Contigo (spec §8.3); `{ question: string }` + `X-Tenant-Id` header; routes via `AskContigoQueryRouter`. `Semantic` questions run the real RAG pipeline (`EmbeddingRetrievalService.SearchAsync` tenant-scoped retrieval → `RagAnswerService` → `IAiGateway.AnswerAsync`) and respond `{ question, intent, canDetermine, answer, citations: [{documentId, page, section}], message }` — `citations` empty and `canDetermine: false` when authorized retrieval finds nothing (spec §8.4 "no evidence, no claim"), never a fabricated answer. `Structured` questions get an honest `canDetermine: false` + explanatory `message` — no task has yet mapped a real, tenant-scoped `Contract` row into `Contigo.Chat.Application.ContractFact` for `DeterministicQueryHandler` to run against, see that type's own doc comment |
 | GET | `/api/renewals` | Renewal pipeline + insight card (spec §9.3/§10.1); `X-Tenant-Id` header; auto-renewing contracts only, most urgent first; response is `{ items, totalCount }`, each item `{ contractId, supplierId, status, renewalDate, daysUntilRenewal, annualSpend, cancellationDeadline, daysUntilCancellationDeadline, autoRenewal, action, insightCard: { facts, recommendations } }` — `insightCard.recommendations`' benchmark/savings fields (`annualUpliftPercent`, `marketPosition`, `potentialSavingsRange`) are honestly `null` until the Benchmark/Savings modules land (R3); `action`/`recommendedAction` is a deterministic urgency rule, not the full spec §9.2 Priority Score — see `Contigo.Renewals.Application.RenewalPipelineBuilder`'s own doc comment |
 | GET | `/api/renewals/{contractId}/priority` | Explainable priority-score breakdown for one contract (spec §9.2; story us-02-priority-score AC-1/AC-2, task E03/F01/US02/T02); `X-Tenant-Id` header; 404 when the contract does not exist or belongs to another tenant (same rule as `GET /api/contracts/{id}`); response is `{ contractId, totalScore, components: { spendWeight, timeUrgency, benchmarkOpportunity, priceIncreaseRisk, contractRisk } }`, each component `{ score, explanation }` — component weights are configurable, see `Contigo.Renewals.Configuration.PriorityScoreWeightsOptions` below; `priceIncreaseRisk`/`benchmarkOpportunity` use their honest no-data default (minimum / neutral respectively) since no uplift or benchmark-position data is wired to real contracts yet |
@@ -249,12 +249,26 @@ exists so the caller still sees real (if insufficient) provenance.
 
 `ServiceCollectionExtensions.AddBenchmarkModule` wires `IBenchmarkService` to
 `BenchmarkAdapterRegistry`, which now dispatches to this adapter by default
-(task E04/F01/US02/T02) — but no host calls `AddBenchmarkModule` yet, the
-same "wiring lands with the first real caller" gap `Contigo.Savings` (price
-normalization exists — task E04/F02/US01/T01 — but no DI registration of its
-own yet) will close, and `Contigo.Renewals`'s own
+(task E04/F01/US02/T02).
+
+**Task E04/F04/US01/T01 (r3-integration)** closes the wiring gap this section
+used to name here ("no host calls `AddBenchmarkModule` yet"):
+`Contigo.Savings.Infrastructure.ServiceCollectionExtensions.AddSavingsModule`
+now calls `AddBenchmarkModule` itself — the same "a module that depends on
+another module's interface registers that dependency's own DI wiring
+transitively" convention this host already uses for `AddDocumentsContractsModule`
+-> `AddAiGatewayModule` (see "AI Gateway" above). `Contigo.Api` already calls
+`AddSavingsModule`, so `IBenchmarkService` is now resolvable there with no
+`Program.cs` change at all — proven end to end by
+`Contigo.IntegrationTests.R3EndToEndTests` (see "R3 demo smoke test" below).
+`Contigo.Worker` does not call `AddSavingsModule` (no worker job creates a
+`SavingsOpportunity` today — see "Savings Intelligence" below), so it still
+does not resolve `IBenchmarkService` either; that is the same, pre-existing
+"wiring lands with the first real caller" gap, unrelated to this task's own
+fix. `Contigo.Renewals`'s own
 `RenewalPriorityInputs.BenchmarkMarketPositionPercent` (see "explainable
-priority score" below) still has no real producer wired to it either.
+priority score" below) still has no real producer wired to it — a different
+module, out of this task's own "do not touch unrelated wave artifacts" scope.
 
 ## Ask Contigo — query router + deterministic queries + RAG citations
 
@@ -761,6 +775,17 @@ contract into a `CreateSavingsOpportunityRequest`; that composition (in `Contigo
 project allowed to reference every module") is a follow-up, the same "wiring lands with the first
 real caller" gap the previous section names for `PriceNormalizationCalculator` itself.
 
+**Task E04/F04/US01/T01 (r3-integration)** proves the whole chain this gap still leaves manual —
+`IBenchmarkService.GetBenchmarkAsync` -> `PriceNormalizationCalculator.Compare` ->
+`SavingsOpportunityService.CreateAsync` -> `PATCH .../{id}` (owner, then a realized value) ->
+`GET /api/savings`/`GET /api/savings/kpis` — end to end against the real host and a real, migrated,
+RLS-enforced database: `Contigo.IntegrationTests.R3EndToEndTests` resolves `IBenchmarkService`/
+`SavingsOpportunityService` directly from the host's own container (the same "no dedicated route
+exists yet, exercise the service the host resolves" convention `R2EndToEndTests` already established
+for `RenewalActionService`), since no real caller maps a contract's line items into a
+`BenchmarkQuery` yet either (no supplier-name/geography field exists on `Contract` today). See "R3
+demo smoke test" below.
+
 `AddSavingsModule` (task E04/F02/US02/T01) gives this module its first `DbContext`
 (`SavingsDbContext`) and is now called by `Contigo.Api`'s `Program.cs` — RLS is wired the same
 `AddTenantRowLevelSecurity` migration + `TenantRlsConnectionInterceptor` mechanism every other
@@ -850,6 +875,59 @@ comparison time. Persisting real per-opportunity provenance is a follow-up for w
 first wires `PriceNormalizationCalculator`'s output into `SavingsOpportunityService.CreateAsync` —
 the same "wiring lands with the first real caller" gap this README's other Savings sections already
 document.
+
+## R3 demo smoke test
+
+The automated proof of task E04/F04/US01/T01 (r3-integration) is `dotnet test` —
+`Contigo.IntegrationTests.R3EndToEndTests` (AC-1: a "matched contract" benchmark comparison reports
+current price + P25/P50/P75 + percentile/target/saving/confidence/provenance for a confident fixture
+match, and honestly abstains — still with confidence/provenance, never a bare failure — when the
+matched comparable is dimensionally strong but statistically too thin (`fixture-confidence`, task
+E04/F01/US02/T02); AC-2: a `SavingsOpportunity` is identified from that comparison, owned via `PATCH
+/api/savings/{id}`, listed with its confidence tier (`savings-list`), and marked realized
+(`realized-savings`) — with `GET /api/savings/kpis` reflecting each move; AC-3: the only
+`IBenchmarkProviderAdapter` registered anywhere in the composed host is `FixtureBenchmarkAdapter`) and
+`R3CrossTenantIsolationTests` (the same AC-2 surface proven isolated across two tenants, the same
+"drive the whole path across two tenants through the real host" value-add
+`R1CrossTenantIsolationTests`/`R2CrossTenantIsolationTests` already established). Run just these:
+
+```bash
+cd backend
+dotnet test Contigo.slnx --configuration Release --filter "FullyQualifiedName~R3"
+```
+
+To manually smoke-test the parts of this path that already have a public HTTP surface, against a
+running `dev`/`demo` deployment:
+
+```bash
+API=https://<api-host>
+TENANT=$(curl -s -X POST "$API/api/workspaces" -H 'Content-Type: application/json' \
+  -d '{"name":"Smoke Test Co"}' | jq -r .id)
+
+# A fresh tenant honestly starts at all-zero KPIs — no fabricated baseline.
+curl -s "$API/api/savings/kpis" -H "X-Tenant-Id: $TENANT" | jq .
+curl -s "$API/api/savings" -H "X-Tenant-Id: $TENANT" | jq .
+
+# Once an opportunity id exists for this tenant (see honest caveat below), its lifecycle is fully
+# curl-able: own it, then realize it, then watch the KPI bucket move.
+OPPORTUNITY=<opportunity-id>
+curl -s -X PATCH "$API/api/savings/$OPPORTUNITY" -H "X-Tenant-Id: $TENANT" \
+  -H 'Content-Type: application/json' -d '{"owner":"procurement@acme.example","status":"InProgress"}' | jq .
+curl -s -X PATCH "$API/api/savings/$OPPORTUNITY" -H "X-Tenant-Id: $TENANT" \
+  -H 'Content-Type: application/json' -d '{"realizedAmount":20000}' | jq .
+curl -s "$API/api/savings/kpis" -H "X-Tenant-Id: $TENANT" | jq .
+```
+
+Honest caveat: identifying a *new* `SavingsOpportunity` from a live benchmark comparison
+(`IBenchmarkService.GetBenchmarkAsync` -> `PriceNormalizationCalculator.Compare` ->
+`SavingsOpportunityService.CreateAsync`) has no public HTTP route yet — `CreateSavingsOpportunityRequest`'s
+own doc comment names why, and this task deliberately did not invent a contract-to-`BenchmarkQuery`
+mapping to close it (no supplier-name/geography field exists on a real `Contract` yet; fabricating one
+would misrepresent data this codebase does not actually have, Appendix C rule 10). This smoke path
+proves the *lifecycle* HTTP surface end to end (own -> list -> realize -> KPI rollup, all tenant-scoped
+and RLS-enforced); `R3EndToEndTests` proves the benchmark-comparison half — and the identify step that
+bridges the two — against the real host directly, the same "no dedicated route yet, exercise the
+service the host resolves" convention `R2EndToEndTests` already established for `RenewalActionService`.
 
 ## Containers and CI
 
