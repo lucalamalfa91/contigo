@@ -122,6 +122,13 @@ public sealed class R2IntegrationFixture : WebApplicationFactory<Program>, IAsyn
         builder.UseSetting("ConnectionStrings:DocumentsContracts", _appConnectionString);
         builder.UseSetting("ConnectionStrings:Audit", _appConnectionString);
         builder.UseSetting("ConnectionStrings:Renewals", _appConnectionString);
+        // Task E04/F02/US02/T01 (savings-opportunity) gave Contigo.Savings its first DbContext, so
+        // Program.cs now requires this key too (same fail-fast guard as the four above). No R2
+        // scenario exercises the Savings module yet, but pointing it at this run's own Postgres
+        // container (rather than a bare syntactically-valid placeholder) costs nothing and keeps
+        // every module's connection string uniformly "this run's own database" should a future R3+
+        // fixture extend this one instead of adding a new type.
+        builder.UseSetting("ConnectionStrings:Savings", _appConnectionString);
         // Never actually dialled — IDocumentStorage is replaced with an in-memory fake below —
         // but Program.cs's own startup check requires a non-null configuration value to be
         // present (same syntactically-valid-value approach R0IntegrationFixture/R1IntegrationFixture

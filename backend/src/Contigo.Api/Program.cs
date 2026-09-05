@@ -9,6 +9,7 @@ using Contigo.Documents.Contracts.Application.Extraction;
 using Contigo.Documents.Contracts.Infrastructure;
 using Contigo.Identity.Workspace.Infrastructure;
 using Contigo.Renewals.Infrastructure;
+using Contigo.Savings.Infrastructure;
 using Contigo.SharedKernel;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -81,6 +82,18 @@ var renewalsConnectionString = builder.Configuration.GetConnectionString("Renewa
         "(set env var ConnectionStrings__Renewals in deployed environments).");
 
 builder.Services.AddRenewalsModule(renewalsConnectionString);
+
+// Task E04/F02/US02/T01 (savings-opportunity, GET/PATCH /api/savings): the Savings module's own
+// AddSavingsModule(IServiceCollection, string) (ADR-002) — this module's first DbContext
+// (SavingsDbContext, backing SavingsOpportunityService), the same "wiring lands with the first
+// real caller" sequencing AddRenewalsModule/AddChatModule followed above. Fails fast with the same
+// named-error shape as every other required connection string above.
+var savingsConnectionString = builder.Configuration.GetConnectionString("Savings")
+    ?? throw new InvalidOperationException(
+        "Missing required configuration 'ConnectionStrings:Savings' " +
+        "(set env var ConnectionStrings__Savings in deployed environments).");
+
+builder.Services.AddSavingsModule(savingsConnectionString);
 
 builder.Services.AddHealthChecks();
 
@@ -252,6 +265,22 @@ app.MapPortfolioEndpoints();
 // RenewalsEndpointExtensions and PortfolioEndpointExtensions' own comments for why this gap is not
 // promoted to reports/open-questions.md by this task.
 app.MapRenewalsEndpoints();
+
+// Task E04/F02/US02/T01 (savings-opportunity, AC-1): GET /api/savings (list) and PATCH
+// /api/savings/{id} (update status/owner), tenant-scoped (ADR-009). Same interim X-Tenant-Id
+// placeholder as the endpoints above (ADR-010 is not in force for this task either) — see
+// SavingsEndpointExtensions and RenewalsEndpointExtensions' own comments for why this gap is not
+// promoted to reports/open-questions.md by this task.
+app.MapSavingsEndpoints();
+
+// Task E04/F03/US01/T01 (savings-kpis, AC-1): GET /api/savings/kpis — the procurement-homepage
+// KPI row (spec §4.3/§10.1), tenant-scoped (ADR-009). Composes PortfolioQueryService
+// (Documents/Contracts) and SavingsKpiQueryService (Savings); see SavingsKpiEndpointExtensions'
+// own comment for why "Upcoming Renewals" reuses GET /api/renewals's own candidate query instead
+// of adding a Contigo.Renewals dependency here. Same interim X-Tenant-Id placeholder as the
+// endpoints above (ADR-010 is not in force for this task either) — see that file's own comment
+// for why this gap is not promoted to reports/open-questions.md by this task.
+app.MapSavingsKpiEndpoints();
 
 // Task E02/F04/US02/T01 (us-02-rag-citations, AC-1/AC-2/AC-3): POST /api/chat/query — the RAG
 // retrieval + grounded-answer-with-citations path for Ask Contigo semantic questions (spec §8.3).

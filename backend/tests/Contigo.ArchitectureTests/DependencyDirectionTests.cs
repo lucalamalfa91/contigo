@@ -115,6 +115,34 @@ public class DependencyDirectionTests
             "Domain modules must use AI Gateway / Benchmark Service interfaces instead.");
     }
 
+    /// <summary>
+    /// Task E04/F01/US01/T02 ("adapter registry + provider SDK isolation"): the registry and
+    /// <c>IBenchmarkService</c> itself must never reference a provider SDK directly — only a
+    /// concrete <c>IBenchmarkProviderAdapter</c> implementation may (module-map.md: "Benchmark
+    /// Service (impl) --references--> provider adapters (isolated)"). This task adds no concrete
+    /// adapter, so <c>Contigo.Benchmark.csproj</c> itself must carry zero forbidden SDK package
+    /// references today.
+    /// </summary>
+    [Fact]
+    public void Benchmark_module_must_not_reference_provider_sdks()
+    {
+        var csprojPath = Path.Combine(SolutionRoot, "src", "Contigo.Benchmark", "Contigo.Benchmark.csproj");
+        Assert.True(File.Exists(csprojPath), $"Project file not found: {csprojPath}");
+
+        var packageRefs = GetPackageReferenceNames(csprojPath);
+
+        var forbidden = packageRefs
+            .Where(pkg => ForbiddenSdkPrefixes.Any(prefix =>
+                pkg.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        Assert.True(
+            forbidden.Count == 0,
+            $"[ADR-002/E04-F01-US01-T02] Contigo.Benchmark directly references provider SDKs: " +
+            $"[{string.Join(", ", forbidden)}]. Provider SDK references belong on a concrete " +
+            "IBenchmarkProviderAdapter implementation, isolated from the registry.");
+    }
+
     [Fact]
     public void All_domain_modules_exist_in_solution()
     {
