@@ -34,7 +34,7 @@ backend/
     Contigo.Benchmark/           # IBenchmarkService.GetBenchmarkAsync + normalized Contracts DTOs (task E04/F01/US01/T01) — no adapter/DI registration yet (R3)
     Contigo.Suppliers.Products/  # scaffold (R1+)
     Contigo.Renewals/            # renewal engine + opportunity + explainable priority score + threshold scheduler + dashboard pipeline + action (R2; live) — see "Renewal Intelligence" below
-    Contigo.Savings/             # scaffold (R3)
+    Contigo.Savings/             # price normalization + percentile/target/savings-range calculator (R3; task E04/F02/US01/T01) — see "Savings Intelligence" below
     Contigo.Quotes/              # scaffold (R4)
     Contigo.Chat/                # Ask Contigo structured-vs-semantic query router (R1, task E02/F04/US01/T01) + deterministic dates/spend query handlers (task E02/F04/US01/T02) + RagAnswerService (task E02/F04/US02/T01) + AbstainGuard no-fabrication guard (task E02/F04/US02/T02); AddChatModule wired into Contigo.Api by this last task
   tests/                         # per-module + architecture + R0 integration
@@ -566,6 +566,57 @@ persisted, de-duplicated `RenewalAlert` row with recompute-on-correction.
 wording, "Threshold events fire") and no more; a persisted alert entity
 with recompute-on-correction remains task E03/F02/US01/T02's own, still-open
 file scope.
+
+## Savings Intelligence — deterministic price normalization
+
+`Contigo.Savings.Application.PriceNormalizationCalculator` (task E04/F02/US01/T01,
+us-01-price-normalization, the wave-spec's `savings-normalization` artifact) is product spec
+§4.3/§10's "Normalize current unit price and compare with benchmark P25/P50/P75... Calculate
+current percentile, recommended target and savings range" made concrete: pure, synchronous
+arithmetic over a `PriceComparisonRequest` (an already-fetched `Contigo.Benchmark.Contracts
+.BenchmarkResult` plus the current total cost) — no database, no HTTP call, no LLM call (Appendix C
+rule 6) — returning a `PriceComparisonResult` with a four-way `PriceComparisonStatus`:
+
+- `Compared` — the benchmark had a well-ordered distribution and currencies matched: normalized
+  unit price, percentile rank (0-100, linearly interpolated between P25/P50/P75 and clamped at the
+  ends — never extrapolated beyond the last known marker), a recommended target range
+  (`[min(P25, price), min(P50, price)]` — never above the current price) and a per-unit + total
+  savings range are all populated.
+- `InvalidQuantity` — `BenchmarkQuery.Quantity` is zero or negative: nothing is computed, not even
+  the normalized unit price (division would be meaningless).
+- `CurrencyMismatch` — `BenchmarkQuery.Currency` does not equal `BenchmarkResult.Currency`; this
+  codebase has no exchange-rate service, so converting would fabricate a rate it does not actually
+  know (Appendix C rule 10) — the normalized unit price is still reported in its own currency, but
+  no comparison is attempted.
+- `InsufficientBenchmarkData` — either `BenchmarkResult.Distribution` is null (ADR-001's explicit
+  "insufficient market data" outcome) or it is present but not well-ordered (`P25 <= P50 <= P75`
+  does not hold, a data-quality problem this calculator refuses to silently paper over rather than
+  fail on).
+
+`PriceComparisonRequest` deliberately reuses `Contigo.Benchmark.Contracts.BenchmarkQuery` (rather
+than re-declaring supplier/quantity/term/currency on a second type) for the exact query a caller
+already built to fetch the `BenchmarkResult` in the first place — so currency/quantity are
+guaranteed to be the values the benchmark lookup itself used, and term alignment (comparing a
+12-month contract against 12-month comparables, not 36-month ones) stays the Benchmark Service's
+own matching responsibility (product spec §10.4), never re-derived here. `PriceComparisonResult`
+echoes the original `BenchmarkResult` unchanged on every outcome, so `Confidence`/`Source`/
+`ComparisonDimensions`/`SampleSize`/`UpdatedAt` are always reachable from one result without this
+task re-declaring or guessing at task-02's (confidence + provenance propagation) own output shape.
+
+Same "benchmark data only ever arrives as an already-known value, never a live call" convention
+`Contigo.Renewals.Application.PriorityScoreCalculator` already established: this calculator's
+public API structurally cannot accept a live `Contigo.Benchmark.IBenchmarkService`, so Appendix C
+rule 3 ("never call a benchmark provider directly from renewal, savings or quote business logic")
+can never become an accidental provider call from this module — proven by
+`Contigo.Savings.Tests.PriceNormalizationCalculatorTests.Calculator_never_depends_on_the_live_Benchmark_Service_interface`.
+
+Deliberately out of this task's file scope, each a later task's own: confidence + provenance
+propagation into whatever surface displays this result (us-01-price-normalization task-02), a
+persisted, trackable `SavingsOpportunity` with status/owner/realized outcome
+(us-02-savings-opportunity), and any host/worker wiring that calls `PriceNormalizationCalculator`
+against real contracts — the same "wiring lands with the first real caller" sequencing this
+README's other modules already follow (see "Renewal Intelligence" above). `AddSavingsModule`/DI
+registration does not exist yet for the same reason: nothing calls this calculator from a host yet.
 
 ## Containers and CI
 
