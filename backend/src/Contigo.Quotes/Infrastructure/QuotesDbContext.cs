@@ -1,0 +1,32 @@
+using Contigo.Quotes.Domain;
+using Contigo.Quotes.Infrastructure.Configurations;
+using Microsoft.EntityFrameworkCore;
+
+namespace Contigo.Quotes.Infrastructure;
+
+/// <summary>
+/// EF Core DbContext for the Quotes bounded context (ADR-003; task E05/F01/US01/T01,
+/// quote-extraction — this module's first <c>DbContext</c>). Postgres via npgsql is the only
+/// access path; schema changes flow through code-first migrations only (no hand-edited DDL). RLS
+/// policies and the ambient per-request tenant claim are wired the same way
+/// <c>Contigo.Savings.Infrastructure.SavingsDbContext</c> /
+/// <c>Contigo.Renewals.Infrastructure.RenewalsDbContext</c> already wire them — this context only
+/// shapes the model and exposes the DbSets.
+/// </summary>
+public sealed class QuotesDbContext(DbContextOptions<QuotesDbContext> options) : DbContext(options)
+{
+    public DbSet<Quote> Quotes => Set<Quote>();
+
+    public DbSet<QuoteExtractionJob> QuoteExtractionJobs => Set<QuoteExtractionJob>();
+
+    public DbSet<QuoteLine> QuoteLines => Set<QuoteLine>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.ApplyConfiguration(new QuoteConfiguration());
+        modelBuilder.ApplyConfiguration(new QuoteExtractionJobConfiguration());
+        modelBuilder.ApplyConfiguration(new QuoteLineConfiguration());
+
+        base.OnModelCreating(modelBuilder);
+    }
+}

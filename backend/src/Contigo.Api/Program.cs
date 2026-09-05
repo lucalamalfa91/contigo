@@ -8,6 +8,7 @@ using Contigo.Documents.Contracts.Application;
 using Contigo.Documents.Contracts.Application.Extraction;
 using Contigo.Documents.Contracts.Infrastructure;
 using Contigo.Identity.Workspace.Infrastructure;
+using Contigo.Quotes.Infrastructure;
 using Contigo.Renewals.Infrastructure;
 using Contigo.Savings.Infrastructure;
 using Contigo.SharedKernel;
@@ -94,6 +95,29 @@ var savingsConnectionString = builder.Configuration.GetConnectionString("Savings
         "(set env var ConnectionStrings__Savings in deployed environments).");
 
 builder.Services.AddSavingsModule(savingsConnectionString);
+
+// Task E05/F01/US01/T01 (quote-extraction, POST /api/quotes): the Quotes module's own
+// AddQuotesModule(IServiceCollection, string) (ADR-002) — this module's first DbContext
+// (QuotesDbContext, backing QuoteUploadService/QuoteLineExtractionService), the same "wiring
+// lands with the first real caller" sequencing AddSavingsModule/AddRenewalsModule/AddChatModule
+// followed above. Fails fast with the same named-error shape as every other required connection
+// string above.
+var quotesConnectionString = builder.Configuration.GetConnectionString("Quotes")
+    ?? throw new InvalidOperationException(
+        "Missing required configuration 'ConnectionStrings:Quotes' " +
+        "(set env var ConnectionStrings__Quotes in deployed environments).");
+
+builder.Services.AddQuotesModule(quotesConnectionString);
+
+// QuoteExtractionPipeline is host-composition wiring (Contigo.Api.QuoteExtractionPipeline's own
+// doc comment: "the one place in the solution that calls both Contigo.AiGateway and
+// Contigo.Quotes"), not a domain module's own AddXxxModule — so, unlike every registration above,
+// it is registered directly here rather than inside AddQuotesModule (mirrors
+// Contigo.Worker.WorkerServiceCollectionExtensions' own direct registration of
+// QueueConsumerHostedService/IQueueConsumer for the identical "host-only wiring" reason). Scoped:
+// shares this request's own QuotesDbContext/DocumentsContractsDbContext instances (both Scoped)
+// rather than a second, independently-tracked context of either.
+builder.Services.AddScoped<QuoteExtractionPipeline>();
 
 builder.Services.AddHealthChecks();
 
@@ -289,6 +313,13 @@ app.MapSavingsKpiEndpoints();
 // E02/F02/US02/T02) performs the tenant-scoped retrieval, and RagAnswerService (this task) turns
 // the two into a grounded answer with citations or an explicit "cannot determine".
 app.MapChatEndpoints();
+
+// Task E05/F01/US01/T01 (quote-extraction, parent story us-01-quote-line-extraction AC-1/AC-2/
+// AC-4): POST /api/quotes — upload a supplier quote, then synchronously reuse the epic-02 hybrid
+// OCR path and run schema-constrained line-item extraction (quantity/SKU/edition/price/discount/
+// term with evidence + confidence). See QuotesEndpointExtensions/QuoteExtractionPipeline for the
+// endpoint and orchestration respectively.
+app.MapQuotesEndpoints();
 
 app.Run();
 
