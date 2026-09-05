@@ -120,6 +120,12 @@ public sealed class R1IntegrationFixture : WebApplicationFactory<Program>, IAsyn
         // DbContext-backed connection string on this line already does; a future renewal
         // integration test should not have to discover this fixture never wired it.
         builder.UseSetting("ConnectionStrings:Renewals", _appConnectionString);
+        // Task E04/F02/US02/T01 (savings-opportunity) gave Contigo.Savings its first DbContext, so
+        // Program.cs now requires this key too (same fail-fast guard as the four above). No R1
+        // scenario exercises the Savings module yet — same "point at this run's own Testcontainers
+        // instance rather than the static appsettings.Development.json default" rationale as the
+        // Renewals line just above.
+        builder.UseSetting("ConnectionStrings:Savings", _appConnectionString);
         // Never actually dialled — IDocumentStorage is replaced with an in-memory fake below —
         // but Program.cs's own startup check requires a non-null configuration value (same
         // syntactically-valid-value approach R0IntegrationFixture/Contigo.Api.Tests already use).
