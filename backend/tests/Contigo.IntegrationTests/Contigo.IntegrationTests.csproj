@@ -48,6 +48,12 @@
          compile-time type names" reasoning as the Contigo.Renewals reference just above. -->
     <ProjectReference Include="..\..\src\Contigo.Savings\Contigo.Savings.csproj" />
     <ProjectReference Include="..\..\src\Contigo.Benchmark\Contigo.Benchmark.csproj" />
+    <!-- Task E05/F01/US01/T01 (quote-extraction): QuoteEndToEndTests resolves
+         Contigo.Quotes.Infrastructure.QuotesDbContext directly from the host's own container to
+         assert on persisted QuoteLine rows (evidence/confidence, AC-2) — same "Contigo.Api already
+         references this transitively, but a test file needs the compile-time type names" reasoning
+         as the Contigo.Savings/Contigo.Renewals references above. -->
+    <ProjectReference Include="..\..\src\Contigo.Quotes\Contigo.Quotes.csproj" />
   </ItemGroup>
 
 </Project>

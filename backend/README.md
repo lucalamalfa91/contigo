@@ -35,7 +35,7 @@ backend/
     Contigo.Suppliers.Products/  # scaffold (R1+)
     Contigo.Renewals/            # renewal engine + opportunity + explainable priority score + threshold scheduler + dashboard pipeline + action (R2; live) — see "Renewal Intelligence" below
     Contigo.Savings/             # price normalization + percentile/target/savings-range calculator (R3; task E04/F02/US01/T01) + persisted, trackable SavingsOpportunity + GET/PATCH /api/savings (task E04/F02/US02/T01) — see "Savings Intelligence" below
-    Contigo.Quotes/              # scaffold (R4)
+    Contigo.Quotes/              # quote upload + hybrid-OCR-reused, schema-constrained line-item extraction (evidence + confidence; deterministic pricing) + POST /api/quotes (R4; task E05/F01/US01/T01) + SKU/edition normalization against a per-tenant canonical mapping, unmatched-SKU flagging (task E05/F01/US02/T01) + benchmark matching/above-in-line-below market assessment + GET /api/quotes/{id}/assessment, AddBenchmarkModule now wired (task E05/F02/US01/T01) + deterministic recommended target range/potential saving on that same endpoint (task E05/F02/US01/T02) + deterministic negotiation strategy (opening target/acceptable range/walk-away threshold + seven canonical levers with rationale, NegotiationStrategyService, no HTTP endpoint yet) (task E05/F03/US01/T01) + NegotiationOutcome capture (original/target/final/deterministic saving+discount/duration/levers used) + POST /api/negotiations/outcomes, append-only/audit-tracked (task E05/F03/US02/T01) — see "Quote Check" / "Market Assessment" / "Negotiation Strategy" / "Negotiation Outcome" below
     Contigo.Chat/                # Ask Contigo structured-vs-semantic query router (R1, task E02/F04/US01/T01) + deterministic dates/spend query handlers (task E02/F04/US01/T02) + RagAnswerService (task E02/F04/US02/T01) + AbstainGuard no-fabrication guard (task E02/F04/US02/T02); AddChatModule wired into Contigo.Api by this last task
   tests/                         # per-module + architecture + R0 integration
 ```
@@ -70,7 +70,7 @@ on Testcontainers inside `dotnet test`.
 
 EF migrations live in each module that owns a DbContext
 (`Contigo.Identity.Workspace`, `Contigo.Documents.Contracts`,
-`Contigo.Audit`, `Contigo.Renewals`, `Contigo.Savings`). Apply them against
+`Contigo.Audit`, `Contigo.Renewals`, `Contigo.Savings`, `Contigo.Quotes`). Apply them against
 the same database the hosts use; RLS policies are added in those
 migrations, not in Terraform.
 
@@ -95,6 +95,8 @@ migrations, not in Terraform.
 | GET | `/api/savings` | Lists the caller's tenant-scoped `SavingsOpportunity` rows, newest identified first (spec §4.3/§6; module-map.md "Savings \| SavingsOpportunity, RealizedSavings \| /api/savings"; story us-02-savings-opportunity AC-1, task E04/F02/US02/T01; story us-01-savings-kpis AC-2/AC-3, task E04/F03/US01/T02); `X-Tenant-Id` header; response `{ items, totalCount }`, each item also carrying `confidenceLevel` (`Low`/`Medium`/`High`, task E04/F03/US01/T02 — see `SavingsOpportunityResult.ConfidenceLevel`'s own doc comment); no filters yet — see `Contigo.Savings.Application.SavingsOpportunityService.ListAsync`'s own doc comment |
 | PATCH | `/api/savings/{id}` | Updates `owner`, `status` (`Identified`/`InProgress`/`Realized`) and/or `realizedAmount` on one `SavingsOpportunity` (AC-1 "updates status/owner..."; AC-3 "realized value is captured and audit-tracked", task E04/F02/US02/T02); `X-Tenant-Id` header; body `{ owner?, status?, realizedAmount? }` — a genuine partial update, any subset of the three fields; 404 when `{id}` does not name an opportunity for this tenant, 400 for every other validation failure (empty owner, unrecognized status, a negative `realizedAmount`, a `realizedAmount` combined with an explicit `status` other than `Realized`, or none of the three fields supplied); writes one `IAuditWriter` entry per successful call — `savings_opportunity.updated`, or `savings_opportunity.realized` instead when `realizedAmount` was supplied (never both). Supplying `realizedAmount` also inserts a new, append-only `Contigo.Savings.Domain.RealizedSavings` row (in the opportunity's own `currency`) and finalizes `status` as `Realized` — either because the caller's own explicit `status` already said so, or automatically when `status` was omitted (see `SavingsOpportunityService.UpdateAsync`'s own doc comment). The response's `realizedAmount` field is non-`null` only on the call that just recorded one — it is not a rolled-up read of this opportunity's full realized-value history, see `SavingsOpportunityResult.RealizedAmount`'s own doc comment; the response also carries `confidenceLevel` (task E04/F03/US01/T02 — same field the `GET` row above documents, shared `ToResponse` wire-shaping) |
 | PATCH | `/api/savings/{id}` | Updates `owner` and/or `status` (`Identified`/`InProgress`/`Realized`) on one `SavingsOpportunity` (AC-1 "updates status/owner..."); `X-Tenant-Id` header; body `{ owner?, status? }` — a genuine partial update, either or both fields; 404 when `{id}` does not name an opportunity for this tenant, 400 for every other validation failure (empty owner, unrecognized status, or neither field supplied); writes one `IAuditWriter` entry (`savings_opportunity.updated`) per successful call — setting `status` to `Realized` here does **not** yet create an audit-tracked realized-value record, see `Contigo.Savings.Domain.SavingsOpportunityStatus.Realized`'s own doc comment for the gap task E04/F02/US02/T02 (`RealizedSavings`) closes |
+| POST | `/api/quotes` | New Purchase / Quote Check (spec §4.4/§11; module-map.md "Quotes \| Quote, QuoteLine, Assessment... \| /api/quotes"; story us-01-quote-line-extraction AC-1/AC-2/AC-4, task E05/F01/US01/T01); multipart `file` + `X-Tenant-Id` header, same shape as `POST /api/documents`, plus four **optional** form fields task E05/F02/US01/T01 (market-assessment) added — `supplier`, `currency`, `geography`, `purchaseDate` (`yyyy-MM-dd`) — all absent by default and never required for the upload to succeed; nothing in this codebase auto-detects them from the document yet (spec §11.1's own "Identify supplier" workflow step has no task/UI of its own), so a quote uploaded without them simply is not matchable via `GET .../assessment` below until corrected (see `Quote`'s own doc comment; a malformed `purchaseDate` is the one new 400 this endpoint can return); synchronously reuses the epic-02 `HybridDocumentParsingService` (native text or the `ocr` gateway role — ADR-017, no 2-page cap) then runs one schema-constrained `extract` call for line items (quantity/SKU/edition/price/discount/term), persisting one `Contigo.Quotes.Domain.QuoteLine` row per item with source span/page/confidence; `unitPrice`/`extendedPrice` are derived deterministically in code when the model reports only `listPrice`/`discountPercent` (AC-3, Appendix C rule 6 — never asked of the model, see `QuoteLineJsonSchema`); immediately afterward, still the same unit of work, `Contigo.Quotes.Application.Normalization.QuoteLineNormalizationService` (task E05/F01/US01/T02, quote-normalization) sets `NormalizedAnnualUnitPrice`/`NormalizedTermMonths` when `term` matches its own small, fixed billing-cadence vocabulary (monthly/quarterly/semi-annual/annual and common synonyms; every other term deliberately leaves both `null` — spec §11.3's own "line-item normalization is unresolved" outcome, Appendix C rule 10), then `Contigo.Quotes.Application.Normalization.SkuNormalizationService` (task E05/F01/US02/T01, sku-normalization) sets `NormalizedSku`/`NormalizedEdition`/`MatchStatus`; response `{ id, fileName, mimeType, processingStatus, lineItemCount, normalizedLineItemCount, unresolvedNormalizationCount, unmatchedSkuCount, supplier, currency, geography, purchaseDate, createdAt }` — the last four echo exactly what was recorded, including a `null`; a pipeline failure still returns 201 (the upload itself succeeded) with the pre-processing counts all `0`, never an HTTP error. *(This row previously existed twice, one per sibling task's own addition, each missing the other's fields — task E05/F02/US01/T01 consolidated it into the one, accurate, combined shape above.)* |
+| GET | `/api/quotes/{id}/assessment` | Quote assessment (spec §4.4/§11.2, Appendix A "Quote assessment"; module-map.md "Quotes \| Quote, QuoteLine, Assessment... \| /api/quotes"; story us-01-market-assessment AC-1/AC-2 (both the "flag" half, task E05/F02/US01/T01, and the "recommended target range + potential saving" half, task E05/F02/US01/T02)/AC-3); `X-Tenant-Id` header; 404 when `{id}` does not name a quote for this tenant; one assessment per `Contigo.Quotes.Domain.QuoteLine` on the quote (creation order) — `{ quoteId, lines: [{ quoteLineId, status, position, unitPrice, quantity, benchmark, confidence, targetSaving, explanation }] }`. `status` is `Assessed`/`QuoteDataUnresolved`/`InsufficientBenchmarkData` (`Contigo.Quotes.Domain.MarketAssessmentStatus`); `position` (`BelowMarket`/`InLine`/`AboveMarket`) is populated only when `status` is `Assessed` — the market band is `[P25, P75]` of the matched `Contigo.Benchmark.Contracts.BenchmarkResult.Distribution`, `InLine` otherwise (see `MarketAssessmentCalculator`'s own doc comment); `benchmark`/`confidence`/`targetSaving` are `null` exactly when no Benchmark Service call was even attempted (`QuoteDataUnresolved`: the quote is missing `supplier`/`currency`/`geography`/`purchaseDate`, or the line itself has no usable product/quantity/term/price), never withheld just because the comparison itself abstained (spec §11.3's benchmark-trust rule — `InsufficientBenchmarkData` still carries real `source`/`sampleSize`/`comparisonDimensions` provenance, and a real `targetSaving` object whose `recommendedTargetLow`/`recommendedTargetHigh`/`savingsRangeLow`/`savingsRangeHigh`/`totalSavingsRangeLow`/`totalSavingsRangeHigh` are honestly `null` with a named `explanation` — see `TargetSavingCalculator`'s own doc comment) |
 | GET | `/api/savings/kpis` | Procurement-homepage KPI row (spec §4.3/§10.1; story us-01-savings-kpis AC-1, task E04/F03/US01/T01); `X-Tenant-Id` header; response `{ annualSpendAnalyzed: [{ currency, amount, contractCount }], contractsAnalyzedCount, savingsIdentified/savingsInProgress/savingsRealized: [{ currency, low, high, count, averageConfidence }], upcomingRenewalsCount }` — every money value is grouped by currency, never summed across currencies (no exchange-rate service exists anywhere in this codebase); `contractsAnalyzedCount` counts contracts whose linked document reached `DocumentProcessingStatus.Completed` (a `Contract` row can exist before that — see `Contigo.Documents.Contracts.Application.PortfolioAnalysisCalculator`'s own doc comment); `savingsRealized` reflects each opportunity's own estimated range, not yet the separate, audit-tracked `RealizedSavings` value (task E04/F02/US02/T02's own gap, see `SavingsOpportunityStatus.Realized`'s doc comment); `upcomingRenewalsCount` is the same auto-renewing-contract count `GET /api/renewals`'s own `totalCount` already reports (same 100-contract-per-tenant cap) — see `Contigo.Api.SavingsKpiEndpointExtensions`'s own comment for why it is not a second, independently-computed number |
 
 **Interim auth:** every endpoint above that takes an `X-Tenant-Id` header
@@ -929,6 +931,604 @@ and RLS-enforced); `R3EndToEndTests` proves the benchmark-comparison half — an
 bridges the two — against the real host directly, the same "no dedicated route yet, exercise the
 service the host resolves" convention `R2EndToEndTests` already established for `RenewalActionService`.
 
+## Quote Check — quote upload + line-item extraction
+
+`Contigo.Quotes` (task E05/F01/US01/T01, quote-extraction; parent story
+us-01-quote-line-extraction) is the first Quotes-module task: `POST
+/api/quotes` (see the HTTP surface table above) uploads a supplier quote
+and runs schema-constrained line-item extraction synchronously before
+responding — the same "read the bytes once, run the pipeline inline"
+shape `POST /api/documents`/`DocumentProcessingPipeline` already
+established for contracts (task E02/F06/US01/T01).
+
+- `Contigo.Quotes.Domain.Quote`/`QuoteExtractionJob`/`QuoteLine` are this
+  module's own entities — deliberately **not** a reference to
+  `Contigo.Documents.Contracts.Domain.Document`/`Contract`: ADR-002 forbids
+  `Contigo.Quotes` from referencing `Contigo.Documents.Contracts` at all
+  (its allowed Contigo references are exactly `[SharedKernel, Benchmark]`
+  — see "Dependency direction" below), and a quote is not a contract (spec
+  §11's own Quote → Benchmark → Assessment → Negotiate → **Contract** flow
+  treats "becomes a contract" as a later, explicit step).
+- `Contigo.Api.QuoteExtractionPipeline` (internal — host-composition
+  wiring, the same treatment `Contigo.Worker.Queue.QueueConsumerHostedService`
+  already gets from `Contigo.ArchitectureTests
+  .DependencyDirectionTests.Host_must_not_contain_domain_types`) is the one
+  place that calls both `Contigo.AiGateway` and `Contigo.Quotes`: it reuses
+  the epic-02 `Contigo.Documents.Contracts.Application.Extraction
+  .HybridDocumentParsingService` verbatim (native text extraction, or the
+  `ocr` gateway role — Azure AI Document Intelligence, ADR-017 — for
+  scanned/image/low-text quote PDFs; full document, no 2-page cap; AC-4),
+  then runs one `extract` call against `Contigo.Quotes.Application
+  .Extraction.QuoteLineJsonSchema.LineItems()` and hands the raw payload to
+  `Contigo.Quotes.Application.Extraction.QuoteLineExtractionService` to
+  persist.
+- AC-3 ("Separate arithmetic from LLM language", Appendix C rule 6): the
+  line-item schema has **no** computed-total property at all — the model
+  reports only `quantity`/`sku`/`edition`/`unitPrice`/`listPrice`/
+  `discountPercent`/`term`. `QuoteLineExtractionService.ComputePricing`
+  derives `QuoteLine.UnitPrice` (from `listPrice`/`discountPercent` when
+  the model did not report a unit price directly) and
+  `QuoteLine.ExtendedPrice` (`quantity × unitPrice`) in plain C# decimal
+  arithmetic — proved directly by
+  `Contigo.Quotes.Tests.QuoteLineExtractionServiceTests` and end-to-end by
+  `Contigo.IntegrationTests.QuoteEndToEndTests`.
+- Every line carries the same evidence + confidence tail as every other
+  extraction pipeline in this codebase (`sourceSpan`/`sourcePage`/
+  `confidence`, Appendix C rule 2) directly on the `QuoteLine` row — one
+  row is already one fact, the same shape
+  `Contigo.Documents.Contracts.Domain.ContractLineItem` uses (no separate
+  evidence side-table).
+- Deliberately out of task-01's own scope (not silently absorbed): the
+  `Quote`-level aggregate fields spec §6 also names ("supplier, dates,
+  currency, values, status") and benchmark matching/assessment/negotiation
+  (spec §11's later Quote Check steps, `GET /api/quotes/{id}/assessment`,
+  `POST /api/negotiations/outcomes`) — task-01's own coding objective was
+  "Quote upload + line-item extraction". See below for task-02
+  ("Line-item normalization + evidence/confidence"). **Task E05/F02/US01/T01
+  (market-assessment) closed the supplier/currency/geography/purchase-date
+  and benchmark-matching/assessment half of this gap** — see "Market
+  Assessment" below; negotiation (`POST /api/negotiations/outcomes`)
+  remains future work no task has picked up yet.
+
+**Task E05/F01/US01/T02 (quote-normalization)** adds spec §11.1's next
+pipeline step, "Normalize unit economics" (between "Extract" and "Match
+benchmark"), right after line-item extraction inside the same
+`QuoteExtractionPipeline.ProcessAsync` unit of work — before the one
+shared `SaveChangesAsync`, so extraction and normalization persist
+together or not at all. No new AI Gateway role and no new project
+reference: `Contigo.Quotes.Application.Normalization
+.QuoteLineNormalizationService.NormalizeUnitEconomics` is a second pure,
+deterministic calculator alongside task-01's own `ComputePricing` — same
+Appendix C rule 6 discipline, applied to a second pipeline stage.
+`QuoteLine` gains two columns: `NormalizedAnnualUnitPrice` (`UnitPrice`
+rescaled to an annual rate) and `NormalizedTermMonths` (the recognized
+cadence length, in months, that produced it — kept as evidence, the same
+"never a consequential derived fact without a way to see why" spirit
+`SourceSpan`/`SourcePage` already give the raw extraction).
+`Contigo.Quotes.Application.Normalization.QuoteBillingCadence
+.RecognizeMonths` deliberately recognizes only a small, fixed,
+unambiguous vocabulary (`monthly`/`quarterly`/`semi-annual`/`annual` and
+their common synonyms — 1/3/6/12 months respectively); a numeric
+commitment length ("36 months", "3 years"), "one-time"/"perpetual", a
+blank term, or any other free text `QuoteLine.Term` may legitimately hold
+(no ADR or spec fixes a closed vocabulary — see that property's own doc
+comment) is left honestly unresolved (both new columns stay `null`)
+rather than guess a billing-period relationship this codebase does not
+actually know — the same restraint
+`Contigo.Savings.Application.PriceComparisonRequest`'s own doc comment
+already documents for cross-module term alignment (Appendix C rule 10).
+A `null` `NormalizedAnnualUnitPrice` on any line **is** spec §11.3's own
+"Do not generate a savings target if line-item normalization is
+unresolved" guardrail made checkable — this task does not itself gate
+anything (no savings target exists yet for a quote to gate), it only
+produces the honest, queryable signal for whatever future benchmark-match
+task reads it. `POST /api/quotes`'s response gains
+`normalizedLineItemCount`/`unresolvedNormalizationCount` (see the HTTP
+surface table above) so the same outcome is visible over HTTP, not just
+in the database — proved directly by
+`Contigo.Quotes.Tests.QuoteLineNormalizationServiceTests` and, for the
+already-recognized-cadence common case, end-to-end by the existing
+`Contigo.IntegrationTests.QuoteEndToEndTests` fixture (`"term":"Annual"`).
+
+**Task E05/F01/US02/T01 (sku-normalization)** adds story
+us-02-sku-normalization's own AC-1 ("Normalize SKU/edition to the
+canonical product mapping") and the "show unmatched SKUs" half of AC-2:
+
+- `Contigo.Quotes.Domain.SkuProductMapping` is this module's own,
+  self-contained "canonical product mapping" — a tenant-scoped
+  raw-normalized-SKU → canonical-SKU/edition/product-name table, **not** a
+  reference into `Contigo.Suppliers.Products` (still an empty scaffold, and
+  ADR-002 forbids `Contigo.Quotes` from referencing it or any other domain
+  module's internals at all). `Contigo.Quotes.Application.Normalization
+  .SkuNormalizer.Normalize` is the pure, deterministic text rule (trim,
+  collapse whitespace, uppercase; punctuation is left untouched on purpose
+  — see that type's own doc comment) both sides of the lookup share.
+  `SkuNormalizationService.NormalizeAsync` re-reads a quote's own lines from
+  the database and sets each one's `NormalizedSku`/`NormalizedEdition`/
+  `MatchStatus` (`NotApplicable`/`Unmatched`/`Matched` —
+  `Contigo.Quotes.Domain.SkuMatchStatus`); `Contigo.Api.QuoteExtractionPipeline`
+  calls it right after persisting a quote's freshly-extracted lines, so
+  every upload gets a real match status, not just a later explicit
+  recalculate call.
+- Honest gap, by construction: nothing writes a `SkuProductMapping` row yet
+  (task E05/F01/US02/T02, "Manual product mapping + recalculate trigger",
+  is its intended first writer), so every tenant starts with zero mappings
+  and a line with a present SKU is always `Unmatched` today. This is spec
+  §11.3's own guardrail ("Do not generate a savings target if line-item
+  normalization is unresolved") made concrete rather than a limitation of
+  this task: no benchmark/assessment step for quotes exists yet either for
+  a resolved mapping to unblock.
+- Proved directly by `Contigo.Quotes.Tests.SkuNormalizationServiceTests`
+  (pure normalization, pure per-line matching, and a real-Postgres+RLS
+  persistence/re-run/cross-tenant proof). `POST /api/quotes`' response now
+  also carries `unmatchedSkuCount` (see the HTTP surface table above) —
+  `Contigo.IntegrationTests.QuoteEndToEndTests` still passes unchanged with
+  it present (that test's own fixture quote has no seeded mapping, so it is
+  `1`), but no test yet asserts that field's value over real HTTP
+  specifically; the persistence-level proof above is this task's own
+  Definition of Done.
+
+## Market Assessment — benchmark matching + above/in-line/below
+
+Task E05/F02/US01/T01 (market-assessment; parent story us-01-market-assessment
+AC-1 "Match normalized line items to the Benchmark Service
+(multi-dimensional)", AC-2's own "flag" half, AC-3 "`GET
+/api/quotes/{id}/assessment` returns the assessment with
+confidence/provenance") closes the gap this section's own task-01 paragraph
+used to name ("benchmark matching/assessment/negotiation remain future work
+no task has picked up yet") and the gap `Contigo.Quotes.Infrastructure
+.ServiceCollectionExtensions.AddQuotesModule`'s own doc comment used to name
+("deliberately does not call `AddBenchmarkModule`... nothing this task adds
+resolves `IBenchmarkService` yet").
+
+- **`Quote` gains its own benchmark-matching fields**: `Supplier`,
+  `Currency`, `Geography`, `PurchaseDate` — spec §6's "Quote-level aggregate
+  fields" that task-01 deliberately deferred. Unlike the identical-looking
+  gap `Contigo.IntegrationTests.R3IntegrationFixture`'s own doc comment left
+  open for `Contigo.Documents.Contracts.Domain.Contract` (ADR-002 forbids
+  `Contigo.Savings` from reaching into that module at all), `Contigo.Quotes`
+  owns both `Quote` and `QuoteLine` itself — no cross-module reference is
+  involved — so there was no architectural reason to leave this one open
+  once a task actually needed it. All four are populated by explicit,
+  **optional** `POST /api/quotes` form fields (see the HTTP surface table
+  above), never inferred from the document text (Appendix C rule 10):
+  nothing in this codebase extracts a document-level supplier/geography/
+  currency, and spec §11.1's own "Identify supplier" workflow step has no
+  task/UI of its own yet. A quote uploaded without them is simply not
+  matchable yet — an honest, expected state
+  (`Contigo.Quotes.Application.Assessment.MarketAssessmentQueryBuilder`
+  reports that per line, naming exactly which dimension is missing), not a
+  validation error at upload time.
+- **`AddQuotesModule` now also calls `Contigo.Benchmark
+  .ServiceCollectionExtensions.AddBenchmarkModule`** — the same "a module
+  that depends on another module's interface registers that dependency's
+  own DI wiring transitively" convention `Contigo.Savings
+  .Infrastructure.ServiceCollectionExtensions.AddSavingsModule`'s own doc
+  comment already established for this exact call (and explicitly
+  anticipated a future `Contigo.Quotes` caller doing the same).
+  `Contigo.Quotes.csproj`'s own `ProjectReference` to `Contigo.Benchmark`
+  pre-dated this task (an R4 scaffold anticipating this exact step) — this
+  is that compile-time dependency's first runtime DI registration.
+- **`Contigo.Quotes.Application.Assessment.MarketAssessmentQueryBuilder`**
+  builds a `Contigo.Benchmark.Contracts.BenchmarkQuery` per line: `Product`
+  from `QuoteLine.Description`, `Sku` from `NormalizedSku` (falling back to
+  the raw `Sku`), `Quantity`/`Term` from the line, `Supplier`/`Geography`/
+  `Currency`/`PurchaseDate` from the quote. Pure, honest, never fabricates a
+  missing dimension. **Deliberately compares the line's raw `UnitPrice`, not
+  `NormalizedAnnualUnitPrice`**: that annualized figure only exists for a
+  term `QuoteBillingCadence` recognizes (a word vocabulary — "annual",
+  "monthly", ...), a different, narrower vocabulary than
+  `Contigo.Benchmark.Fixtures.FixtureBenchmarkAdapter`'s own catalog `Term`
+  values ("12 months", "36 months") — mirrors `Contigo.Savings.Application
+  .PriceComparisonRequest`'s own "term alignment is the Benchmark Service's
+  own matching responsibility, no additional term-arithmetic here" doc
+  comment.
+- **`Contigo.Quotes.Application.Assessment.MarketAssessmentCalculator`**
+  flags the line's price `BelowMarket`/`InLine`/`AboveMarket` against the
+  matched `BenchmarkResult.Distribution`'s `[P25, P75]` band (at-or-below
+  P25 is below market; at-or-above P75 is above; anything else, including
+  exactly P50, is in line) — or the honest
+  `Contigo.Quotes.Domain.MarketAssessmentStatus.InsufficientBenchmarkData`
+  when the benchmark has no usable distribution (ADR-001), never a
+  fabricated flag (Appendix C rule 10).
+- **`Contigo.Quotes.Application.Assessment.MarketAssessmentProvenanceClassifier`**
+  mirrors `Contigo.Savings.Application.SavingsProvenanceClassifier` field-
+  for-field and threshold-for-threshold (High ≥ 0.7, Medium ≥ 0.4) —
+  duplicated, not shared: ADR-002's allowed-reference set for
+  `Contigo.Quotes` is exactly `[SharedKernel, Benchmark]`.
+  `Contigo.Quotes.Application.Assessment.MarketAssessmentService.AssessAsync`
+  is the one place in this module that actually calls
+  `IBenchmarkService.GetBenchmarkAsync` — Appendix C's benchmark rule names
+  the provider *adapter*, not this abstraction (`IBenchmarkService`'s own
+  doc comment: "Domain modules depend on this abstraction only").
+- Proved directly by `Contigo.Quotes.Tests.MarketAssessmentCalculatorTests`/
+  `MarketAssessmentQueryBuilderTests` (pure, no database) and end to end by
+  `Contigo.Quotes.Tests.MarketAssessmentServiceTests` against a real
+  Postgres+RLS database and the real `FixtureBenchmarkAdapter` (never a
+  stub) — one quote, three lines, demonstrating `Assessed`/
+  `QuoteDataUnresolved`/`InsufficientBenchmarkData` together, the same
+  "build a query by hand that matches a real fixture catalog row" convention
+  `Contigo.IntegrationTests.R3EndToEndTests` already established for the
+  analogous Savings comparison.
+- **Task E05/F02/US01/T02 (target-saving)** closes the gap this section's own
+  task-01 paragraph used to name ("recommended target range and potential
+  saving... are task-02's own, separate `target-saving` wave-spec artifact"):
+  `Contigo.Quotes.Application.Assessment.TargetSavingCalculator.Compute`
+  computes spec §11.2's "Recommended target"/"Potential saving" rows —
+  `RecommendedTargetLow/High = min(P25/P50, unitPrice)` (never above the
+  current price) and `SavingsRangeLow/High` (per-unit) +
+  `TotalSavingsRangeLow/High` (scaled by `QuoteLine.Quantity` — the
+  `CHF 80-110k`-shaped total spec §11.2's own example shows, not a per-unit
+  rate). Mirrors `Contigo.Savings.Application.PriceNormalizationCalculator`'s
+  own target/savings-range formula exactly — duplicated, not referenced,
+  the same `[SharedKernel, Benchmark]`-only reference rule
+  `MarketAssessmentProvenanceClassifier` already follows. Never fabricates: a
+  benchmark with no usable distribution returns a `LineMarketAssessment
+  .TargetSaving` with every numeric field `null` plus a named reason —
+  still a real object, never silently withheld, the same benchmark-trust
+  posture `Provenance` already takes for `InsufficientBenchmarkData` (spec
+  §11.3). `LineMarketAssessment` gained a `Quantity` field (echoed from
+  `QuoteLine.Quantity`, the same "caller never has to re-fetch the line"
+  posture `UnitPrice` already has) so `TargetSaving` can scale its total
+  figures without a second database round-trip. `GET
+  /api/quotes/{id}/assessment`'s response gained a `targetSaving` object per
+  line (see the HTTP surface table above) alongside the existing
+  `benchmark`/`confidence` objects. Proved directly by
+  `Contigo.Quotes.Tests.TargetSavingCalculatorTests` (pure, no database,
+  mirroring `MarketAssessmentCalculatorTests`'s own shape) and end to end by
+  the same `MarketAssessmentServiceTests` fixture above — the parent story
+  us-01-market-assessment Definition of Done in full ("`dotnet test` proves
+  assessment + target/saving from fixture benchmark"). Negotiation strategy
+  generation is task E05/F03/US01/T01's own scope — see "Negotiation
+  Strategy" below; outcome capture (`POST /api/negotiations/outcomes`,
+  feature-03's us-02) remains future work no task has picked up yet.
+- **Incidental fix, required for this task's own `dotnet build` to succeed
+  at all**: `Contigo.Api.QuoteExtractionPipeline.ProcessAsync` (touched by
+  both task E05/F01/US01/T02 and task E05/F01/US02/T01 in parallel
+  wave-spec phases) had a duplicate local-variable declaration
+  (`normalizationOutcome` declared twice, `CS0128`) and two stray, dangling
+  duplicate lines (inside the method's own `return` statement and inside
+  `QuoteProcessingSummary`'s record declaration) — each sibling task had
+  appended its own new field/parameter without reconciling with the other's
+  identical-shaped addition, so the whole `Contigo.Api` project (and every
+  test depending on it — `Contigo.Api.Tests`, `Contigo.IntegrationTests`)
+  could not compile. Renamed the two outcomes to their own distinct names
+  (`lineNormalizationOutcome`/`skuNormalizationOutcome`) and removed the
+  duplicate lines; no behavioural change to either sibling task's own
+  already-landed logic. The `POST /api/quotes` HTTP-surface-table row above
+  had the identical duplicate-row shape (two rows, each missing the other's
+  fields) — consolidated into the one row above for the same reason.
+- **Task E05/F04/US01/T01 (r4-integration) fixes**: `MarketAssessmentService`
+  never opened its own `ITenantContext.BeginScope` — unlike every other
+  tenant-scoped application service in this codebase — and neither did
+  `Contigo.Api.QuotesEndpointExtensions.GetAssessmentAsync` upstream of it.
+  Against a real, RLS-enforced, non-superuser connection (every deployed
+  environment), `GET /api/quotes/{id}/assessment` would 404 for every real
+  quote, always — undetected because `MarketAssessmentServiceTests` calls
+  this method from inside a test-provided scope, and no integration test had
+  yet driven this endpoint over real HTTP against an unprivileged Postgres
+  role. Fixed the same way every sibling service already does it (see that
+  type's own doc comment) — no caller-side change required. Separately,
+  `GetAssessmentAsync` never actually serialized `quantity` on the response
+  despite `LineMarketAssessment.Quantity` existing exactly to be echoed here
+  and despite this very HTTP-surface-table row documenting it since task
+  E05/F02/US01/T02 — also fixed, so the wire response now matches its own
+  already-published contract. Both surfaced by, and proved fixed by,
+  `Contigo.IntegrationTests.R4EndToEndTests`/`R4CrossTenantIsolationTests` —
+  see "R4 demo smoke test" below.
+
+## Negotiation Strategy — opening target/range/walk-away + levers
+
+Task E05/F03/US01/T01 (negotiation-strategy; parent story
+us-01-negotiation-strategy AC-1 "Generate opening target, acceptable range,
+walk-away threshold, levers, rationale", AC-3 "Arithmetic (target/saving) is
+deterministic; only language is LLM") closes the gap the "Market Assessment"
+section above used to name ("Negotiation ... remains future work no task has
+picked up yet").
+
+- **`Contigo.Quotes.Application.Strategy.NegotiationStrategyCalculator`**
+  is a pure, synchronous calculator (no database/HTTP/LLM call) that turns
+  an already-computed `LineMarketAssessment.TargetSaving` (task
+  E05/F02/US01/T02) into `LineNegotiationStrategy.{OpeningTarget,
+  AcceptableRangeLow/High, WalkAwayThreshold}`: the acceptable range echoes
+  `RecommendedTargetLow/High` verbatim (spec §12.1's "Acceptable target
+  range" row is §11.2's own "Recommended target" row carried forward, not a
+  second computation), opening target steps one range-width below the low
+  end (floored at zero) and walk-away steps one range-width above the high
+  end, clamped to the line's own current `UnitPrice` (never recommend
+  escalating past what is already quoted — the same clamp
+  `TargetSavingCalculator` already applies to `RecommendedTargetHigh`).
+  Never fabricates: no usable target range, or no current `UnitPrice`,
+  returns every numeric field `null` plus an empty lever list and a named
+  reason (Appendix C rule 10) — the same honest-abstain shape
+  `TargetSavingCalculator.Compute` already established.
+- **Levers are always the full, fixed, spec §12.1-named set of seven**
+  (`NegotiationLeverType`: `Volume`, `Term`, `Utilization`, `Alternatives`,
+  `QuarterEnd`, `Bundle`, `PaymentTerms`) — never a variable-length subset —
+  so a caller always sees the complete playbook. `Volume`/`Term`/`Bundle`
+  ground themselves in this line/quote's own recorded data when it exists
+  (`QuoteLine.Quantity`/`Term`, and how many `QuoteLine` rows share this
+  line's own quote); `QuarterEnd` is date-derived (within 14 days of a
+  calendar quarter-end, evaluated as of the caller's own `IClock`-derived
+  "today", never a historical quote date); `Utilization`/`Alternatives`/
+  `PaymentTerms` have no source field anywhere in this module's schema
+  today, so their rationale says so honestly rather than inventing a
+  this-quote-specific fact.
+- **Deterministic language, not yet an AI Gateway `answer`-role call**: AC-3's
+  "only language is LLM" is honoured by keeping every number in the pure
+  calculator above; the per-lever `Rationale` text is V1 deterministic
+  language, the same "`Explanation` is a computed string, never a model
+  call" convention `TargetSavingCalculator`/`MarketAssessmentCalculator`
+  already follow. `Contigo.ArchitectureTests.DependencyDirectionTests`'
+  allowed-reference set for `Contigo.Quotes` is exactly `[SharedKernel,
+  Benchmark]` (see "Dependency direction" below) — unchanged by this task.
+  A future task wiring the `answer` role would do it the same way
+  `Contigo.Api.QuoteExtractionPipeline` already does for the `extract`
+  role: from the composition root, feeding this calculator's own facts in
+  as evidence, never asking the model to invent them.
+  `Contigo.AiGateway.Fixtures.FixtureAiGateway.AnswerAsync` would today only
+  echo those facts back verbatim (no live grounded-generation model exists
+  yet), so deferring that wiring loses no real capability now. Evidence
+  *citations* per lever (AC-2, Appendix C rule 2) were task-01's own,
+  separate, deferred scope (strategy-evidence) — closed below by task
+  E05/F03/US01/T02.
+- **Structured evidence per lever (task E05/F03/US01/T02, strategy-evidence;
+  AC-2 "Rationale cites explicit evidence per lever", Appendix C rule 2
+  "never show a consequential... fact without source evidence and
+  confidence metadata")**: `NegotiationLever` gained an `Evidence` field —
+  `IReadOnlyList<Contigo.Quotes.Application.Strategy.NegotiationLeverEvidence>`,
+  each a `FieldName`/`Value`/`SourceSpan`/`SourcePage`/`Confidence` tuple.
+  Mirrors `Contigo.Documents.Contracts.Domain.ExtractionEvidence`'s own
+  "which field, what value, from where, how confident" addressing scheme,
+  kept as its own `Contigo.Quotes`-local record rather than
+  `Contigo.AiGateway.Contracts.AiCitation`/`AiEvidenceSnippet` (those are
+  document-citation-shaped — `DocumentId`/`Page`/`Section` — for RAG
+  answers over unstructured text, and `Contigo.Quotes`' own
+  allowed-reference set, `[SharedKernel, Benchmark]`, cannot reach
+  `Contigo.AiGateway` anyway). `Volume`/`Term` cite `QuoteLine.Quantity`/
+  `Unit`/`Term` carrying this same line's own extraction `SourceSpan`/
+  `SourcePage`/`Confidence` (fields the AI Gateway `extract` role
+  originally proposed for the row — a `QuoteLine` row is one extraction
+  event covering the whole row); `QuoteLine.NormalizedTermMonths` cites
+  alongside `Term` but with no provenance of its own, since it is derived
+  deterministically from `Term` (Appendix C rule 6), not a second,
+  independently-extracted fact. `Bundle`/`QuarterEnd` cite the sibling-line
+  count / negotiation-timing as-of date — always populated (never empty,
+  unlike `Volume`/`Term`), with no span/page/confidence, since neither is a
+  `QuoteLine` field or a document extraction. `Utilization`/`Alternatives`/
+  `PaymentTerms` stay evidence-empty, the same "no source field exists"
+  reason their `Rationale` already gives (Appendix C rule 10 — never
+  fabricate a citation for a fact that is not actually there). The cited
+  `Value` always renders exactly as `Rationale` itself renders it, so the
+  structured citation and the prose can never silently disagree.
+- **`Contigo.Quotes.Application.Strategy.NegotiationStrategyService`**
+  composes on top of `MarketAssessmentService.AssessAsync` (reused, not
+  re-derived) plus one extra `QuoteLine` read (for `Term`/
+  `NormalizedTermMonths`/`Unit`, which `LineMarketAssessment` does not echo)
+  and returns one `LineNegotiationStrategy` per line — the same per-line,
+  no-quote-level-rollup shape `QuoteMarketAssessment` already established,
+  and the same "computed fresh on every call, nothing persisted" posture
+  `MarketAssessmentService` already takes. Not yet wired to an
+  `AddQuotesModule`-registered HTTP endpoint: parent story
+  us-01-negotiation-strategy's own acceptance criteria name no `GET
+  /api/quotes/{id}/...` route (unlike us-01-market-assessment's AC-3), so
+  none was added — `AddQuotesModule` registers the service so a future
+  task/feature-04 (r4-integration) can call it. **Task E05/F04/US01/T01
+  (r4-integration) is that caller**: `Contigo.IntegrationTests.R4EndToEndTests`
+  resolves this service directly from the real host's own container (the
+  same "no dedicated route exists yet" convention `R2EndToEndTests`/
+  `R3EndToEndTests` already established), still with no dedicated HTTP route
+  of its own — that remains open, un-picked-up scope. That same task also
+  gave this service its own `ITenantContext.BeginScope` (it never opened one
+  either, for the identical reason and with the identical real-HTTP
+  consequence the "Market Assessment" section above now documents for
+  `MarketAssessmentService`) — see this type's own doc comment.
+- Proved directly by `Contigo.Quotes.Tests.NegotiationStrategyCalculatorTests`
+  (pure, no database — range/walk-away arithmetic, all seven levers, every
+  honest-abstain branch, determinism) and end to end by
+  `Contigo.Quotes.Tests.NegotiationStrategyServiceTests` against a real
+  Postgres+RLS database and the real `FixtureBenchmarkAdapter`, reusing
+  `MarketAssessmentServiceTests`' own Salesforce/Sales-Cloud-Enterprise
+  fixture comparable (P25/P50/P75 = 1500/1800/2100 per seat/year) so both
+  tests agree on what the numbers mean. Task E05/F03/US01/T02
+  (strategy-evidence) extends the same calculator test class with AC-2's
+  own coverage — per-lever evidence content, `SourceSpan`/`SourcePage`/
+  `Confidence` pass-through for `Volume`/`Term`, the no-provenance case for
+  `NormalizedTermMonths`/`Bundle`/`QuarterEnd`, the honest-empty case for
+  `Utilization`/`Alternatives`/`PaymentTerms`, and a citation-vs-`Rationale`
+  cross-check — plus one end-to-end assertion in
+  `NegotiationStrategyServiceTests` proving `Evidence` also comes back
+  populated through the real database round trip, not just the pure
+  calculator. The determinism test itself now asserts each lever's
+  `LeverType`/`Rationale`/`Evidence` as its own sequence rather than via
+  `NegotiationLever`'s own record-generated `Equals`: `Evidence` is an
+  `IReadOnlyList<T>`, which has no structural equality of its own, so two
+  independently-built lever lists that are otherwise identical would
+  compare unequal two levels deep inside a containing record's `Equals`.
+
+## Negotiation Outcome — capture + append-only + audit
+
+Task E05/F03/US02/T01 (negotiation-outcome; parent story
+us-02-outcome-capture AC-1 "records original/target/final/saving/discount/
+duration/levers", AC-3 "Outcome is versioned + audit-tracked") closes spec
+§12.2 ("Negotiation outcome capture") — the "Negotiation Strategy" section
+above recommends a target; this is where what actually happened gets
+recorded as permissioned proprietary learning data (spec §12.3's data
+flywheel).
+
+- **`POST /api/negotiations/outcomes`** (module-map.md "Quotes | ... |
+  /api/quotes, /api/negotiations/outcomes"; `X-Tenant-Id` header; plain
+  JSON body, unlike `POST /api/quotes`'s multipart upload) —
+  `{ quoteId, originalQuoteTotal, targetPrice?, finalPrice,
+  negotiationDurationDays, leversUsed: [<NegotiationLeverType name>, ...],
+  savingsOpportunityId? }` (`savingsOpportunityId` added by task
+  E05/F03/US02/T02, outcome-propagation — see the dedicated bullet below).
+  404 (`Contigo.Quotes.Application.Outcome.NegotiationOutcomeService
+  .QuoteNotFoundError`) when `quoteId` does not name a quote for this
+  tenant; 400 for every validation failure (non-positive
+  `originalQuoteTotal`/`finalPrice`, a negative `targetPrice`, a negative
+  `negotiationDurationDays`, an empty or unrecognized `leversUsed`).
+  Response `{ id, quoteId, originalQuoteTotal, targetPrice, finalPrice,
+  realizedSaving, discountPercent, negotiationDurationDays, leversUsed,
+  capturedAt, savingsOpportunityId, savingsPropagated,
+  savingsPropagationError }` — the last three are `null`/absent-equivalent
+  together whenever the caller supplied no `savingsOpportunityId`;
+  otherwise `savingsPropagated` is always `true`/`false` and
+  `savingsPropagationError` is set only when it is `false` — never a
+  distinct HTTP status for a propagation failure (see the propagation
+  bullet below).
+- **`Contigo.Quotes.Application.Outcome.NegotiationOutcomeCalculator`** is a
+  pure, synchronous calculator (no database/HTTP/LLM call, Appendix C rule
+  6) — `realizedSaving = originalQuoteTotal - finalPrice`,
+  `discountPercent = realizedSaving / originalQuoteTotal * 100`. Never
+  clamped at zero: a `finalPrice` above `originalQuoteTotal` is an honest
+  negative saving, not a fabricated floor (Appendix C rule 10). Reproduces
+  spec §12.2's own worked example exactly (520k / 435k -> 85k saved,
+  ~16.3%).
+- **`targetPrice` is nullable** — echoes `LineNegotiationStrategy
+  .OpeningTarget`'s own nullability for the identical reason (no usable
+  target range was ever available, e.g. insufficient benchmark data):
+  outcome capture is never blocked on a fact this module honestly never
+  had (Appendix C rule 9 "from day one").
+- **`leversUsed` reuses `NegotiationStrategyCalculator`'s own closed
+  `NegotiationLeverType` vocabulary** (seven canonical levers), not free
+  text — parsed case-insensitively from the wire string list by
+  `NegotiationOutcomeService.CaptureAsync` itself (this codebase has no
+  global `JsonStringEnumConverter`; every enum-accepting endpoint parses
+  its own wire strings, e.g. `SavingsOpportunityPatchRequest.Status`), so
+  which levers actually work stays a queryable, aggregable dimension for
+  spec §12.3's "better recommendation" loop, not prose a later task would
+  have to re-parse. At least one entry is required.
+- **"Versioned" (AC-3) means append-only, never a `PATCH`/update** — spec
+  Appendix A names only `POST` for this resource.
+  `NegotiationOutcomeService.CaptureAsync` only ever `Add`s a new
+  `Contigo.Quotes.Domain.NegotiationOutcome` row; a second capture for the
+  same `quoteId` (a renegotiation, or a correction to an earlier capture)
+  is simply another row, ordered by `capturedAt` — the same "never
+  destructively overwrite" convention (Appendix C rule 5)
+  `Contigo.Savings.Domain.RealizedSavings` already establishes for the
+  identical App C #5/#9 pairing on a sibling "capture a final,
+  consequential figure" entity.
+- **Audit-tracked (AC-3)**: writes one `IAuditWriter` entry
+  (`negotiation_outcome.captured`) per successful capture, still inside
+  the same call's tenant scope — same placement as `QuoteUploadService
+  .UploadAsync`'s own "persist -> audit" write.
+- **Realized-savings propagation (task E05/F03/US02/T02,
+  outcome-propagation; parent story AC-2 "Realized savings surface on the
+  savings dashboard (cross-wave)")**: when the caller supplies
+  `savingsOpportunityId`, `Contigo.Api.NegotiationsEndpointExtensions`
+  also calls `Contigo.Api.NegotiationOutcomePropagationService
+  .PropagateAsync` right after the capture itself is already durable,
+  still in the same request. That type is `internal`, host-composition-
+  root-only wiring (ADR-002: `Contigo.Quotes` and `Contigo.Savings` cannot
+  see each other; only `Contigo.Api` may reference both — the same
+  treatment `QuoteExtractionPipeline` already gets, see "Dependency
+  direction" below), and it reuses the exact same, already-audited write
+  path a human `PATCH /api/savings/{id}` call already uses
+  (`SavingsOpportunityService.UpdateAsync` with `realizedAmount` set — see
+  "Savings Intelligence — trackable SavingsOpportunity" above): that call
+  finalizes the opportunity's own `status` as `Realized` and inserts a new
+  `RealizedSavings` row, in the opportunity's own currency. This service
+  then writes one more, distinct `IAuditWriter` entry
+  (`negotiation_outcome.propagated`) recording the link between the two
+  aggregate ids — the one fact neither the `negotiation_outcome.captured`
+  nor the `savings_opportunity.realized` entry captures alone. **Never
+  fails an already-durable capture**: an unknown `savingsOpportunityId`
+  (or any other `UpdateAsync` validation failure) is reported honestly as
+  `savingsPropagated: false` + `savingsPropagationError` on the same 201
+  response, never a 4xx/5xx — the outcome capture itself already succeeded
+  and is already audit-tracked (AC-3) before propagation is even
+  attempted. No currency reconciliation: `NegotiationOutcome` carries no
+  currency of its own, and `UpdateAsync`'s own `realizedAmount` parameter
+  has never reconciled a caller-supplied figure against another currency
+  either — the same, already-accepted trust assumption an automated
+  caller now shares with a human PATCHing directly. `GET
+  /api/savings/kpis`'s own `savingsRealized` bucket does **not** yet read
+  this `RealizedSavings` row (the honest gap the "Savings Intelligence —
+  trackable SavingsOpportunity" section above already names, task
+  E04/F02/US02/T02's own follow-up, not this task's) — "surfaces on the
+  savings dashboard" (AC-2) today means the opportunity's own `status` and
+  realized-value row are real and queryable, not yet that every KPI number
+  reflects them.
+- Proved directly by `Contigo.Quotes.Tests.NegotiationOutcomeCalculatorTests`
+  (pure, no database — the spec §12.2 worked example, the negative-saving
+  honesty case, determinism) and end to end by
+  `Contigo.Quotes.Tests.NegotiationOutcomeServiceTests` against a real
+  Postgres+RLS database (persistence, the audit entry, the "second capture
+  does not overwrite the first" append-only proof, quote-not-found/
+  cross-tenant/every validation failure, and — task E05/F03/US02/T02 —
+  that a caller-supplied `savingsOpportunityId` persists unvalidated) plus
+  `Contigo.Api.Tests.NegotiationsEndpointTests` for the host-level
+  tenant-header guard clause. Realized-savings propagation itself (task
+  E05/F03/US02/T02) is proved end to end by
+  `Contigo.IntegrationTests.NegotiationOutcomePropagationEndToEndTests`
+  against the real, composed `Contigo.Api` host and a real, migrated
+  Postgres+RLS database spanning both `Contigo.Quotes` and
+  `Contigo.Savings` — a real `SavingsOpportunity` realized (`status`,
+  the `RealizedSavings` row, the `negotiation_outcome.propagated` audit
+  entry, and all three response fields) and an unknown
+  `savingsOpportunityId` (the outcome still persists and the call still
+  returns 201; `savingsPropagated: false` + `savingsPropagationError`
+  reported honestly instead of an HTTP failure).
+
+## R4 demo smoke test
+
+The automated proof of task E05/F04/US01/T01 (r4-integration) is `dotnet test` —
+`Contigo.IntegrationTests.R4EndToEndTests` (AC-1 "Upload quote -> line items -> benchmark match ->
+market assessment -> target range -> negotiation strategy", AC-2 "User can correct SKU matching
+before accepting assessment", AC-3 "Record final outcome -> realized savings tracked" — the whole
+Quote Check Day-1 chain, driven against one real, uploaded quote through the real host, for the
+first time; every earlier Quote Check task only proved its own segment in isolation) and
+`R4CrossTenantIsolationTests` (the same AC-1/AC-3 surface — `GET /api/quotes/{id}/assessment`,
+`POST /api/negotiations/outcomes` — proven isolated across two tenants, the same "drive the whole
+path across two tenants through the real host" value-add `R1CrossTenantIsolationTests`/
+`R2CrossTenantIsolationTests`/`R3CrossTenantIsolationTests` already established). Run just these:
+
+```bash
+cd backend
+dotnet test Contigo.slnx --configuration Release --filter "FullyQualifiedName~R4"
+```
+
+Running this test end to end (rather than each Quote Check task's own narrower, per-segment test)
+surfaced two real gaps — see "Market Assessment" and "Negotiation Strategy" above for the full
+account: `MarketAssessmentService`/`NegotiationStrategyService` never opened their own
+`ITenantContext.BeginScope`, so `GET /api/quotes/{id}/assessment` would 404 for every real quote
+against a real, unprivileged-role Postgres connection (every deployed environment); and that same
+endpoint never actually serialized `LineMarketAssessment.Quantity` as `quantity`, despite
+backend/README.md's own HTTP surface table documenting it since task E05/F02/US01/T02. Both are
+fixed; both are now covered by this task's own tests.
+
+To manually smoke-test the same path against a running `dev`/`demo` deployment:
+
+```bash
+API=https://<api-host>
+TENANT=$(curl -s -X POST "$API/api/workspaces" -H 'Content-Type: application/json' \
+  -d '{"name":"Smoke Test Co"}' | jq -r .id)
+
+QUOTE=$(curl -s -X POST "$API/api/quotes" -H "X-Tenant-Id: $TENANT" \
+  -F "file=@quote.pdf;type=application/pdf" \
+  -F "supplier=Salesforce" -F "currency=USD" -F "geography=US" -F "purchaseDate=2026-07-01" \
+  | jq -r .id)
+
+# processingStatus/lineItemCount/unmatchedSkuCount reflect QuoteExtractionPipeline's own run
+# (hybrid parse -> extract -> normalize -> SKU-match) -- POST /api/quotes runs it synchronously.
+curl -s "$API/api/quotes/$QUOTE/assessment" -H "X-Tenant-Id: $TENANT" | jq .
+```
+
+Honest caveats: `IAiGateway` still binds to `FixtureAiGateway` (no live Foundry endpoint exists yet,
+ADR-004), whose `ExtractAsync` always returns an empty `{}` — a real `demo` upload lands zero line
+items, so nothing on it will ever match a benchmark. This smoke path proves the *pipeline/endpoint
+wiring* end to end (upload responds, the assessment route resolves and returns 200 for a real,
+owned quote); `R4EndToEndTests` proves the actual matching/target-saving/negotiation-strategy/
+outcome-capture arithmetic against a scripted gateway that returns real, schema-shaped facts, the
+same division of labour "R1 demo smoke test" above already documents for contracts. Negotiation
+strategy generation (`NegotiationStrategyService.GenerateAsync`) and identifying a new
+`SavingsOpportunity` (`SavingsOpportunityService.CreateAsync`) both still have no public HTTP route
+— see "Negotiation Strategy"/"Savings Intelligence — trackable SavingsOpportunity" above for why —
+so neither is curl-able yet; `R4EndToEndTests` proves both directly against the real host's own
+container instead, the same "no dedicated route exists yet" convention this backend has used since
+R2.
+
 ## Containers and CI
 
 `.github/workflows/backend.yml` (path-filtered to `backend/**`):
@@ -942,7 +1542,7 @@ service the host resolves" convention `R2EndToEndTests` already established for 
 Images are tagged with `github.sha`. Container Apps listen on **8080**
 (`ASPNETCORE_URLS=http://+:8080`). Deployed connection strings are
 environment variables (`ConnectionStrings__IdentityWorkspace`,
-`DocumentsContracts`, `Audit`, `Renewals`, `Savings`, `Storage`) — never
+`DocumentsContracts`, `Audit`, `Renewals`, `Savings`, `Quotes`, `Storage`) — never
 committed.
 
 Image pull uses this environment's workload identity (`AcrPull` on

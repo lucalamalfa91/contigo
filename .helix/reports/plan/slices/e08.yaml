@@ -1,0 +1,23 @@
+waveId: wave-v1-epic-e08
+status: planned
+# E08 E08. Prior-wave depends_on dropped (producer-completeness).
+# estimated tokens: 6.4M (S/M/L mapped; not a packing cap).
+# Launch: ./run.ps1 -Max -Slice e08 -o execution-fanout
+phases:
+  - id: 1
+    name: phase-1
+    tasks:
+      - {id: E08/F01/US01/T01, prompt: reports/workitems/epic-08-web-renewals-savings-quotes/feature-01-renewal-pipeline-ui/us-01-renewal-pipeline/tasks/task-01-renewal-pipeline.md, produces: [web-renewal-ui], depends_on: [], effort: L, layer: frontend, status: live}
+  - id: 2
+    name: phase-2
+    tasks:
+      - {id: E08/F02/US01/T01, prompt: reports/workitems/epic-08-web-renewals-savings-quotes/feature-02-savings-ui/us-01-savings-home/tasks/task-01-savings-home.md, produces: [web-savings-ui], depends_on: [web-renewal-ui], effort: M, layer: frontend, status: live}
+  - id: 3
+    name: phase-3
+    tasks:
+      - {id: E08/F03/US01/T01, prompt: reports/workitems/epic-08-web-renewals-savings-quotes/feature-03-quote-check-ui/us-01-quote-check/tasks/task-01-quote-check.md, produces: [web-quote-ui], depends_on: [], effort: L, layer: frontend, status: live}
+  - id: 4
+    name: phase-4
+    tasks:
+      - {id: E08/F04/US01/T01, prompt: reports/workitems/epic-08-web-renewals-savings-quotes/feature-04-r4-web-integration/us-01-final-integration/tasks/task-01-final-integration.md, produces: [web-day1-integration], depends_on: [web-renewal-ui, web-savings-ui, web-quote-ui], effort: L, layer: frontend, status: live}
+forks: []

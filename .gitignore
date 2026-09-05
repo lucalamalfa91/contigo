@@ -13,6 +13,11 @@ worktrees/
 .helix/.git/
 .helix/.git.bak
 .helix/.git.nest.bak
+.helix/reports/plan/gates/
+
+# Local az ad federated-credential dumps (not repo secrets, not source)
+fic-dev.json
+fic-demo.json
 
 # Secrets and local environment files (never commit real credentials) —
 # task E01/F01/US01/T01, parent story AC-4.

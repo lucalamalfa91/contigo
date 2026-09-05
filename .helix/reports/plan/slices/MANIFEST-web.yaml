@@ -1,0 +1,18 @@
+# Web-delta nightly slices (e06+). Backend e01–e05 are owned by
+# cut_nightly_slices.py / wave-spec.execution.yaml — do not mix.
+
+mode: web-delta
+master: reports/plan/wave-spec.web.yaml
+slices:
+  - id: e06
+    title: E06 E06
+    tokens: 6000000
+    tasks: 7
+  - id: e07
+    title: E07 E07
+    tokens: 7200000
+    tasks: 4
+  - id: e08
+    title: E08 E08
+    tokens: 6400000
+    tasks: 4
