@@ -1,15 +1,19 @@
 using Contigo.Quotes.Application;
+using Contigo.Quotes.Application.Assessment;
 using Contigo.SharedKernel;
 
 namespace Contigo.Api;
 
 /// <summary>
 /// Maps `POST /api/quotes` (product spec Appendix A API table: "Upload/create quote"; parent
-/// story us-01-quote-line-extraction AC-1, task E05/F01/US01/T01, quote-extraction). Thin
-/// composition per ADR-002 — <see cref="QuoteUploadService"/> owns the upload/storage/audit
-/// decisions and <see cref="QuoteExtractionPipeline"/> owns the hybrid-parse/AI-extraction
-/// orchestration (see that type's own doc comment for why it, not a domain module, is the AI
-/// Gateway call site); this file only translates HTTP &lt;-&gt; those two calls, the same shape
+/// story us-01-quote-line-extraction AC-1, task E05/F01/US01/T01, quote-extraction) and
+/// `GET /api/quotes/{id}/assessment` (Appendix A "Quote assessment"; parent story
+/// us-01-market-assessment AC-3, task E05/F02/US01/T01, market-assessment). Thin composition per
+/// ADR-002 — <see cref="QuoteUploadService"/> owns the upload/storage/audit decisions,
+/// <see cref="QuoteExtractionPipeline"/> owns the hybrid-parse/AI-extraction orchestration (see
+/// that type's own doc comment for why it, not a domain module, is the AI Gateway call site), and
+/// <see cref="MarketAssessmentService"/> owns the benchmark-matching/classification decisions; this
+/// file only translates HTTP &lt;-&gt; those calls, the same shape
 /// <see cref="ContractsEndpointExtensions"/>/<see cref="WorkspaceEndpointExtensions"/> already use.
 ///
 /// Same interim `X-Tenant-Id` header placeholder and multipart `file`-field contract as
@@ -23,6 +27,8 @@ public static class QuotesEndpointExtensions
     public static IEndpointRouteBuilder MapQuotesEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapPost("/api/quotes", UploadQuoteAsync);
+        // Task E05/F02/US01/T01 (market-assessment) AC-3.
+        endpoints.MapGet("/api/quotes/{id}/assessment", GetAssessmentAsync);
         return endpoints;
     }
 
@@ -62,6 +68,25 @@ public static class QuotesEndpointExtensions
             return Results.BadRequest("A non-empty 'file' form field is required.");
         }
 
+        // Task E05/F02/US01/T01 (market-assessment): optional form fields — see Quote's own doc
+        // comment for why these are explicit caller input rather than inferred from the document.
+        // All four are optional; a quote uploaded without them simply cannot be matched against the
+        // Benchmark Service yet (MarketAssessmentQueryBuilder reports that honestly, per line).
+        var supplier = NullIfBlank(form["supplier"]);
+        var currency = NullIfBlank(form["currency"]);
+        var geography = NullIfBlank(form["geography"]);
+        DateOnly? purchaseDate = null;
+        var purchaseDateText = NullIfBlank(form["purchaseDate"]);
+        if (purchaseDateText is not null)
+        {
+            if (!DateOnly.TryParse(purchaseDateText, System.Globalization.CultureInfo.InvariantCulture, out var parsedPurchaseDate))
+            {
+                return Results.BadRequest("The 'purchaseDate' form field, when present, must be a valid date (e.g. '2026-09-05').");
+            }
+
+            purchaseDate = parsedPurchaseDate;
+        }
+
         byte[] fileBytes;
         await using (var uploadStream = file.OpenReadStream())
         await using (var buffer = new MemoryStream())
@@ -74,7 +99,15 @@ public static class QuotesEndpointExtensions
 
         using var storageContent = new MemoryStream(fileBytes);
         var result = await uploadService.UploadAsync(
-            tenantId, file.FileName, file.ContentType, storageContent, cancellationToken);
+            tenantId,
+            file.FileName,
+            file.ContentType,
+            storageContent,
+            cancellationToken,
+            supplier: supplier,
+            currency: currency,
+            geography: geography,
+            purchaseDate: purchaseDate);
 
         if (result.IsFailure)
         {
@@ -110,7 +143,98 @@ public static class QuotesEndpointExtensions
             normalizedLineItemCount,
             unresolvedNormalizationCount,
             unmatchedSkuCount,
+            // Task E05/F02/US01/T01 (market-assessment): echoes what was actually recorded
+            // (including a null, when the caller did not supply one) so a caller can see
+            // immediately whether GET .../assessment will be able to match this quote's lines yet.
+            supplier = uploaded.Supplier,
+            currency = uploaded.Currency,
+            geography = uploaded.Geography,
+            purchaseDate = uploaded.PurchaseDate,
             createdAt = uploaded.CreatedAt,
+        });
+    }
+
+    private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    /// <summary>
+    /// AC-3 ("<c>GET /api/quotes/{id}/assessment</c> returns the assessment with
+    /// confidence/provenance", task E05/F02/US01/T01, market-assessment): thin HTTP translation over
+    /// <see cref="MarketAssessmentService.AssessAsync"/> — that service owns every matching/
+    /// classification decision (per-line status, market position, confidence/provenance); this
+    /// handler only shapes the wire response. Same interim <c>X-Tenant-Id</c> header placeholder as
+    /// <see cref="UploadQuoteAsync"/> above (ADR-010 is not in this task's "Architecture decisions
+    /// in force" list either).
+    /// </summary>
+    private static async Task<IResult> GetAssessmentAsync(
+        string id,
+        HttpRequest request,
+        MarketAssessmentService assessmentService,
+        CancellationToken cancellationToken)
+    {
+        if (!request.Headers.TryGetValue("X-Tenant-Id", out var tenantHeaderValues)
+            || !Guid.TryParse(tenantHeaderValues.ToString(), out var tenantGuid))
+        {
+            return Results.BadRequest("A valid 'X-Tenant-Id' header (a GUID) is required.");
+        }
+
+        if (!Guid.TryParse(id, out var quoteGuid))
+        {
+            return Results.BadRequest("The quote id in the route must be a GUID.");
+        }
+
+        var result = await assessmentService.AssessAsync(
+            new TenantId(tenantGuid), new EntityId(quoteGuid), cancellationToken);
+
+        if (result.IsFailure)
+        {
+            // The only documented failure is "quote not found for this tenant" (see
+            // MarketAssessmentService.AssessAsync's own doc comment) — never a 400/500 for an
+            // otherwise-valid, merely-absent id, the same "tenant-scoped lookup miss is a 404, not
+            // an error" convention DocumentQueryService/PortfolioEndpointExtensions already use.
+            return Results.NotFound(result.Error);
+        }
+
+        var assessment = result.Value;
+
+        return Results.Ok(new
+        {
+            quoteId = assessment.QuoteId.Value,
+            lines = assessment.Lines.Select(line => new
+            {
+                quoteLineId = line.QuoteLineId.Value,
+                status = line.Status.ToString(),
+                position = line.Position?.ToString(),
+                unitPrice = line.UnitPrice,
+                benchmark = line.Benchmark is null
+                    ? null
+                    : new
+                    {
+                        hasSufficientData = line.Benchmark.HasSufficientData,
+                        distribution = line.Benchmark.Distribution is null
+                            ? null
+                            : new
+                            {
+                                p25 = line.Benchmark.Distribution.P25,
+                                p50 = line.Benchmark.Distribution.P50,
+                                p75 = line.Benchmark.Distribution.P75,
+                            },
+                        metric = line.Benchmark.Metric,
+                        currency = line.Benchmark.Currency,
+                    },
+                confidence = line.Provenance is null
+                    ? null
+                    : new
+                    {
+                        level = line.Provenance.ConfidenceLevel.ToString(),
+                        score = line.Provenance.ConfidenceScore,
+                        source = line.Provenance.Source,
+                        sampleSize = line.Provenance.SampleSize,
+                        comparisonDimensions = line.Provenance.ComparisonDimensions.Select(d => d.ToString()),
+                        updatedAt = line.Provenance.UpdatedAt,
+                        summary = line.Provenance.Summary,
+                    },
+                explanation = line.Explanation,
+            }),
         });
     }
 }

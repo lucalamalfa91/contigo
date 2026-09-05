@@ -1,4 +1,6 @@
+using Contigo.Benchmark;
 using Contigo.Quotes.Application;
+using Contigo.Quotes.Application.Assessment;
 using Contigo.Quotes.Application.Extraction;
 using Contigo.Quotes.Application.Normalization;
 using Contigo.SharedKernel;
@@ -19,15 +21,23 @@ namespace Contigo.Quotes.Infrastructure;
 /// <see cref="QuoteLineNormalizationService"/> to this same registration, sharing this module's one
 /// <c>DbContext</c> too.
 ///
-/// Deliberately does <b>not</b> call <c>Contigo.Benchmark.ServiceCollectionExtensions
-/// .AddBenchmarkModule</c> — unlike <c>Contigo.Savings</c>/<c>Contigo.Renewals</c>, nothing this
-/// task adds resolves <c>IBenchmarkService</c> yet (this task's own coding objective is "Quote
-/// upload + line-item extraction", not benchmark matching/assessment — spec §11's own Quote →
-/// Benchmark → Assessment flow treats those as later steps). <c>Contigo.Quotes.csproj</c>'s own
-/// <c>ProjectReference</c> to <c>Contigo.Benchmark</c> pre-dates this task (an R4 scaffold
-/// anticipating that later step); wiring its DI registration ahead of a real caller would be
-/// exactly the "invented ahead of need" this codebase's own conventions avoid (see
-/// <c>Contigo.Quotes.Domain.Quote</c>'s own doc comment for the same restraint applied to columns).
+/// <para>
+/// Task E05/F02/US01/T01 (market-assessment) closes the gap this method's own doc comment used to
+/// name here ("deliberately does not call <c>AddBenchmarkModule</c>... nothing this task adds
+/// resolves <c>IBenchmarkService</c> yet... spec §11's own Quote → Benchmark → Assessment flow
+/// treats those as later steps"): <see cref="MarketAssessmentService"/> is that later step's real
+/// caller, so this method now also calls
+/// <see cref="Contigo.Benchmark.ServiceCollectionExtensions.AddBenchmarkModule"/> — the exact same
+/// "a module that depends on another module's interface registers that dependency's own DI wiring
+/// transitively" convention
+/// <c>Contigo.Savings.Infrastructure.ServiceCollectionExtensions.AddSavingsModule</c>'s own doc
+/// comment already established for this exact call (and explicitly anticipated a future
+/// <c>Contigo.Quotes</c> caller doing the same). <c>AddBenchmarkModule</c> is itself all
+/// <c>TryAdd</c>/<c>TryAddEnumerable</c> (idempotent), so calling it here is safe even though
+/// <c>Contigo.Api.Program</c> already calls <c>AddSavingsModule</c>, which calls it too — whichever
+/// module's <c>AddXxxModule</c> runs first in a given host wins the single registration, harmlessly,
+/// for every module after it.
+/// </para>
 ///
 /// Any host that calls this method must also call <c>Contigo.Audit</c>'s <c>AddAuditModule</c> for
 /// <see cref="QuoteUploadService"/>'s own <see cref="IAuditWriter"/> dependency to resolve — the
@@ -44,6 +54,14 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IClock, SystemClock>();
         services.TryAddSingleton<ITenantContext, TenantContext>();
 
+        // Task E05/F02/US01/T01 (market-assessment) — see the type doc comment's own paragraph on
+        // why this call, not a Contigo.Api.Program change, is what this module needs to resolve
+        // IBenchmarkService for MarketAssessmentService below. Contigo.Quotes.csproj's own
+        // ProjectReference to Contigo.Benchmark already exists (Contigo.ArchitectureTests
+        // .DependencyDirectionTests' allowed [SharedKernel, Benchmark] set for this module); this is
+        // that compile-time dependency's runtime DI registration.
+        services.AddBenchmarkModule();
+
         services.AddDbContext<QuotesDbContext>(
             (sp, options) => QuotesDbContextOptions.Configure(
                 options, connectionString, sp.GetRequiredService<ITenantContext>()));
@@ -58,6 +76,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<QuoteLineNormalizationService>();
         // Task E05/F01/US02/T01 (sku-normalization).
         services.AddScoped<SkuNormalizationService>();
+        // Task E05/F02/US01/T01 (market-assessment): shares this request's own QuotesDbContext and
+        // resolves the IBenchmarkService registered above.
+        services.AddScoped<MarketAssessmentService>();
 
         return services;
     }

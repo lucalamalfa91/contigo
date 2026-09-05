@@ -187,7 +187,7 @@ internal sealed class QuoteExtractionPipeline(
         // common outcome for a term outside QuoteBillingCadence's own small recognized vocabulary,
         // not an extraction-quality problem — see QuoteLineNormalizationOutcome's own doc comment for
         // who (a future task) actually reads UnresolvedCount to act on it.
-        var normalizationOutcome = lineNormalizationService.NormalizeLines(tenantId, quoteId);
+        var lineNormalizationOutcome = lineNormalizationService.NormalizeLines(tenantId, quoteId);
         // Persist the raw extracted lines before normalizing them: SkuNormalizationService queries
         // QuoteLines back from the database (see its own doc comment), so it must run after they
         // are actually committed, not while they are still pending Added entries.
@@ -198,7 +198,16 @@ internal sealed class QuoteExtractionPipeline(
         // guardrail ("no target without resolved normalization") has real data from this upload
         // onward — see QuoteExtractionPipeline's own doc comment for why this runs here, after the
         // first SaveChangesAsync, rather than against the in-memory lines directly.
-        var normalizationOutcome = await skuNormalizationService
+        //
+        // Task E05/F02/US01/T01 (market-assessment): this line used to redeclare the same
+        // `normalizationOutcome` name the line-normalization call above already used (a `var`/`var`
+        // collision — CS0128, does not compile) and the record/return-statement below carried a
+        // matching stray duplicate line each (leftover from two sibling tasks — quote-normalization
+        // and sku-normalization — each appending its own new field to this same method/record in
+        // parallel branches without reconciling with the other's own addition). Renamed to its own
+        // distinct name so both outcomes are readable below; no behavioural change intended for
+        // either sibling task's own already-landed logic.
+        var skuNormalizationOutcome = await skuNormalizationService
             .NormalizeAsync(tenantId, quoteId, cancellationToken)
             .ConfigureAwait(false);
 
@@ -240,9 +249,9 @@ internal sealed class QuoteExtractionPipeline(
             outcome.ExtractedCount,
             outcome.SkippedCount,
             pages.Count,
-            normalizationOutcome.NormalizedCount,
-            normalizationOutcome.UnresolvedCount));
-            normalizationOutcome.UnmatchedCount));
+            lineNormalizationOutcome.NormalizedCount,
+            lineNormalizationOutcome.UnresolvedCount,
+            skuNormalizationOutcome.UnmatchedCount));
     }
 
     /// <summary>Shared terminal-failure path: marks both rows Failed, persists, and returns the
@@ -308,8 +317,8 @@ internal sealed class QuoteExtractionPipeline(
 /// <param name="UnresolvedNormalizationCount">The complement of <paramref name="NormalizedLineItemCount"/>
 /// within <see cref="LineItemCount"/> — spec §11.3's "line-item normalization is unresolved" outcome,
 /// made visible over HTTP as well as in the database.</param>
-/// reply. <see cref="UnmatchedSkuCount"/> added by task E05/F01/US02/T01 (sku-normalization,
-/// AC-2's "show unmatched SKUs" half).</summary>
+/// <param name="UnmatchedSkuCount">Added by task E05/F01/US02/T01 (sku-normalization, AC-2's "show
+/// unmatched SKUs" half).</param>
 internal sealed record QuoteProcessingSummary(
     EntityId QuoteId,
     QuoteProcessingStatus ProcessingStatus,
@@ -317,5 +326,5 @@ internal sealed record QuoteProcessingSummary(
     int SkippedCount,
     int PageCount,
     int NormalizedLineItemCount,
-    int UnresolvedNormalizationCount);
+    int UnresolvedNormalizationCount,
     int UnmatchedSkuCount);

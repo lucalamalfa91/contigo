@@ -27,6 +27,15 @@ public sealed class QuoteConfiguration : IEntityTypeConfiguration<Quote>
         // `Status`).
         builder.Property(e => e.ProcessingStatus).HasConversion<string>().HasMaxLength(20);
 
+        // Task E05/F02/US01/T01 (market-assessment): the Quote-level benchmark-matching fields —
+        // see Quote's own doc comment for why they are nullable and caller-supplied. Same length
+        // budget as the equivalent free-text columns on Contigo.Benchmark.Fixtures
+        // .FixtureBenchmarkAdapter's own Comparable.Supplier/Geography/Currency (short codes/names,
+        // never a long free-text field).
+        builder.Property(e => e.Supplier).HasMaxLength(200);
+        builder.Property(e => e.Currency).HasMaxLength(3);
+        builder.Property(e => e.Geography).HasMaxLength(100);
+
         builder.HasIndex(e => e.TenantId);
     }
 }

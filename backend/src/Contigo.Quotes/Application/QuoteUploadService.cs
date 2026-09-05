@@ -37,12 +37,27 @@ public sealed class QuoteUploadService(
     /// here beyond this explicit placeholder.</summary>
     private const string UnattributedActor = "unattributed";
 
+    /// <summary>
+    /// Task E05/F02/US01/T01 (market-assessment) added the four trailing optional parameters —
+    /// <paramref name="supplier"/>/<paramref name="currency"/>/<paramref name="geography"/>/
+    /// <paramref name="purchaseDate"/> — the caller-supplied source of <see cref="Quote"/>'s own
+    /// Quote-level benchmark-matching fields (see that entity's own doc comment for why they are
+    /// explicit upload input rather than inferred). All default to <see langword="null"/> so every
+    /// existing call site (every test written before this task) keeps compiling unchanged; a quote
+    /// uploaded without them is simply not matchable yet — an honest, expected state, not a
+    /// validation error, since spec §11.1's own "Identify supplier" workflow step has no dedicated
+    /// task/UI yet for a caller to necessarily have this in hand at upload time.
+    /// </summary>
     public async Task<Result<QuoteUploadResult>> UploadAsync(
         TenantId tenantId,
         string fileName,
         string? mimeType,
         Stream content,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? supplier = null,
+        string? currency = null,
+        string? geography = null,
+        DateOnly? purchaseDate = null)
     {
         if (string.IsNullOrWhiteSpace(fileName))
         {
@@ -87,6 +102,13 @@ public sealed class QuoteUploadService(
             StoragePath = storagePath,
             Checksum = checksum,
             ProcessingStatus = QuoteProcessingStatus.Uploaded,
+            // Task E05/F02/US01/T01 (market-assessment): see Quote's own doc comment for why these
+            // are explicit, optional caller input rather than inferred, and why PurchaseDate falls
+            // back to this same upload's own "now" rather than staying null.
+            Supplier = supplier,
+            Currency = currency,
+            Geography = geography,
+            PurchaseDate = purchaseDate ?? DateOnly.FromDateTime(now.UtcDateTime),
             CreatedAt = now,
         };
 
@@ -118,6 +140,14 @@ public sealed class QuoteUploadService(
             cancellationToken).ConfigureAwait(false);
 
         return Result<QuoteUploadResult>.Success(new QuoteUploadResult(
-            quote.Id, quote.FileName, quote.MimeType, quote.ProcessingStatus, quote.CreatedAt));
+            quote.Id,
+            quote.FileName,
+            quote.MimeType,
+            quote.ProcessingStatus,
+            quote.CreatedAt,
+            quote.Supplier,
+            quote.Currency,
+            quote.Geography,
+            quote.PurchaseDate));
     }
 }

@@ -84,4 +84,45 @@ public sealed class QuotesEndpointTests : IClassFixture<WebApplicationFactory<Pr
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
+
+    // ----- Task E05/F02/US01/T01 (market-assessment) AC-3: GET /api/quotes/{id}/assessment -----
+    //
+    // Only exercises branches that return before any database/Benchmark-Service call is made (same
+    // reasoning as this class's own doc comment for the POST tests above) — a real "quote found,
+    // assessed against a real benchmark" proof lives in
+    // Contigo.Quotes.Tests.MarketAssessmentServiceTests, against a real Postgres.
+
+    [Fact]
+    public async Task GetAssessment_missing_tenant_header_returns_400()
+    {
+        var client = _factory.CreateClient();
+
+        var response = await client.GetAsync($"/api/quotes/{Guid.NewGuid()}/assessment");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetAssessment_invalid_tenant_header_returns_400()
+    {
+        var client = _factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/quotes/{Guid.NewGuid()}/assessment");
+        request.Headers.Add("X-Tenant-Id", "not-a-guid");
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetAssessment_non_guid_quote_id_returns_400()
+    {
+        var client = _factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/quotes/not-a-guid/assessment");
+        request.Headers.Add("X-Tenant-Id", Guid.NewGuid().ToString());
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
 }
