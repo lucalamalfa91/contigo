@@ -95,7 +95,7 @@ migrations, not in Terraform.
 | GET | `/api/savings` | Lists the caller's tenant-scoped `SavingsOpportunity` rows, newest identified first (spec §4.3/§6; module-map.md "Savings \| SavingsOpportunity, RealizedSavings \| /api/savings"; story us-02-savings-opportunity AC-1, task E04/F02/US02/T01; story us-01-savings-kpis AC-2/AC-3, task E04/F03/US01/T02); `X-Tenant-Id` header; response `{ items, totalCount }`, each item also carrying `confidenceLevel` (`Low`/`Medium`/`High`, task E04/F03/US01/T02 — see `SavingsOpportunityResult.ConfidenceLevel`'s own doc comment); no filters yet — see `Contigo.Savings.Application.SavingsOpportunityService.ListAsync`'s own doc comment |
 | PATCH | `/api/savings/{id}` | Updates `owner`, `status` (`Identified`/`InProgress`/`Realized`) and/or `realizedAmount` on one `SavingsOpportunity` (AC-1 "updates status/owner..."; AC-3 "realized value is captured and audit-tracked", task E04/F02/US02/T02); `X-Tenant-Id` header; body `{ owner?, status?, realizedAmount? }` — a genuine partial update, any subset of the three fields; 404 when `{id}` does not name an opportunity for this tenant, 400 for every other validation failure (empty owner, unrecognized status, a negative `realizedAmount`, a `realizedAmount` combined with an explicit `status` other than `Realized`, or none of the three fields supplied); writes one `IAuditWriter` entry per successful call — `savings_opportunity.updated`, or `savings_opportunity.realized` instead when `realizedAmount` was supplied (never both). Supplying `realizedAmount` also inserts a new, append-only `Contigo.Savings.Domain.RealizedSavings` row (in the opportunity's own `currency`) and finalizes `status` as `Realized` — either because the caller's own explicit `status` already said so, or automatically when `status` was omitted (see `SavingsOpportunityService.UpdateAsync`'s own doc comment). The response's `realizedAmount` field is non-`null` only on the call that just recorded one — it is not a rolled-up read of this opportunity's full realized-value history, see `SavingsOpportunityResult.RealizedAmount`'s own doc comment; the response also carries `confidenceLevel` (task E04/F03/US01/T02 — same field the `GET` row above documents, shared `ToResponse` wire-shaping) |
 | PATCH | `/api/savings/{id}` | Updates `owner` and/or `status` (`Identified`/`InProgress`/`Realized`) on one `SavingsOpportunity` (AC-1 "updates status/owner..."); `X-Tenant-Id` header; body `{ owner?, status? }` — a genuine partial update, either or both fields; 404 when `{id}` does not name an opportunity for this tenant, 400 for every other validation failure (empty owner, unrecognized status, or neither field supplied); writes one `IAuditWriter` entry (`savings_opportunity.updated`) per successful call — setting `status` to `Realized` here does **not** yet create an audit-tracked realized-value record, see `Contigo.Savings.Domain.SavingsOpportunityStatus.Realized`'s own doc comment for the gap task E04/F02/US02/T02 (`RealizedSavings`) closes |
-| POST | `/api/quotes` | New Purchase / Quote Check (spec §4.4/§11; module-map.md "Quotes \| Quote, QuoteLine... \| /api/quotes"; story us-01-quote-line-extraction AC-1/AC-2/AC-4, task E05/F01/US01/T01); multipart `file` + `X-Tenant-Id` header, same shape as `POST /api/documents`; synchronously reuses the epic-02 `HybridDocumentParsingService` (native text or the `ocr` gateway role — ADR-017, no 2-page cap) then runs one schema-constrained `extract` call for line items (quantity/SKU/edition/price/discount/term), persisting one `Contigo.Quotes.Domain.QuoteLine` row per item with source span/page/confidence; `unitPrice`/`extendedPrice` are derived deterministically in code when the model reports only `listPrice`/`discountPercent` (AC-3, Appendix C rule 6 — never asked of the model, see `QuoteLineJsonSchema`) — response `{ id, fileName, mimeType, processingStatus, lineItemCount, createdAt }`; a pipeline failure still returns 201 (the upload itself succeeded) with the pre-processing `processingStatus`/`lineItemCount: 0`, never an HTTP error |
+| POST | `/api/quotes` | New Purchase / Quote Check (spec §4.4/§11; module-map.md "Quotes \| Quote, QuoteLine... \| /api/quotes"; story us-01-quote-line-extraction AC-1/AC-2/AC-4, task E05/F01/US01/T01); multipart `file` + `X-Tenant-Id` header, same shape as `POST /api/documents`; synchronously reuses the epic-02 `HybridDocumentParsingService` (native text or the `ocr` gateway role — ADR-017, no 2-page cap) then runs one schema-constrained `extract` call for line items (quantity/SKU/edition/price/discount/term), persisting one `Contigo.Quotes.Domain.QuoteLine` row per item with source span/page/confidence; `unitPrice`/`extendedPrice` are derived deterministically in code when the model reports only `listPrice`/`discountPercent` (AC-3, Appendix C rule 6 — never asked of the model, see `QuoteLineJsonSchema`); immediately afterward, still the same unit of work, `Contigo.Quotes.Application.Normalization.QuoteLineNormalizationService` (task E05/F01/US01/T02, quote-normalization) runs spec §11.1's next pipeline step, "Normalize unit economics" — `QuoteLine.NormalizedAnnualUnitPrice`/`NormalizedTermMonths` annualize `unitPrice` only when `term` matches a small, fixed, unambiguous billing-cadence vocabulary (monthly/quarterly/semi-annual/annual and common synonyms); every other term (a numeric commitment length, "one-time"/"perpetual", or free text outside that vocabulary) deliberately leaves both columns `null` — spec §11.3's own "line-item normalization is unresolved" outcome for a later benchmark-match task to honour, not fabricated here (Appendix C rule 10) — response `{ id, fileName, mimeType, processingStatus, lineItemCount, normalizedLineItemCount, unresolvedNormalizationCount, createdAt }`; a pipeline failure still returns 201 (the upload itself succeeded) with the pre-processing `processingStatus`/`lineItemCount`/`normalizedLineItemCount`/`unresolvedNormalizationCount` all `0`, never an HTTP error |
 | GET | `/api/savings/kpis` | Procurement-homepage KPI row (spec §4.3/§10.1; story us-01-savings-kpis AC-1, task E04/F03/US01/T01); `X-Tenant-Id` header; response `{ annualSpendAnalyzed: [{ currency, amount, contractCount }], contractsAnalyzedCount, savingsIdentified/savingsInProgress/savingsRealized: [{ currency, low, high, count, averageConfidence }], upcomingRenewalsCount }` — every money value is grouped by currency, never summed across currencies (no exchange-rate service exists anywhere in this codebase); `contractsAnalyzedCount` counts contracts whose linked document reached `DocumentProcessingStatus.Completed` (a `Contract` row can exist before that — see `Contigo.Documents.Contracts.Application.PortfolioAnalysisCalculator`'s own doc comment); `savingsRealized` reflects each opportunity's own estimated range, not yet the separate, audit-tracked `RealizedSavings` value (task E04/F02/US02/T02's own gap, see `SavingsOpportunityStatus.Realized`'s doc comment); `upcomingRenewalsCount` is the same auto-renewing-contract count `GET /api/renewals`'s own `totalCount` already reports (same 100-contract-per-tenant cap) — see `Contigo.Api.SavingsKpiEndpointExtensions`'s own comment for why it is not a second, independently-computed number |
 
 **Interim auth:** every endpoint above that takes an `X-Tenant-Id` header
@@ -977,14 +977,55 @@ established for contracts (task E02/F06/US01/T01).
   row is already one fact, the same shape
   `Contigo.Documents.Contracts.Domain.ContractLineItem` uses (no separate
   evidence side-table).
-- Deliberately out of this task's scope (not silently absorbed): the
+- Deliberately out of task-01's own scope (not silently absorbed): the
   `Quote`-level aggregate fields spec §6 also names ("supplier, dates,
   currency, values, status") and benchmark matching/assessment/negotiation
   (spec §11's later Quote Check steps, `GET /api/quotes/{id}/assessment`,
-  `POST /api/negotiations/outcomes`) — this task's own coding objective is
-  "Quote upload + line-item extraction"; us-01's own task-02
-  ("Line-item normalization + evidence/confidence") is the next task in
-  this story.
+  `POST /api/negotiations/outcomes`) — task-01's own coding objective was
+  "Quote upload + line-item extraction". See below for task-02
+  ("Line-item normalization + evidence/confidence"); benchmark
+  matching/assessment/negotiation remain future work no task has picked
+  up yet.
+
+**Task E05/F01/US01/T02 (quote-normalization)** adds spec §11.1's next
+pipeline step, "Normalize unit economics" (between "Extract" and "Match
+benchmark"), right after line-item extraction inside the same
+`QuoteExtractionPipeline.ProcessAsync` unit of work — before the one
+shared `SaveChangesAsync`, so extraction and normalization persist
+together or not at all. No new AI Gateway role and no new project
+reference: `Contigo.Quotes.Application.Normalization
+.QuoteLineNormalizationService.NormalizeUnitEconomics` is a second pure,
+deterministic calculator alongside task-01's own `ComputePricing` — same
+Appendix C rule 6 discipline, applied to a second pipeline stage.
+`QuoteLine` gains two columns: `NormalizedAnnualUnitPrice` (`UnitPrice`
+rescaled to an annual rate) and `NormalizedTermMonths` (the recognized
+cadence length, in months, that produced it — kept as evidence, the same
+"never a consequential derived fact without a way to see why" spirit
+`SourceSpan`/`SourcePage` already give the raw extraction).
+`Contigo.Quotes.Application.Normalization.QuoteBillingCadence
+.RecognizeMonths` deliberately recognizes only a small, fixed,
+unambiguous vocabulary (`monthly`/`quarterly`/`semi-annual`/`annual` and
+their common synonyms — 1/3/6/12 months respectively); a numeric
+commitment length ("36 months", "3 years"), "one-time"/"perpetual", a
+blank term, or any other free text `QuoteLine.Term` may legitimately hold
+(no ADR or spec fixes a closed vocabulary — see that property's own doc
+comment) is left honestly unresolved (both new columns stay `null`)
+rather than guess a billing-period relationship this codebase does not
+actually know — the same restraint
+`Contigo.Savings.Application.PriceComparisonRequest`'s own doc comment
+already documents for cross-module term alignment (Appendix C rule 10).
+A `null` `NormalizedAnnualUnitPrice` on any line **is** spec §11.3's own
+"Do not generate a savings target if line-item normalization is
+unresolved" guardrail made checkable — this task does not itself gate
+anything (no savings target exists yet for a quote to gate), it only
+produces the honest, queryable signal for whatever future benchmark-match
+task reads it. `POST /api/quotes`'s response gains
+`normalizedLineItemCount`/`unresolvedNormalizationCount` (see the HTTP
+surface table above) so the same outcome is visible over HTTP, not just
+in the database — proved directly by
+`Contigo.Quotes.Tests.QuoteLineNormalizationServiceTests` and, for the
+already-recognized-cadence common case, end-to-end by the existing
+`Contigo.IntegrationTests.QuoteEndToEndTests` fixture (`"term":"Annual"`).
 
 ## Containers and CI
 

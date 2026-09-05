@@ -98,7 +98,9 @@ builder.Services.AddSavingsModule(savingsConnectionString);
 
 // Task E05/F01/US01/T01 (quote-extraction, POST /api/quotes): the Quotes module's own
 // AddQuotesModule(IServiceCollection, string) (ADR-002) — this module's first DbContext
-// (QuotesDbContext, backing QuoteUploadService/QuoteLineExtractionService), the same "wiring
+// (QuotesDbContext, backing QuoteUploadService/QuoteLineExtractionService/
+// QuoteLineNormalizationService, the last added by task E05/F01/US01/T02 quote-normalization),
+// the same "wiring
 // lands with the first real caller" sequencing AddSavingsModule/AddRenewalsModule/AddChatModule
 // followed above. Fails fast with the same named-error shape as every other required connection
 // string above.

@@ -32,6 +32,10 @@ public sealed class QuoteLineConfiguration : IEntityTypeConfiguration<QuoteLine>
         builder.Property(e => e.DiscountPercent).HasPrecision(9, 4);
         builder.Property(e => e.ExtendedPrice).HasPrecision(18, 2);
 
+        // Task E05/F01/US01/T02 (quote-normalization): same precision as UnitPrice/ExtendedPrice —
+        // NormalizedAnnualUnitPrice is that same unit price, just rescaled to an annual rate.
+        builder.Property(e => e.NormalizedAnnualUnitPrice).HasPrecision(18, 2);
+
         builder.Property(e => e.SourceSpan).HasMaxLength(2000);
 
         builder.HasIndex(e => e.TenantId);

@@ -4,6 +4,7 @@ using Contigo.AiGateway;
 using Contigo.AiGateway.Contracts;
 using Contigo.Documents.Contracts.Application.Extraction;
 using Contigo.Quotes.Application.Extraction;
+using Contigo.Quotes.Application.Normalization;
 using Contigo.Quotes.Domain;
 using Contigo.Quotes.Infrastructure;
 using Contigo.SharedKernel;
@@ -48,12 +49,20 @@ namespace Contigo.Api;
 /// rows and returned to the caller, but never unwinds the upload itself — the bytes are already
 /// safely stored and the <see cref="Quote"/> row already exists by the time this runs (mirrors
 /// <c>DocumentProcessingPipeline</c>'s identical posture).
+///
+/// <b>Task E05/F01/US01/T02 (quote-normalization)</b>: right after <paramref name="lineExtractionService"/>
+/// adds a quote's <see cref="QuoteLine"/> rows to the change tracker, this pipeline also runs
+/// <see cref="QuoteLineNormalizationService"/> over those same not-yet-saved rows — spec §11.1's
+/// "Normalize unit economics" pipeline step, in the same unit of work as extraction, before the one
+/// shared <c>SaveChangesAsync</c> call below. See that service's own doc comment for why "same unit
+/// of work" (not a separate save) is load-bearing here.
 /// </summary>
 internal sealed class QuoteExtractionPipeline(
     QuotesDbContext dbContext,
     IAiGateway aiGateway,
     HybridDocumentParsingService parsingService,
     QuoteLineExtractionService lineExtractionService,
+    QuoteLineNormalizationService lineNormalizationService,
     ITenantContext tenantContext,
     IClock clock,
     IAuditWriter auditWriter)
@@ -159,6 +168,15 @@ internal sealed class QuoteExtractionPipeline(
                 .ConfigureAwait(false);
         }
 
+        // Task E05/F01/US01/T02 (quote-normalization): normalizes the very rows ApplyExtractedLines
+        // just added to this same QuotesDbContext's change tracker (still unsaved) — spec §11.1
+        // "Normalize unit economics", the pipeline step right after "Extract". Deliberately does not
+        // factor into finalJobStatus below: an unresolved normalization (spec §11.3) is an expected,
+        // common outcome for a term outside QuoteBillingCadence's own small recognized vocabulary,
+        // not an extraction-quality problem — see QuoteLineNormalizationOutcome's own doc comment for
+        // who (a future task) actually reads UnresolvedCount to act on it.
+        var normalizationOutcome = lineNormalizationService.NormalizeLines(tenantId, quoteId);
+
         // Human-in-the-loop principle: nothing extracted, something skipped, or any line below the
         // confidence threshold all mean a person should look at this quote before it is trusted,
         // even though the AI Gateway call itself succeeded — mirrors
@@ -189,7 +207,13 @@ internal sealed class QuoteExtractionPipeline(
             .ConfigureAwait(false);
 
         return Result<QuoteProcessingSummary>.Success(new QuoteProcessingSummary(
-            quoteId, quote.ProcessingStatus, outcome.ExtractedCount, outcome.SkippedCount, pages.Count));
+            quoteId,
+            quote.ProcessingStatus,
+            outcome.ExtractedCount,
+            outcome.SkippedCount,
+            pages.Count,
+            normalizationOutcome.NormalizedCount,
+            normalizationOutcome.UnresolvedCount));
     }
 
     /// <summary>Shared terminal-failure path: marks both rows Failed, persists, and returns the
@@ -247,9 +271,19 @@ internal sealed class QuoteExtractionPipeline(
 /// <summary>Outcome of one <see cref="QuoteExtractionPipeline.ProcessAsync"/> run — the response
 /// shape `POST /api/quotes` (see <see cref="QuotesEndpointExtensions"/>) folds into its own JSON
 /// reply.</summary>
+/// <param name="NormalizedLineItemCount">Task E05/F01/US01/T02 (quote-normalization): how many of
+/// this run's <see cref="LineItemCount"/> lines resolved to a real
+/// <c>Contigo.Quotes.Domain.QuoteLine.NormalizedAnnualUnitPrice</c> — see
+/// <c>Contigo.Quotes.Application.Normalization.QuoteLineNormalizationOutcome</c>'s own doc
+/// comment.</param>
+/// <param name="UnresolvedNormalizationCount">The complement of <paramref name="NormalizedLineItemCount"/>
+/// within <see cref="LineItemCount"/> — spec §11.3's "line-item normalization is unresolved" outcome,
+/// made visible over HTTP as well as in the database.</param>
 internal sealed record QuoteProcessingSummary(
     EntityId QuoteId,
     QuoteProcessingStatus ProcessingStatus,
     int LineItemCount,
     int SkippedCount,
-    int PageCount);
+    int PageCount,
+    int NormalizedLineItemCount,
+    int UnresolvedNormalizationCount);

@@ -91,6 +91,12 @@ public static class QuotesEndpointExtensions
             : uploaded.ProcessingStatus;
         var lineItemCount = processingResult.IsSuccess ? processingResult.Value.LineItemCount : 0;
 
+        // Task E05/F01/US01/T02 (quote-normalization): 0/0 on a pipeline failure, same honest
+        // fallback as lineItemCount above — normalization never ran if extraction itself did not.
+        var normalizedLineItemCount = processingResult.IsSuccess ? processingResult.Value.NormalizedLineItemCount : 0;
+        var unresolvedNormalizationCount =
+            processingResult.IsSuccess ? processingResult.Value.UnresolvedNormalizationCount : 0;
+
         return Results.Created($"/api/quotes/{uploaded.QuoteId}", new
         {
             id = uploaded.QuoteId.Value,
@@ -98,6 +104,8 @@ public static class QuotesEndpointExtensions
             mimeType = uploaded.MimeType,
             processingStatus = processingStatus.ToString(),
             lineItemCount,
+            normalizedLineItemCount,
+            unresolvedNormalizationCount,
             createdAt = uploaded.CreatedAt,
         });
     }

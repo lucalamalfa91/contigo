@@ -70,5 +70,35 @@ public sealed class QuoteLine : TenantScopedEntity
     public int? SourcePage { get; set; }
     public double? Confidence { get; set; }
 
+    /// <summary>
+    /// Task E05/F01/US01/T02 (quote-normalization; parent story us-01-quote-line-extraction, the
+    /// wave-spec's own <c>quote-normalization</c> artifact; product spec §11.1's pipeline step
+    /// "Normalize unit economics", between "Extract" and "Match benchmark"). <see cref="UnitPrice"/>
+    /// scaled to an annual rate via <see cref="NormalizedTermMonths"/> — computed deterministically
+    /// (never asks the model, Appendix C rule 6) by
+    /// <c>Contigo.Quotes.Application.Normalization.QuoteLineNormalizationService
+    /// .NormalizeUnitEconomics</c>. <see langword="null"/> whenever <see cref="UnitPrice"/> is
+    /// unknown <b>or</b> <see cref="Term"/> does not match that method's own small, fixed,
+    /// unambiguous billing-cadence vocabulary (a numeric commitment length like "36 months",
+    /// "one-time"/"perpetual", a blank term, or any other free text <see cref="Term"/> may
+    /// legitimately hold) — never a guessed conversion for a billing-period relationship this
+    /// codebase does not actually know, the same restraint
+    /// <c>Contigo.Savings.Application.PriceComparisonRequest</c>'s own doc comment documents for
+    /// cross-module term alignment (Appendix C rule 10). A <see langword="null"/> here <b>is</b> spec
+    /// §11.3's own "line-item normalization is unresolved" outcome, for whatever future
+    /// benchmark-match/assessment task needs to honour that guardrail ("do not generate a savings
+    /// target if... unresolved") — this column only produces the honest, queryable signal; no task
+    /// yet reads it back to gate anything.
+    /// </summary>
+    public decimal? NormalizedAnnualUnitPrice { get; set; }
+
+    /// <summary>The recognized billing-cadence length, in months, that produced
+    /// <see cref="NormalizedAnnualUnitPrice"/> (1 = monthly, 3 = quarterly, 6 = semi-annual, 12 =
+    /// annual) — kept as evidence for how that figure was derived, the same "never a consequential
+    /// derived fact without a way to see why" spirit <see cref="SourceSpan"/>/<see cref="SourcePage"/>
+    /// already apply to the raw extraction (Appendix C rule 2). <see langword="null"/> exactly when
+    /// <see cref="NormalizedAnnualUnitPrice"/> is <see langword="null"/>.</summary>
+    public int? NormalizedTermMonths { get; set; }
+
     public required DateTimeOffset CreatedAt { get; set; }
 }

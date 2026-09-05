@@ -1,5 +1,6 @@
 using Contigo.Quotes.Application;
 using Contigo.Quotes.Application.Extraction;
+using Contigo.Quotes.Application.Normalization;
 using Contigo.SharedKernel;
 using Contigo.SharedKernel.Tenancy;
 using Microsoft.EntityFrameworkCore;
@@ -14,6 +15,9 @@ namespace Contigo.Quotes.Infrastructure;
 /// this module its first <c>DbContext</c> (<see cref="QuotesDbContext"/>, backing
 /// <see cref="QuoteUploadService"/> and <see cref="QuoteLineExtractionService"/>) — mirrors
 /// <c>Contigo.Savings.Infrastructure.ServiceCollectionExtensions.AddSavingsModule</c>'s own shape.
+/// Task E05/F01/US01/T02 (quote-normalization) later adds
+/// <see cref="QuoteLineNormalizationService"/> to this same registration, sharing this module's one
+/// <c>DbContext</c> too.
 ///
 /// Deliberately does <b>not</b> call <c>Contigo.Benchmark.ServiceCollectionExtensions
 /// .AddBenchmarkModule</c> — unlike <c>Contigo.Savings</c>/<c>Contigo.Renewals</c>, nothing this
@@ -48,6 +52,10 @@ public static class ServiceCollectionExtensions
         // above) rather than a second, independently-tracked context.
         services.AddScoped<QuoteUploadService>();
         services.AddScoped<QuoteLineExtractionService>();
+        // Task E05/F01/US01/T02 (quote-normalization): shares this request's own QuotesDbContext
+        // (also Scoped, registered above) with QuoteLineExtractionService — see
+        // QuoteLineNormalizationService's own doc comment for why that matters.
+        services.AddScoped<QuoteLineNormalizationService>();
 
         return services;
     }
