@@ -1198,6 +1198,24 @@ resolves `IBenchmarkService` yet").
   already-landed logic. The `POST /api/quotes` HTTP-surface-table row above
   had the identical duplicate-row shape (two rows, each missing the other's
   fields) — consolidated into the one row above for the same reason.
+- **Task E05/F04/US01/T01 (r4-integration) fixes**: `MarketAssessmentService`
+  never opened its own `ITenantContext.BeginScope` — unlike every other
+  tenant-scoped application service in this codebase — and neither did
+  `Contigo.Api.QuotesEndpointExtensions.GetAssessmentAsync` upstream of it.
+  Against a real, RLS-enforced, non-superuser connection (every deployed
+  environment), `GET /api/quotes/{id}/assessment` would 404 for every real
+  quote, always — undetected because `MarketAssessmentServiceTests` calls
+  this method from inside a test-provided scope, and no integration test had
+  yet driven this endpoint over real HTTP against an unprivileged Postgres
+  role. Fixed the same way every sibling service already does it (see that
+  type's own doc comment) — no caller-side change required. Separately,
+  `GetAssessmentAsync` never actually serialized `quantity` on the response
+  despite `LineMarketAssessment.Quantity` existing exactly to be echoed here
+  and despite this very HTTP-surface-table row documenting it since task
+  E05/F02/US01/T02 — also fixed, so the wire response now matches its own
+  already-published contract. Both surfaced by, and proved fixed by,
+  `Contigo.IntegrationTests.R4EndToEndTests`/`R4CrossTenantIsolationTests` —
+  see "R4 demo smoke test" below.
 
 ## Negotiation Strategy — opening target/range/walk-away + levers
 
@@ -1295,7 +1313,16 @@ picked up yet").
   us-01-negotiation-strategy's own acceptance criteria name no `GET
   /api/quotes/{id}/...` route (unlike us-01-market-assessment's AC-3), so
   none was added — `AddQuotesModule` registers the service so a future
-  task/feature-04 (r4-integration) can call it.
+  task/feature-04 (r4-integration) can call it. **Task E05/F04/US01/T01
+  (r4-integration) is that caller**: `Contigo.IntegrationTests.R4EndToEndTests`
+  resolves this service directly from the real host's own container (the
+  same "no dedicated route exists yet" convention `R2EndToEndTests`/
+  `R3EndToEndTests` already established), still with no dedicated HTTP route
+  of its own — that remains open, un-picked-up scope. That same task also
+  gave this service its own `ITenantContext.BeginScope` (it never opened one
+  either, for the identical reason and with the identical real-HTTP
+  consequence the "Market Assessment" section above now documents for
+  `MarketAssessmentService`) — see this type's own doc comment.
 - Proved directly by `Contigo.Quotes.Tests.NegotiationStrategyCalculatorTests`
   (pure, no database — range/walk-away arithmetic, all seven levers, every
   honest-abstain branch, determinism) and end to end by
@@ -1443,6 +1470,64 @@ flywheel).
   `savingsOpportunityId` (the outcome still persists and the call still
   returns 201; `savingsPropagated: false` + `savingsPropagationError`
   reported honestly instead of an HTTP failure).
+
+## R4 demo smoke test
+
+The automated proof of task E05/F04/US01/T01 (r4-integration) is `dotnet test` —
+`Contigo.IntegrationTests.R4EndToEndTests` (AC-1 "Upload quote -> line items -> benchmark match ->
+market assessment -> target range -> negotiation strategy", AC-2 "User can correct SKU matching
+before accepting assessment", AC-3 "Record final outcome -> realized savings tracked" — the whole
+Quote Check Day-1 chain, driven against one real, uploaded quote through the real host, for the
+first time; every earlier Quote Check task only proved its own segment in isolation) and
+`R4CrossTenantIsolationTests` (the same AC-1/AC-3 surface — `GET /api/quotes/{id}/assessment`,
+`POST /api/negotiations/outcomes` — proven isolated across two tenants, the same "drive the whole
+path across two tenants through the real host" value-add `R1CrossTenantIsolationTests`/
+`R2CrossTenantIsolationTests`/`R3CrossTenantIsolationTests` already established). Run just these:
+
+```bash
+cd backend
+dotnet test Contigo.slnx --configuration Release --filter "FullyQualifiedName~R4"
+```
+
+Running this test end to end (rather than each Quote Check task's own narrower, per-segment test)
+surfaced two real gaps — see "Market Assessment" and "Negotiation Strategy" above for the full
+account: `MarketAssessmentService`/`NegotiationStrategyService` never opened their own
+`ITenantContext.BeginScope`, so `GET /api/quotes/{id}/assessment` would 404 for every real quote
+against a real, unprivileged-role Postgres connection (every deployed environment); and that same
+endpoint never actually serialized `LineMarketAssessment.Quantity` as `quantity`, despite
+backend/README.md's own HTTP surface table documenting it since task E05/F02/US01/T02. Both are
+fixed; both are now covered by this task's own tests.
+
+To manually smoke-test the same path against a running `dev`/`demo` deployment:
+
+```bash
+API=https://<api-host>
+TENANT=$(curl -s -X POST "$API/api/workspaces" -H 'Content-Type: application/json' \
+  -d '{"name":"Smoke Test Co"}' | jq -r .id)
+
+QUOTE=$(curl -s -X POST "$API/api/quotes" -H "X-Tenant-Id: $TENANT" \
+  -F "file=@quote.pdf;type=application/pdf" \
+  -F "supplier=Salesforce" -F "currency=USD" -F "geography=US" -F "purchaseDate=2026-07-01" \
+  | jq -r .id)
+
+# processingStatus/lineItemCount/unmatchedSkuCount reflect QuoteExtractionPipeline's own run
+# (hybrid parse -> extract -> normalize -> SKU-match) -- POST /api/quotes runs it synchronously.
+curl -s "$API/api/quotes/$QUOTE/assessment" -H "X-Tenant-Id: $TENANT" | jq .
+```
+
+Honest caveats: `IAiGateway` still binds to `FixtureAiGateway` (no live Foundry endpoint exists yet,
+ADR-004), whose `ExtractAsync` always returns an empty `{}` — a real `demo` upload lands zero line
+items, so nothing on it will ever match a benchmark. This smoke path proves the *pipeline/endpoint
+wiring* end to end (upload responds, the assessment route resolves and returns 200 for a real,
+owned quote); `R4EndToEndTests` proves the actual matching/target-saving/negotiation-strategy/
+outcome-capture arithmetic against a scripted gateway that returns real, schema-shaped facts, the
+same division of labour "R1 demo smoke test" above already documents for contracts. Negotiation
+strategy generation (`NegotiationStrategyService.GenerateAsync`) and identifying a new
+`SavingsOpportunity` (`SavingsOpportunityService.CreateAsync`) both still have no public HTTP route
+— see "Negotiation Strategy"/"Savings Intelligence — trackable SavingsOpportunity" above for why —
+so neither is curl-able yet; `R4EndToEndTests` proves both directly against the real host's own
+container instead, the same "no dedicated route exists yet" convention this backend has used since
+R2.
 
 ## Containers and CI
 

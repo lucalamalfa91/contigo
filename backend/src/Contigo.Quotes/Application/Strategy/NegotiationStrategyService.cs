@@ -1,6 +1,7 @@
 using Contigo.Quotes.Application.Assessment;
 using Contigo.Quotes.Infrastructure;
 using Contigo.SharedKernel;
+using Contigo.SharedKernel.Tenancy;
 using Microsoft.EntityFrameworkCore;
 
 namespace Contigo.Quotes.Application.Strategy;
@@ -35,9 +36,26 @@ namespace Contigo.Quotes.Application.Strategy;
 /// distribution — and therefore the target/saving range this strategy anchors on — can change
 /// between two calls).
 /// </para>
+///
+/// <para>
+/// <b>Task E05/F04/US01/T01 (r4-integration) fix</b>: this type never opened its own
+/// <see cref="ITenantContext.BeginScope"/> either, for the identical reason and with the identical
+/// real-HTTP consequence <see cref="Assessment.MarketAssessmentService"/>'s own doc comment now
+/// documents — the second, direct <c>dbContext.QuoteLines</c> query below ran with no tenant claim
+/// set on a real, RLS-enforced connection, regardless of whether the composed
+/// <see cref="Assessment.MarketAssessmentService.AssessAsync"/> call above ever fixed its own half of
+/// the gap. This method now opens its own scope around its entire body (nesting harmlessly with the
+/// identical scope <see cref="Assessment.MarketAssessmentService.AssessAsync"/> now also opens for
+/// the same <paramref name="tenantId"/> — <c>Contigo.SharedKernel.Tenancy.TenantContext.BeginScope</c>
+/// restores the previous, already-correct value on the inner dispose), so this service is correct
+/// with no caller-side change required, the same fix shape as its own composed dependency.
+/// </para>
 /// </summary>
 public sealed class NegotiationStrategyService(
-    MarketAssessmentService marketAssessmentService, QuotesDbContext dbContext, IClock clock)
+    MarketAssessmentService marketAssessmentService,
+    QuotesDbContext dbContext,
+    ITenantContext tenantContext,
+    IClock clock)
 {
     /// <summary>
     /// Generates a negotiation strategy for every <c>QuoteLine</c> on <paramref name="quoteId"/>/
@@ -49,6 +67,8 @@ public sealed class NegotiationStrategyService(
     public async Task<Result<QuoteNegotiationStrategy>> GenerateAsync(
         TenantId tenantId, EntityId quoteId, CancellationToken cancellationToken = default)
     {
+        using var tenantScope = tenantContext.BeginScope(tenantId);
+
         var assessmentResult = await marketAssessmentService
             .AssessAsync(tenantId, quoteId, cancellationToken)
             .ConfigureAwait(false);

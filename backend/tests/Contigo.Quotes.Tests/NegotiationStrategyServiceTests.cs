@@ -162,9 +162,9 @@ public sealed class NegotiationStrategyServiceTests : IAsyncDisposable
         await using (var db = CreateAppContext(tenantContext))
         using (tenantContext.BeginScope(tenantId))
         {
-            var marketAssessmentService = new MarketAssessmentService(db, new FixtureBenchmarkAdapter());
+            var marketAssessmentService = new MarketAssessmentService(db, new FixtureBenchmarkAdapter(), tenantContext);
             var clock = new FixedClock(new DateTimeOffset(2026, 2, 10, 0, 0, 0, TimeSpan.Zero));
-            var service = new NegotiationStrategyService(marketAssessmentService, db, clock);
+            var service = new NegotiationStrategyService(marketAssessmentService, db, tenantContext, clock);
             result = await service.GenerateAsync(tenantId, quoteId);
         }
 
@@ -217,9 +217,9 @@ public sealed class NegotiationStrategyServiceTests : IAsyncDisposable
         await using (var db = CreateAppContext(tenantContext))
         using (tenantContext.BeginScope(tenantId))
         {
-            var marketAssessmentService = new MarketAssessmentService(db, new FixtureBenchmarkAdapter());
+            var marketAssessmentService = new MarketAssessmentService(db, new FixtureBenchmarkAdapter(), tenantContext);
             var clock = new FixedClock(DateTimeOffset.UtcNow);
-            var service = new NegotiationStrategyService(marketAssessmentService, db, clock);
+            var service = new NegotiationStrategyService(marketAssessmentService, db, tenantContext, clock);
             result = await service.GenerateAsync(tenantId, EntityId.New());
         }
 

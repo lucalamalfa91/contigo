@@ -163,7 +163,7 @@ public sealed class MarketAssessmentServiceTests : IAsyncDisposable
         await using (var db = CreateAppContext(tenantContext))
         using (tenantContext.BeginScope(tenantId))
         {
-            var service = new MarketAssessmentService(db, new FixtureBenchmarkAdapter());
+            var service = new MarketAssessmentService(db, new FixtureBenchmarkAdapter(), tenantContext);
             result = await service.AssessAsync(tenantId, quoteId);
         }
 
@@ -271,7 +271,7 @@ public sealed class MarketAssessmentServiceTests : IAsyncDisposable
         await using (var db = CreateAppContext(tenantContext))
         using (tenantContext.BeginScope(tenantId))
         {
-            var service = new MarketAssessmentService(db, new FixtureBenchmarkAdapter());
+            var service = new MarketAssessmentService(db, new FixtureBenchmarkAdapter(), tenantContext);
             result = await service.AssessAsync(tenantId, quoteId);
         }
 
@@ -294,7 +294,7 @@ public sealed class MarketAssessmentServiceTests : IAsyncDisposable
         await using var db = CreateAppContext(tenantContext);
         using var scope = tenantContext.BeginScope(tenantId);
 
-        var service = new MarketAssessmentService(db, new FixtureBenchmarkAdapter());
+        var service = new MarketAssessmentService(db, new FixtureBenchmarkAdapter(), tenantContext);
         var result = await service.AssessAsync(tenantId, EntityId.New());
 
         Assert.True(result.IsFailure);

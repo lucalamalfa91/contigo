@@ -210,6 +210,13 @@ public static class QuotesEndpointExtensions
                 status = line.Status.ToString(),
                 position = line.Position?.ToString(),
                 unitPrice = line.UnitPrice,
+                // Task E05/F04/US01/T01 (r4-integration) fix: LineMarketAssessment.Quantity has
+                // existed since task E05/F02/US01/T02 (target-saving) specifically so a caller never
+                // has to re-fetch the line (see that record's own doc comment) — and the HTTP surface
+                // table in backend/README.md has documented `quantity` as part of this response's own
+                // shape since that same task — but this handler never actually serialized it. Adding
+                // it now aligns the wire response with its own already-published contract.
+                quantity = line.Quantity,
                 benchmark = line.Benchmark is null
                     ? null
                     : new

@@ -2,6 +2,7 @@ using Contigo.Benchmark;
 using Contigo.Quotes.Domain;
 using Contigo.Quotes.Infrastructure;
 using Contigo.SharedKernel;
+using Contigo.SharedKernel.Tenancy;
 using Microsoft.EntityFrameworkCore;
 
 namespace Contigo.Quotes.Application.Assessment;
@@ -32,8 +33,34 @@ namespace Contigo.Quotes.Application.Assessment;
 /// recomputing it, the same "computed fresh, not stored" posture
 /// <c>Contigo.Savings.Application.PriceComparisonResult.Provenance</c> already takes for its own
 /// derived property.
+///
+/// <para>
+/// <b>Task E05/F04/US01/T01 (r4-integration) fix</b>: this type never opened its own
+/// <see cref="ITenantContext.BeginScope"/> — unlike every other tenant-scoped application service in
+/// this codebase (<c>QuoteUploadService</c>, <c>NegotiationOutcomeService</c>,
+/// <c>SavingsOpportunityService</c>, <c>SavingsKpiQueryService</c> all "own their own tenant scope
+/// rather than trusting one is already active"), and nothing upstream of it opens one either —
+/// <c>Contigo.Api.QuotesEndpointExtensions.GetAssessmentAsync</c> calls <see cref="AssessAsync"/>
+/// directly, with no <c>ITenantContext</c> parameter of its own. Against a real, RLS-enforced,
+/// non-superuser connection (every deployed environment; every <c>Contigo.IntegrationTests</c>
+/// fixture), <c>app.tenant_id</c> was therefore never set for this call, so
+/// <c>TenantRlsConnectionInterceptor</c>'s own documented "fail closed" behaviour
+/// (<see cref="ITenantContext.Current"/>'s own doc comment: "<see langword="null"/> means the RLS
+/// claim is left unset... RLS denies every tenant-scoped row") denied the very row this method's own
+/// explicit <c>tenantId</c> filter was trying to read — <c>GET /api/quotes/{id}/assessment</c> would
+/// 404 for every real quote, always, in `dev`/`demo`. Undetected until now because
+/// <c>Contigo.Quotes.Tests.MarketAssessmentServiceTests</c> calls this method from inside a
+/// test-provided <c>tenantContext.BeginScope(tenantId)</c> block (masking the gap the same way
+/// <c>Contigo.IntegrationTests.R2EndToEndTests</c>' own doc comment describes for
+/// <c>RenewalThresholdScheduler.EvaluateThresholdsAsync</c>'s identical class of bug), and no
+/// integration test had yet driven this endpoint over real HTTP against a real, unprivileged-role
+/// Postgres connection. Fixed the same way every sibling service already does it: this type now
+/// takes its own <see cref="ITenantContext"/> and opens the scope itself, so every current and future
+/// caller gets a correct claim with no caller-side change required.
+/// </para>
 /// </summary>
-public sealed class MarketAssessmentService(QuotesDbContext dbContext, IBenchmarkService benchmarkService)
+public sealed class MarketAssessmentService(
+    QuotesDbContext dbContext, IBenchmarkService benchmarkService, ITenantContext tenantContext)
 {
     /// <summary>
     /// Assesses every <see cref="QuoteLine"/> currently persisted for <paramref name="quoteId"/>/
@@ -45,6 +72,8 @@ public sealed class MarketAssessmentService(QuotesDbContext dbContext, IBenchmar
     public async Task<Result<QuoteMarketAssessment>> AssessAsync(
         TenantId tenantId, EntityId quoteId, CancellationToken cancellationToken = default)
     {
+        using var tenantScope = tenantContext.BeginScope(tenantId);
+
         var quote = await dbContext.Quotes
             .SingleOrDefaultAsync(q => q.TenantId == tenantId && q.Id == quoteId, cancellationToken)
             .ConfigureAwait(false);
