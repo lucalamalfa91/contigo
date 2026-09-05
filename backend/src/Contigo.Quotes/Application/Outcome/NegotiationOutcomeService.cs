@@ -31,6 +31,17 @@ namespace Contigo.Quotes.Application.Outcome;
 /// ADR-002 module boundary (<c>Contigo.ArchitectureTests.DependencyDirectionTests</c>' allow-list
 /// for <c>Contigo.Quotes</c> is exactly <c>[SharedKernel, Benchmark]</c> — the same trick
 /// <c>QuoteUploadService</c> already uses).
+///
+/// <para>
+/// Task E05/F03/US02/T02 (outcome-propagation; parent story AC-2 "Realized savings surface on the
+/// savings dashboard (cross-wave)"): this method now also records
+/// <see cref="Domain.NegotiationOutcome.SavingsOpportunityId"/> when the caller supplies one, but
+/// does not itself act on it — this module cannot see <c>Contigo.Savings</c> (ADR-002), so it has no
+/// way to confirm the id is real or to write the realized value onto that opportunity.
+/// <c>Contigo.Api.NegotiationOutcomePropagationService</c> — the composition root — reads this same
+/// id back after <see cref="CaptureAsync"/> returns and performs the actual cross-module
+/// propagation; see that type's own doc comment.
+/// </para>
 /// </summary>
 public sealed class NegotiationOutcomeService(
     QuotesDbContext dbContext, ITenantContext tenantContext, IClock clock, IAuditWriter auditWriter)
@@ -156,6 +167,12 @@ public sealed class NegotiationOutcomeService(
             NegotiationDurationDays = request.NegotiationDurationDays,
             LeversUsed = leversUsed,
             CapturedAt = now,
+            // Task E05/F03/US02/T02 (outcome-propagation) — see Domain.NegotiationOutcome
+            // .SavingsOpportunityId's own doc comment: a bare, unvalidated cross-module id, honestly
+            // null when the caller supplied none.
+            SavingsOpportunityId = request.SavingsOpportunityId is { } savingsOpportunityGuid
+                ? new EntityId(savingsOpportunityGuid)
+                : null,
         };
 
         dbContext.NegotiationOutcomes.Add(outcome);
@@ -176,7 +193,8 @@ public sealed class NegotiationOutcomeService(
                 outcome.Id.Value.ToString(),
                 now,
                 $"quoteId={outcome.QuoteId} finalPrice={outcome.FinalPrice} " +
-                $"realizedSaving={outcome.RealizedSaving} discountPercent={outcome.DiscountPercent}"),
+                $"realizedSaving={outcome.RealizedSaving} discountPercent={outcome.DiscountPercent} " +
+                $"savingsOpportunityId={outcome.SavingsOpportunityId}"),
             cancellationToken).ConfigureAwait(false);
 
         return Result<NegotiationOutcomeResult>.Success(ToResult(outcome));
@@ -192,5 +210,6 @@ public sealed class NegotiationOutcomeService(
         outcome.DiscountPercent,
         outcome.NegotiationDurationDays,
         outcome.LeversUsed,
-        outcome.CapturedAt);
+        outcome.CapturedAt,
+        outcome.SavingsOpportunityId);
 }

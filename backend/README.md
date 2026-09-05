@@ -1333,7 +1333,9 @@ flywheel).
   /api/quotes, /api/negotiations/outcomes"; `X-Tenant-Id` header; plain
   JSON body, unlike `POST /api/quotes`'s multipart upload) —
   `{ quoteId, originalQuoteTotal, targetPrice?, finalPrice,
-  negotiationDurationDays, leversUsed: [<NegotiationLeverType name>, ...] }`.
+  negotiationDurationDays, leversUsed: [<NegotiationLeverType name>, ...],
+  savingsOpportunityId? }` (`savingsOpportunityId` added by task
+  E05/F03/US02/T02, outcome-propagation — see the dedicated bullet below).
   404 (`Contigo.Quotes.Application.Outcome.NegotiationOutcomeService
   .QuoteNotFoundError`) when `quoteId` does not name a quote for this
   tenant; 400 for every validation failure (non-positive
@@ -1341,7 +1343,13 @@ flywheel).
   `negotiationDurationDays`, an empty or unrecognized `leversUsed`).
   Response `{ id, quoteId, originalQuoteTotal, targetPrice, finalPrice,
   realizedSaving, discountPercent, negotiationDurationDays, leversUsed,
-  capturedAt }`.
+  capturedAt, savingsOpportunityId, savingsPropagated,
+  savingsPropagationError }` — the last three are `null`/absent-equivalent
+  together whenever the caller supplied no `savingsOpportunityId`;
+  otherwise `savingsPropagated` is always `true`/`false` and
+  `savingsPropagationError` is set only when it is `false` — never a
+  distinct HTTP status for a propagation failure (see the propagation
+  bullet below).
 - **`Contigo.Quotes.Application.Outcome.NegotiationOutcomeCalculator`** is a
   pure, synchronous calculator (no database/HTTP/LLM call, Appendix C rule
   6) — `realizedSaving = originalQuoteTotal - finalPrice`,
@@ -1378,15 +1386,63 @@ flywheel).
   (`negotiation_outcome.captured`) per successful capture, still inside
   the same call's tenant scope — same placement as `QuoteUploadService
   .UploadAsync`'s own "persist -> audit" write.
+- **Realized-savings propagation (task E05/F03/US02/T02,
+  outcome-propagation; parent story AC-2 "Realized savings surface on the
+  savings dashboard (cross-wave)")**: when the caller supplies
+  `savingsOpportunityId`, `Contigo.Api.NegotiationsEndpointExtensions`
+  also calls `Contigo.Api.NegotiationOutcomePropagationService
+  .PropagateAsync` right after the capture itself is already durable,
+  still in the same request. That type is `internal`, host-composition-
+  root-only wiring (ADR-002: `Contigo.Quotes` and `Contigo.Savings` cannot
+  see each other; only `Contigo.Api` may reference both — the same
+  treatment `QuoteExtractionPipeline` already gets, see "Dependency
+  direction" below), and it reuses the exact same, already-audited write
+  path a human `PATCH /api/savings/{id}` call already uses
+  (`SavingsOpportunityService.UpdateAsync` with `realizedAmount` set — see
+  "Savings Intelligence — trackable SavingsOpportunity" above): that call
+  finalizes the opportunity's own `status` as `Realized` and inserts a new
+  `RealizedSavings` row, in the opportunity's own currency. This service
+  then writes one more, distinct `IAuditWriter` entry
+  (`negotiation_outcome.propagated`) recording the link between the two
+  aggregate ids — the one fact neither the `negotiation_outcome.captured`
+  nor the `savings_opportunity.realized` entry captures alone. **Never
+  fails an already-durable capture**: an unknown `savingsOpportunityId`
+  (or any other `UpdateAsync` validation failure) is reported honestly as
+  `savingsPropagated: false` + `savingsPropagationError` on the same 201
+  response, never a 4xx/5xx — the outcome capture itself already succeeded
+  and is already audit-tracked (AC-3) before propagation is even
+  attempted. No currency reconciliation: `NegotiationOutcome` carries no
+  currency of its own, and `UpdateAsync`'s own `realizedAmount` parameter
+  has never reconciled a caller-supplied figure against another currency
+  either — the same, already-accepted trust assumption an automated
+  caller now shares with a human PATCHing directly. `GET
+  /api/savings/kpis`'s own `savingsRealized` bucket does **not** yet read
+  this `RealizedSavings` row (the honest gap the "Savings Intelligence —
+  trackable SavingsOpportunity" section above already names, task
+  E04/F02/US02/T02's own follow-up, not this task's) — "surfaces on the
+  savings dashboard" (AC-2) today means the opportunity's own `status` and
+  realized-value row are real and queryable, not yet that every KPI number
+  reflects them.
 - Proved directly by `Contigo.Quotes.Tests.NegotiationOutcomeCalculatorTests`
   (pure, no database — the spec §12.2 worked example, the negative-saving
   honesty case, determinism) and end to end by
   `Contigo.Quotes.Tests.NegotiationOutcomeServiceTests` against a real
   Postgres+RLS database (persistence, the audit entry, the "second capture
   does not overwrite the first" append-only proof, quote-not-found/
-  cross-tenant/every validation failure) plus
+  cross-tenant/every validation failure, and — task E05/F03/US02/T02 —
+  that a caller-supplied `savingsOpportunityId` persists unvalidated) plus
   `Contigo.Api.Tests.NegotiationsEndpointTests` for the host-level
-  tenant-header guard clause.
+  tenant-header guard clause. Realized-savings propagation itself (task
+  E05/F03/US02/T02) is proved end to end by
+  `Contigo.IntegrationTests.NegotiationOutcomePropagationEndToEndTests`
+  against the real, composed `Contigo.Api` host and a real, migrated
+  Postgres+RLS database spanning both `Contigo.Quotes` and
+  `Contigo.Savings` — a real `SavingsOpportunity` realized (`status`,
+  the `RealizedSavings` row, the `negotiation_outcome.propagated` audit
+  entry, and all three response fields) and an unknown
+  `savingsOpportunityId` (the outcome still persists and the call still
+  returns 201; `savingsPropagated: false` + `savingsPropagationError`
+  reported honestly instead of an HTTP failure).
 
 ## Containers and CI
 

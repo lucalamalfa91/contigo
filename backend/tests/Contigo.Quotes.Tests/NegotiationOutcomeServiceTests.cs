@@ -74,14 +74,16 @@ public sealed class NegotiationOutcomeServiceTests : IAsyncLifetime
         decimal? targetPrice = 420_000m,
         decimal finalPrice = 435_000m,
         int negotiationDurationDays = 24,
-        IReadOnlyList<string>? leversUsed = null) =>
+        IReadOnlyList<string>? leversUsed = null,
+        Guid? savingsOpportunityId = null) =>
         new(
             quoteId,
             originalQuoteTotal,
             targetPrice,
             finalPrice,
             negotiationDurationDays,
-            leversUsed ?? ["Term", "QuarterEnd"]);
+            leversUsed ?? ["Term", "QuarterEnd"],
+            savingsOpportunityId);
 
     private async Task<EntityId> SeedQuoteAsync(TenantId tenantId)
     {
@@ -132,6 +134,10 @@ public sealed class NegotiationOutcomeServiceTests : IAsyncLifetime
         Assert.Equal(24, outcome.NegotiationDurationDays);
         Assert.Equal([NegotiationLeverType.Term, NegotiationLeverType.QuarterEnd], outcome.LeversUsed);
         Assert.Equal(now, outcome.CapturedAt);
+        // Task E05/F03/US02/T02 (outcome-propagation): honestly null when the caller supplies no
+        // savingsOpportunityId — not every negotiated outcome traces back to a pre-tracked
+        // opportunity.
+        Assert.Null(outcome.SavingsOpportunityId);
 
         var auditEntry = Assert.Single(auditWriter.Written);
         Assert.Equal(tenantId, auditEntry.TenantId);
@@ -350,5 +356,56 @@ public sealed class NegotiationOutcomeServiceTests : IAsyncLifetime
 
         Assert.True(result.IsSuccess);
         Assert.Equal([NegotiationLeverType.Volume], result.Value.LeversUsed);
+    }
+
+    // Task E05/F03/US02/T02 (outcome-propagation): CaptureAsync persists whatever
+    // savingsOpportunityId the caller supplies, but never validates it against Contigo.Savings —
+    // this module cannot see that module at all (ADR-002). The actual cross-module propagation
+    // (and 404 when the id is unknown) is Contigo.Api.NegotiationOutcomePropagationService's own
+    // job, proved end to end by Contigo.IntegrationTests
+    // .NegotiationOutcomePropagationEndToEndTests against the real, composed host.
+    [Fact]
+    public async Task CaptureAsync_persists_the_supplied_savings_opportunity_id_unvalidated()
+    {
+        var tenantId = TenantId.New();
+        var quoteId = await SeedQuoteAsync(tenantId);
+        var tenantContext = new TenantContext();
+        await using var db = CreateAppContext(tenantContext);
+        var service = new NegotiationOutcomeService(
+            db, tenantContext, new FixedClock(DateTimeOffset.UtcNow), new RecordingAuditWriter());
+
+        // An id that names no real SavingsOpportunity anywhere — CaptureAsync still succeeds
+        // (Contigo.Quotes structurally cannot check Contigo.Savings), recording the caller's intent
+        // for Contigo.Api's own orchestrator to resolve afterward.
+        var savingsOpportunityId = Guid.NewGuid();
+
+        var result = await service.CaptureAsync(
+            tenantId, ValidRequest(quoteId.Value, savingsOpportunityId: savingsOpportunityId));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(new EntityId(savingsOpportunityId), result.Value.SavingsOpportunityId);
+
+        using (tenantContext.BeginScope(tenantId))
+        {
+            await using var readDb = CreateAppContext(tenantContext);
+            var persisted = await readDb.NegotiationOutcomes.SingleAsync(o => o.Id == result.Value.Id);
+            Assert.Equal(new EntityId(savingsOpportunityId), persisted.SavingsOpportunityId);
+        }
+    }
+
+    [Fact]
+    public async Task CaptureAsync_leaves_savings_opportunity_id_null_when_the_caller_supplies_none()
+    {
+        var tenantId = TenantId.New();
+        var quoteId = await SeedQuoteAsync(tenantId);
+        var tenantContext = new TenantContext();
+        await using var db = CreateAppContext(tenantContext);
+        var service = new NegotiationOutcomeService(
+            db, tenantContext, new FixedClock(DateTimeOffset.UtcNow), new RecordingAuditWriter());
+
+        var result = await service.CaptureAsync(tenantId, ValidRequest(quoteId.Value, savingsOpportunityId: null));
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(result.Value.SavingsOpportunityId);
     }
 }

@@ -121,6 +121,14 @@ builder.Services.AddQuotesModule(quotesConnectionString);
 // rather than a second, independently-tracked context of either.
 builder.Services.AddScoped<QuoteExtractionPipeline>();
 
+// Task E05/F03/US02/T02 (outcome-propagation): NegotiationOutcomePropagationService is the same
+// kind of host-composition wiring as QuoteExtractionPipeline above ("the one place... that calls
+// both Contigo.Quotes and Contigo.Savings" — see that type's own doc comment), registered directly
+// here for the identical reason. Scoped: shares this request's own QuotesDbContext (already Scoped
+// via AddQuotesModule above) and resolves the already-Scoped SavingsOpportunityService (registered
+// by AddSavingsModule above) rather than a second, independently-tracked instance of either.
+builder.Services.AddScoped<NegotiationOutcomePropagationService>();
+
 builder.Services.AddHealthChecks();
 
 var app = builder.Build();
@@ -329,6 +337,14 @@ app.MapQuotesEndpoints();
 // See NegotiationsEndpointExtensions/NegotiationOutcomeService for the endpoint and
 // validation/persistence/audit decisions respectively. Shares Contigo.Quotes's own QuotesDbContext
 // (already registered by AddQuotesModule above) — no new connection string.
+//
+// Task E05/F03/US02/T02 (outcome-propagation, parent story AC-2 "Realized savings surface on the
+// savings dashboard (cross-wave)"): the same handler now also calls
+// NegotiationOutcomePropagationService when the caller supplies a savingsOpportunityId, writing the
+// realized figure onto Contigo.Savings's own SavingsOpportunity/RealizedSavings (task
+// E04/F02/US02/T02) via the exact same PATCH /api/savings/{id} write path a human caller already
+// uses. See NegotiationOutcomePropagationService for why this never fails an already-durable
+// capture.
 app.MapNegotiationsEndpoints();
 
 app.Run();

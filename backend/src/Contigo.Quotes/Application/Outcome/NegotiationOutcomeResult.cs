@@ -20,4 +20,5 @@ public sealed record NegotiationOutcomeResult(
     decimal DiscountPercent,
     int NegotiationDurationDays,
     IReadOnlyList<NegotiationLeverType> LeversUsed,
-    DateTimeOffset CapturedAt);
+    DateTimeOffset CapturedAt,
+    EntityId? SavingsOpportunityId = null);

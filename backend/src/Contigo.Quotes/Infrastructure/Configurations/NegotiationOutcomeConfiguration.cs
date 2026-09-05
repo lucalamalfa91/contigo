@@ -53,6 +53,13 @@ public sealed class NegotiationOutcomeConfiguration : IEntityTypeConfiguration<N
             .HasMaxLength(200)
             .IsRequired();
 
+        // Task E05/F03/US02/T02 (outcome-propagation): cross-module reference by id only,
+        // deliberately no FK (ADR-002; see the entity's own doc comment) — same treatment
+        // Contigo.Savings.Infrastructure.Configurations.SavingsOpportunityConfiguration already
+        // gives SavingsOpportunity.ContractId/SupplierId.
+        builder.Property(e => e.SavingsOpportunityId)
+            .HasConversion(ValueConverters.NullableEntityIdConverter);
+
         builder.HasIndex(e => e.TenantId);
         builder.HasIndex(e => new { e.TenantId, e.QuoteId });
     }

@@ -120,4 +120,40 @@ public sealed class NegotiationOutcome : TenantScopedEntity
     /// database default, same "no hidden clock" convention <c>RealizedSavings.RealizedAt</c> already
     /// follows).</summary>
     public required DateTimeOffset CapturedAt { get; set; }
+
+    /// <summary>Task E05/F03/US02/T02 (outcome-propagation; parent story us-02-outcome-capture AC-2
+    /// "Realized savings surface on the savings dashboard (cross-wave)"). Which
+    /// <c>Contigo.Savings.Domain.SavingsOpportunity</c> (if any) this outcome's own
+    /// <see cref="RealizedSaving"/> was propagated onto — an explicit, caller-supplied fact, never
+    /// inferred: <c>Contigo.Savings.Domain.SavingsOpportunity</c> carries no <c>QuoteId</c> of its
+    /// own (that entity's own doc comment: a quote-originated opportunity is "R4, out of scope per
+    /// epic-04's own 'Out of scope' list"), so there is no derivable link this module could compute
+    /// on its own between a <see cref="Quote"/> and a tracked opportunity — the same "explicit
+    /// caller-supplied fact beats an inferred one when this module has no deterministic way to roll
+    /// up" reasoning this type's own doc comment already gives for <see cref="OriginalQuoteTotal"/>/
+    /// <see cref="TargetPrice"/>.
+    ///
+    /// <para>
+    /// Plain <see cref="EntityId"/>, not a foreign key: ADR-002 forbids <c>Contigo.Quotes</c> from
+    /// referencing <c>Contigo.Savings</c> at all (<c>Contigo.ArchitectureTests
+    /// .DependencyDirectionTests</c>'s allow-list for this module is exactly
+    /// <c>[SharedKernel, Benchmark]</c>), so this module cannot validate the id names a real,
+    /// tenant-owned opportunity — the same "cross-module reference by id only" treatment
+    /// <c>Contigo.Savings.Domain.SavingsOpportunity.ContractId</c>/<c>SupplierId</c> already give
+    /// their own cross-module references. <c>Contigo.Api.NegotiationOutcomePropagationService</c> —
+    /// the composition root, the one place allowed to see both modules at once — is what actually
+    /// resolves this id and reports whether propagation succeeded; a value here only records what the
+    /// caller asked for, not whether it worked.
+    /// </para>
+    ///
+    /// <para>
+    /// <see langword="null"/> when the caller did not supply one — not every negotiated outcome
+    /// traces back to a pre-tracked <c>SavingsOpportunity</c> (e.g. a new-purchase quote with no
+    /// portfolio-contract-comparison opportunity ever identified for it), and outcome capture must
+    /// never be blocked on a link this module honestly does not always have (Appendix C rule 9 "from
+    /// day one", the same posture <see cref="TargetPrice"/>'s own doc comment already documents for
+    /// an analogous gap).
+    /// </para>
+    /// </summary>
+    public EntityId? SavingsOpportunityId { get; set; }
 }

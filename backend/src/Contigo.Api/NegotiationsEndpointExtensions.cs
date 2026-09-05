@@ -16,6 +16,15 @@ namespace Contigo.Api;
 /// not in this task's "Architecture decisions in force" list, so there is no validated caller
 /// principal yet) — see <c>Program.cs</c>'s own comment on why this interim gap is not promoted to
 /// reports/open-questions.md by these tasks.
+///
+/// <para>
+/// Task E05/F03/US02/T02 (outcome-propagation; parent story AC-2 "Realized savings surface on the
+/// savings dashboard (cross-wave)"): when <see cref="NegotiationOutcomeCaptureRequest
+/// .SavingsOpportunityId"/> is supplied, <see cref="CaptureOutcomeAsync"/> also calls
+/// <see cref="NegotiationOutcomePropagationService.PropagateAsync"/> right after the capture itself
+/// succeeds, still inside the same request — see that type's own doc comment for why this runs
+/// synchronously here rather than as a separate endpoint/queued job.
+/// </para>
 /// </summary>
 public static class NegotiationsEndpointExtensions
 {
@@ -36,11 +45,23 @@ public static class NegotiationsEndpointExtensions
     /// <see cref="SavingsEndpointExtensions"/>'s own `PATCH /api/savings/{id}` handler already uses
     /// for <c>SavingsOpportunityService.NotFoundError</c>), 400 with <see cref="Result{T}.Error"/>
     /// for every other validation failure.
+    ///
+    /// <para>
+    /// Task E05/F03/US02/T02 (outcome-propagation): a <c>savingsOpportunityId</c> supplied on
+    /// <paramref name="request"/> triggers a second, best-effort step after the capture itself is
+    /// already durable — its own success/failure is reported as <c>savingsPropagated</c>/
+    /// <c>savingsPropagationError</c> on the <em>same</em> 201 response, never as a distinct HTTP
+    /// error: the outcome capture already succeeded and is already audit-tracked (AC-3), so a bad or
+    /// unknown <c>savingsOpportunityId</c> must not turn an already-durable write into a client-visible
+    /// failure (see <see cref="NegotiationOutcomePropagationService"/>'s own "never fails an
+    /// already-durable capture" doc comment).
+    /// </para>
     /// </summary>
     private static async Task<IResult> CaptureOutcomeAsync(
         NegotiationOutcomeCaptureRequest request,
         HttpRequest httpRequest,
         NegotiationOutcomeService outcomeService,
+        NegotiationOutcomePropagationService propagationService,
         CancellationToken cancellationToken)
     {
         if (!httpRequest.Headers.TryGetValue("X-Tenant-Id", out var tenantHeaderValues)
@@ -49,8 +70,9 @@ public static class NegotiationsEndpointExtensions
             return Results.BadRequest("A valid 'X-Tenant-Id' header (a GUID) is required.");
         }
 
-        var result = await outcomeService.CaptureAsync(
-            new TenantId(tenantGuid), request, cancellationToken).ConfigureAwait(false);
+        var tenantId = new TenantId(tenantGuid);
+
+        var result = await outcomeService.CaptureAsync(tenantId, request, cancellationToken).ConfigureAwait(false);
 
         if (result.IsFailure)
         {
@@ -60,6 +82,17 @@ public static class NegotiationsEndpointExtensions
         }
 
         var outcome = result.Value;
+
+        bool? savingsPropagated = null;
+        string? savingsPropagationError = null;
+        if (outcome.SavingsOpportunityId is { } savingsOpportunityId)
+        {
+            var propagationResult = await propagationService.PropagateAsync(
+                tenantId, outcome.Id, savingsOpportunityId, cancellationToken).ConfigureAwait(false);
+
+            savingsPropagated = propagationResult.IsSuccess;
+            savingsPropagationError = propagationResult.IsFailure ? propagationResult.Error : null;
+        }
 
         return Results.Created($"/api/negotiations/outcomes/{outcome.Id.Value}", new
         {
@@ -73,6 +106,9 @@ public static class NegotiationsEndpointExtensions
             negotiationDurationDays = outcome.NegotiationDurationDays,
             leversUsed = outcome.LeversUsed.Select(l => l.ToString()),
             capturedAt = outcome.CapturedAt,
+            savingsOpportunityId = outcome.SavingsOpportunityId?.Value,
+            savingsPropagated,
+            savingsPropagationError,
         });
     }
 }

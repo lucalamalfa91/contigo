@@ -16,6 +16,16 @@ internal static class ValueConverters
     public static readonly ValueConverter<EntityId, Guid> EntityIdConverter =
         new(id => id.Value, value => new EntityId(value));
 
+    /// <summary>Task E05/F03/US02/T02 (outcome-propagation) — this module's first nullable
+    /// cross-module id column (<c>Domain.NegotiationOutcome.SavingsOpportunityId</c>). Mirrors
+    /// <c>Contigo.Savings.Infrastructure.ValueConverters.NullableEntityIdConverter</c> exactly (a
+    /// small, deliberate, documented duplicate per module, not a shared helper — see this class's
+    /// own doc comment).</summary>
+    public static readonly ValueConverter<EntityId?, Guid?> NullableEntityIdConverter =
+        new(
+            id => id == null ? null : id.Value.Value,
+            value => value == null ? null : new EntityId(value.Value));
+
     public static readonly ValueConverter<TenantId, Guid> TenantIdConverter =
         new(id => id.Value, value => new TenantId(value));
 }

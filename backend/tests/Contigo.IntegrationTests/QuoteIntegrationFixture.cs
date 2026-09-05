@@ -5,6 +5,7 @@ using Contigo.Audit.Infrastructure;
 using Contigo.Documents.Contracts.Infrastructure;
 using Contigo.Identity.Workspace.Infrastructure;
 using Contigo.Quotes.Infrastructure;
+using Contigo.Savings.Infrastructure;
 using Contigo.SharedKernel;
 using Contigo.SharedKernel.Storage;
 using Microsoft.AspNetCore.Hosting;
@@ -35,6 +36,16 @@ namespace Contigo.IntegrationTests;
 /// isolation (cross-tenant isolation itself is proved separately, at the module level, by
 /// <c>Contigo.Quotes.Tests.QuoteRlsCrossTenantIsolationTests</c> — this fixture's own job is
 /// proving the wired-up HTTP path, not re-proving RLS itself).
+///
+/// <para>
+/// Task E05/F03/US02/T02 (outcome-propagation) is this fixture's first scenario that actually
+/// exercises <c>Contigo.Savings</c> (<see cref="Contigo.Api.NegotiationOutcomePropagationService"/>
+/// calls <c>SavingsOpportunityService.UpdateAsync</c>): <see cref="InitializeAsync"/> now also
+/// migrates <see cref="SavingsDbContext"/> onto this same Postgres instance, closing the gap this
+/// type's own <see cref="ConfigureWebHost"/> already anticipated (its <c>ConnectionStrings:Savings</c>
+/// setting pointed at <see cref="_appConnectionString"/> from this fixture's first version onward,
+/// but nothing had migrated that schema onto it until now).
+/// </para>
 /// </summary>
 public sealed class QuoteIntegrationFixture : WebApplicationFactory<Program>, IAsyncLifetime
 {
@@ -83,6 +94,15 @@ public sealed class QuoteIntegrationFixture : WebApplicationFactory<Program>, IA
             await db.Database.MigrateAsync();
         }
 
+        // Task E05/F03/US02/T02 (outcome-propagation) — see this type's own doc comment: the first
+        // scenario in this fixture to actually need Contigo.Savings's own schema.
+        var savingsOptions = new DbContextOptionsBuilder<SavingsDbContext>();
+        SavingsDbContextOptions.Configure(savingsOptions, superuserConnectionString);
+        await using (var db = new SavingsDbContext(savingsOptions.Options))
+        {
+            await db.Database.MigrateAsync();
+        }
+
         var auditOptions = new DbContextOptionsBuilder<AuditDbContext>();
         AuditDbContextOptions.Configure(auditOptions, superuserConnectionString);
         await using (var db = new AuditDbContext(auditOptions.Options))
@@ -117,9 +137,11 @@ public sealed class QuoteIntegrationFixture : WebApplicationFactory<Program>, IA
         builder.UseSetting("ConnectionStrings:DocumentsContracts", _appConnectionString);
         builder.UseSetting("ConnectionStrings:Audit", _appConnectionString);
         builder.UseSetting("ConnectionStrings:Quotes", _appConnectionString);
-        // No scenario in this fixture exercises Renewals/Savings — same "point at this run's own
+        // No scenario in this fixture exercises Renewals — same "point at this run's own
         // Testcontainers instance rather than the static appsettings.Development.json default"
-        // rationale as R1IntegrationFixture's own identical lines.
+        // rationale as R1IntegrationFixture's own identical lines. Savings *is* now exercised (task
+        // E05/F03/US02/T02, outcome-propagation) — its schema is migrated onto this same instance in
+        // InitializeAsync above.
         builder.UseSetting("ConnectionStrings:Renewals", _appConnectionString);
         builder.UseSetting("ConnectionStrings:Savings", _appConnectionString);
         // Never actually dialled — IDocumentStorage is replaced with an in-memory fake below.

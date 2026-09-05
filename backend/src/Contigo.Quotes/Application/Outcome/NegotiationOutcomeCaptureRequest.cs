@@ -32,6 +32,18 @@ namespace Contigo.Quotes.Application.Outcome;
 /// entry the same way <c>SavingsOpportunityService.UpdateAsync</c> parses its own <c>status</c>
 /// string.
 /// </para>
+///
+/// <para>
+/// <see cref="SavingsOpportunityId"/> — task E05/F03/US02/T02 (outcome-propagation; parent story
+/// AC-2 "Realized savings surface on the savings dashboard (cross-wave)") — is optional and,
+/// like <see cref="QuoteId"/>, a plain <see cref="Guid"/> rather than
+/// <c>Contigo.SharedKernel.EntityId</c>, for the identical JSON-binding reason given above. Trailing,
+/// with a default, so every existing 6-argument construction of this record (every test and any
+/// other caller written against task E05/F03/US02/T01's own shape) keeps compiling unchanged. See
+/// <c>Domain.NegotiationOutcome.SavingsOpportunityId</c>'s own doc comment for why this is a bare,
+/// unvalidated id (Contigo.Quotes cannot see Contigo.Savings, ADR-002) and why it is honestly
+/// optional (not every outcome traces back to a pre-tracked opportunity).
+/// </para>
 /// </summary>
 public sealed record NegotiationOutcomeCaptureRequest(
     Guid QuoteId,
@@ -39,4 +51,5 @@ public sealed record NegotiationOutcomeCaptureRequest(
     decimal? TargetPrice,
     decimal FinalPrice,
     int NegotiationDurationDays,
-    IReadOnlyList<string> LeversUsed);
+    IReadOnlyList<string> LeversUsed,
+    Guid? SavingsOpportunityId = null);
