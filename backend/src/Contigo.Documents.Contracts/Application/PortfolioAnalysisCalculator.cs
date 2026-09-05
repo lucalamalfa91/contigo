@@ -63,8 +63,14 @@ public sealed class PortfolioAnalysisCalculator
 
         var spendByCurrency = analyzed
             .Where(c => c.AnnualSpend is not null)
-            .GroupBy(c => c.Currency, StringComparer.Ordinal)
-            .OrderBy(g => g.Key, StringComparer.Ordinal)
+            // Case-insensitive: nothing on the write side (ContractCorrectionService's currency
+            // field has no format check; LLM-extracted currency is only .Trim()-ed; the EF
+            // configuration only constrains length) normalizes currency-code casing, so "USD" and
+            // "usd" must bucket together, not fragment into two rows — the same
+            // case-insensitive-currency convention Contigo.Savings.Application
+            // .PriceNormalizationCalculator already established for this codebase.
+            .GroupBy(c => c.Currency, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
             .Select(g => new AnnualSpendByCurrency(g.Key, g.Sum(c => c.AnnualSpend!.Value), g.Count()))
             .ToList();
 

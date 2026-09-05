@@ -93,6 +93,29 @@ public sealed class PortfolioAnalysisCalculatorTests
     }
 
     [Fact]
+    public void Differently_cased_same_currency_rows_are_merged_into_one_bucket()
+    {
+        // Nothing on the write side normalizes currency-code casing (ContractCorrectionService's
+        // currency field has no format check; LLM-extracted currency is only .Trim()-ed), so "USD"
+        // and "usd" must be treated as the same currency here — the same case-insensitive
+        // convention PriceNormalizationCalculator already applies when comparing currencies. A
+        // case-sensitive grouping would silently fragment this into two rows instead of summing
+        // them into one.
+        var contracts = new[]
+        {
+            Snapshot(hasCompletedProcessing: true, currency: "USD", annualSpend: 1_000m),
+            Snapshot(hasCompletedProcessing: true, currency: "usd", annualSpend: 2_500m),
+        };
+
+        var result = _calculator.Summarize(contracts);
+
+        Assert.Equal(2, result.ContractsAnalyzedCount);
+        var usd = Assert.Single(result.AnnualSpendAnalyzed);
+        Assert.Equal(3_500m, usd.Amount);
+        Assert.Equal(2, usd.ContractCount);
+    }
+
+    [Fact]
     public void Currency_buckets_are_ordered_deterministically_by_currency_code()
     {
         var contracts = new[]

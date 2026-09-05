@@ -90,8 +90,14 @@ public sealed class SavingsKpiCalculator
         IReadOnlyList<SavingsOpportunitySnapshot> opportunities, SavingsOpportunityStatus status) =>
         opportunities
             .Where(o => o.Status == status)
-            .GroupBy(o => o.Currency, StringComparer.Ordinal)
-            .OrderBy(g => g.Key, StringComparer.Ordinal)
+            // Case-insensitive: nothing on the write side (SavingsOpportunityService.CreateAsync
+            // validates only IsNullOrWhiteSpace; LLM-extracted currency is only .Trim()-ed; the EF
+            // configuration only constrains length) normalizes currency-code casing, so "USD" and
+            // "usd" must bucket together, not fragment into two rows — the same
+            // case-insensitive-currency convention Contigo.Savings.Application
+            // .PriceNormalizationCalculator already established for this module.
+            .GroupBy(o => o.Currency, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
             .Select(g => new SavingsRangeByCurrency(
                 g.Key,
                 g.Sum(o => o.EstimatedSavingsLow),

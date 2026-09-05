@@ -93,6 +93,29 @@ public sealed class SavingsKpiCalculatorTests
     }
 
     [Fact]
+    public void Differently_cased_same_currency_rows_are_merged_into_one_bucket()
+    {
+        // Nothing on the write side normalizes currency-code casing (SavingsOpportunityService
+        // .CreateAsync validates only IsNullOrWhiteSpace; LLM-extracted currency is only
+        // .Trim()-ed), so "USD" and "usd" must be treated as the same currency here — the same
+        // case-insensitive convention PriceNormalizationCalculator already applies when comparing
+        // currencies. A case-sensitive grouping would silently fragment this into two rows instead
+        // of summing them into one, understating neither total but misreporting the count/shape.
+        var opportunities = new[]
+        {
+            Snapshot(SavingsOpportunityStatus.Identified, "USD", low: 100m, high: 200m, confidence: 0.6),
+            Snapshot(SavingsOpportunityStatus.Identified, "usd", low: 300m, high: 500m, confidence: 1.0),
+        };
+
+        var result = _calculator.Summarize(opportunities);
+
+        var bucket = Assert.Single(result.Identified);
+        Assert.Equal(400m, bucket.Low);
+        Assert.Equal(700m, bucket.High);
+        Assert.Equal(2, bucket.Count);
+    }
+
+    [Fact]
     public void Currency_buckets_are_ordered_deterministically_by_currency_code()
     {
         var opportunities = new[]
