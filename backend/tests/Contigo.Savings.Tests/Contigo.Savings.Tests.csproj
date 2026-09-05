@@ -9,6 +9,12 @@
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <!-- Task E04/F02/US02/T01 (savings-opportunity): SavingsOpportunityServiceTests / the RLS proof
+         tests spin up a disposable Postgres via Testcontainers — same two packages
+         Contigo.Renewals.Tests.csproj/Contigo.Audit.Tests.csproj already reference for the
+         identical reason. -->
+    <PackageReference Include="Npgsql" Version="10.0.3" />
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.14.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />

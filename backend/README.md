@@ -34,7 +34,7 @@ backend/
     Contigo.Benchmark/           # IBenchmarkService.GetBenchmarkAsync + normalized Contracts DTOs (E04/F01/US01/T01); BenchmarkAdapterRegistry + AddBenchmarkModule (E04/F01/US01/T02); FixtureBenchmarkAdapter registered as the default IBenchmarkProviderAdapter, incl. statistical weak-comparable abstain (E04/F01/US02/T01+T02) — no host calls AddBenchmarkModule yet (R3)
     Contigo.Suppliers.Products/  # scaffold (R1+)
     Contigo.Renewals/            # renewal engine + opportunity + explainable priority score + threshold scheduler + dashboard pipeline + action (R2; live) — see "Renewal Intelligence" below
-    Contigo.Savings/             # price normalization + percentile/target/savings-range calculator (R3; task E04/F02/US01/T01) — see "Savings Intelligence" below
+    Contigo.Savings/             # price normalization + percentile/target/savings-range calculator (R3; task E04/F02/US01/T01) + persisted, trackable SavingsOpportunity + GET/PATCH /api/savings (task E04/F02/US02/T01) — see "Savings Intelligence" below
     Contigo.Quotes/              # scaffold (R4)
     Contigo.Chat/                # Ask Contigo structured-vs-semantic query router (R1, task E02/F04/US01/T01) + deterministic dates/spend query handlers (task E02/F04/US01/T02) + RagAnswerService (task E02/F04/US02/T01) + AbstainGuard no-fabrication guard (task E02/F04/US02/T02); AddChatModule wired into Contigo.Api by this last task
   tests/                         # per-module + architecture + R0 integration
@@ -70,9 +70,9 @@ on Testcontainers inside `dotnet test`.
 
 EF migrations live in each module that owns a DbContext
 (`Contigo.Identity.Workspace`, `Contigo.Documents.Contracts`,
-`Contigo.Audit`, `Contigo.Renewals`). Apply them against the same database
-the hosts use; RLS policies are added in those migrations, not in
-Terraform.
+`Contigo.Audit`, `Contigo.Renewals`, `Contigo.Savings`). Apply them against
+the same database the hosts use; RLS policies are added in those
+migrations, not in Terraform.
 
 ## HTTP surface today
 
@@ -92,6 +92,8 @@ Terraform.
 | GET | `/api/renewals` | Renewal pipeline + insight card (spec §9.3/§10.1); `X-Tenant-Id` header; auto-renewing contracts only, most urgent first; response is `{ items, totalCount }`, each item `{ contractId, supplierId, status, renewalDate, daysUntilRenewal, annualSpend, cancellationDeadline, daysUntilCancellationDeadline, autoRenewal, action, insightCard: { facts, recommendations } }` — `insightCard.recommendations`' benchmark/savings fields (`annualUpliftPercent`, `marketPosition`, `potentialSavingsRange`) are honestly `null` until the Benchmark/Savings modules land (R3); `action`/`recommendedAction` is a deterministic urgency rule, not the full spec §9.2 Priority Score — see `Contigo.Renewals.Application.RenewalPipelineBuilder`'s own doc comment |
 | GET | `/api/renewals/{contractId}/priority` | Explainable priority-score breakdown for one contract (spec §9.2; story us-02-priority-score AC-1/AC-2, task E03/F01/US02/T02); `X-Tenant-Id` header; 404 when the contract does not exist or belongs to another tenant (same rule as `GET /api/contracts/{id}`); response is `{ contractId, totalScore, components: { spendWeight, timeUrgency, benchmarkOpportunity, priceIncreaseRisk, contractRisk } }`, each component `{ score, explanation }` — component weights are configurable, see `Contigo.Renewals.Configuration.PriorityScoreWeightsOptions` below; `priceIncreaseRisk`/`benchmarkOpportunity` use their honest no-data default (minimum / neutral respectively) since no uplift or benchmark-position data is wired to real contracts yet |
 | POST | `/api/renewals/{id}/action` | Updates owner/status/action for one renewal (spec Appendix A; story us-01-renewal-dashboard-api AC-3); `X-Tenant-Id` header; `{id}` is the same `contractId` the GET above returns per row, not a separate stored "renewal" id; body `{ owner, status, action }` — `status` is one of `NotStarted`/`InProgress`/`Completed`; upserts one row (never a second for the same contract) and writes one `IAuditWriter` entry (`renewal.action_updated`); 400 (not 404) for a missing/invalid tenant header or route id, or for an empty `owner`/`action`/unrecognized `status` — see `Contigo.Renewals.Application.RenewalActionService`'s own doc comment for the honest gap this leaves (no check that `{id}` names an existing, tenant-owned contract; `Contigo.Renewals` cannot reference `Contigo.Documents.Contracts` at all) |
+| GET | `/api/savings` | Lists the caller's tenant-scoped `SavingsOpportunity` rows, newest identified first (spec §4.3/§6; module-map.md "Savings \| SavingsOpportunity, RealizedSavings \| /api/savings"; story us-02-savings-opportunity AC-1, task E04/F02/US02/T01); `X-Tenant-Id` header; response `{ items, totalCount }`; no filters yet — see `Contigo.Savings.Application.SavingsOpportunityService.ListAsync`'s own doc comment |
+| PATCH | `/api/savings/{id}` | Updates `owner` and/or `status` (`Identified`/`InProgress`/`Realized`) on one `SavingsOpportunity` (AC-1 "updates status/owner..."); `X-Tenant-Id` header; body `{ owner?, status? }` — a genuine partial update, either or both fields; 404 when `{id}` does not name an opportunity for this tenant, 400 for every other validation failure (empty owner, unrecognized status, or neither field supplied); writes one `IAuditWriter` entry (`savings_opportunity.updated`) per successful call — setting `status` to `Realized` here does **not** yet create an audit-tracked realized-value record, see `Contigo.Savings.Domain.SavingsOpportunityStatus.Realized`'s own doc comment for the gap task E04/F02/US02/T02 (`RealizedSavings`) closes |
 
 **Interim auth:** every endpoint above that takes an `X-Tenant-Id` header
 (all except `GET /api/audit`, which already expects a claims principal)
@@ -718,6 +720,58 @@ container built from `AddBenchmarkModule()` resolves `IBenchmarkService` to an a
 `Assert.IsType<FixtureBenchmarkAdapter>` (that test now fails, honestly, instead of the file
 silently not compiling). Fixing the wiring itself is us-02-fixture-adapter's/the adapter-registry
 task's own module to redesign, not a Savings-module task's file scope.
+Deliberately out of this task's file scope, each a later task's own: confidence + provenance
+propagation into whatever surface displays this result (us-01-price-normalization task-02), and any
+host/worker wiring that calls `PriceNormalizationCalculator` against real contracts — the same
+"wiring lands with the first real caller" sequencing this README's other modules already follow (see
+"Renewal Intelligence" above). This calculator itself still has no DI registration for the same
+reason: nothing calls it from a host yet — see the next section for what `AddSavingsModule` *does*
+now register.
+
+## Savings Intelligence — trackable SavingsOpportunity
+
+`Contigo.Savings.Domain.SavingsOpportunity` (task E04/F02/US02/T01, savings-opportunity, the
+wave-spec's `savings-opportunity` artifact; parent story us-02-savings-opportunity AC-2) is this
+module's first persisted entity — product spec §6's core data model row "SavingsOpportunity |
+supplier, contract/quote, type, current_spend, estimated savings range, confidence, status, owner"
+(module-map.md: "Savings | SavingsOpportunity, RealizedSavings | `/api/savings`") made concrete:
+`SupplierId`/`ContractId` are cross-module references by id only, deliberately no foreign key (same
+treatment `Contigo.Renewals.Domain.RenewalAction.ContractId` already gives its own cross-module
+reference — ADR-002 forbids this module from referencing `Contigo.Suppliers.Products` or
+`Contigo.Documents.Contracts` at all); `Type` is free text (no ADR/spec fixes a vocabulary);
+`CurrentSpend`/`EstimatedSavingsLow`/`EstimatedSavingsHigh` carry an explicit `Currency` (this
+codebase has no currency-conversion service anywhere); `Confidence` echoes
+`Contigo.Benchmark.Contracts.BenchmarkResult.Confidence` (spec §4.3 "Show benchmark confidence and
+provenance"). `Status` (`Identified` / `InProgress` / `Realized`) is read directly off spec §4.3's
+own three dashboard KPI buckets ("savings identified" / "savings in progress" / "savings realized")
+— see `SavingsOpportunityStatus`'s own doc comment for why no fourth "rejected/dismissed" state
+exists yet.
+
+`Contigo.Savings.Application.SavingsOpportunityService` backs `GET /api/savings` (list, newest
+identified first) and `PATCH /api/savings/{id}` (a genuine partial update of `owner`/`status`, either
+or both — see the HTTP surface table above), tenant-scoped via `ITenantContext.BeginScope` the same
+way `Contigo.Renewals.Application.RenewalActionService` is, and writes one `IAuditWriter` entry per
+successful mutation (`savings_opportunity.identified` / `savings_opportunity.updated` — spec §14.1).
+Also exposes `CreateAsync` ("identify"), proven by `Contigo.Savings.Tests
+.SavingsOpportunityServiceTests` but not yet wired to an HTTP route — this task's own AC-1 names only
+`GET`/`PATCH`, and nothing in this codebase yet maps a real `PriceComparisonResult` against a real
+contract into a `CreateSavingsOpportunityRequest`; that composition (in `Contigo.Api`, "the one
+project allowed to reference every module") is a follow-up, the same "wiring lands with the first
+real caller" gap the previous section names for `PriceNormalizationCalculator` itself.
+
+`AddSavingsModule` (task E04/F02/US02/T01) gives this module its first `DbContext`
+(`SavingsDbContext`) and is now called by `Contigo.Api`'s `Program.cs` — RLS is wired the same
+`AddTenantRowLevelSecurity` migration + `TenantRlsConnectionInterceptor` mechanism every other
+tenant-scoped module uses (ADR-009), proven by `Contigo.Savings.Tests
+.SavingsOpportunityRlsMigrationCheckTests`/`SavingsOpportunityRlsCrossTenantIsolationTests`.
+`Contigo.Worker` is not wired to this module yet (no worker job creates opportunities today) — the
+same "wiring lands with the first real caller" gap, not attempted by this task.
+
+Honest gap, deliberately out of this task's own file scope: setting `status` to `Realized` via
+`PATCH /api/savings/{id}` only changes that one column — it does not yet create an audit-tracked
+realized-value record. `Contigo.Savings.Domain.RealizedSavings` (module-map.md's own second named
+entity for this module) is task E04/F02/US02/T02's (realized-savings) deliverable, "Record realized
+value + audit event" (parent story AC-3) — depends on this task's own `savings-opportunity` artifact.
 
 ## Containers and CI
 
@@ -732,7 +786,8 @@ task's own module to redesign, not a Savings-module task's file scope.
 Images are tagged with `github.sha`. Container Apps listen on **8080**
 (`ASPNETCORE_URLS=http://+:8080`). Deployed connection strings are
 environment variables (`ConnectionStrings__IdentityWorkspace`,
-`DocumentsContracts`, `Audit`, `Renewals`, `Storage`) — never committed.
+`DocumentsContracts`, `Audit`, `Renewals`, `Savings`, `Storage`) — never
+committed.
 
 Image pull uses this environment's workload identity (`AcrPull` on
 `modules/acr`, `registry {}` on `modules/containerapps`). Confirm the
