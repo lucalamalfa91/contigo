@@ -4,6 +4,15 @@
     <ProjectReference Include="..\Contigo.SharedKernel\Contigo.SharedKernel.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Task E04/F01/US02/T01 (fixture-adapter): this module's own AddBenchmarkModule(IServiceCollection)
+         composition-root wiring (ServiceCollectionExtensions.cs) — ADR-002's "each module exposes an
+         AddXxx(IServiceCollection) extension method". Same generic .NET hosting abstraction (not a
+         provider SDK) Contigo.AiGateway.csproj / Contigo.Chat.csproj already reference for the
+         identical reason. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.11" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
