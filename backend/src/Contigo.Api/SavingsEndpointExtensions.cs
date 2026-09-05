@@ -4,11 +4,13 @@ using Contigo.SharedKernel;
 namespace Contigo.Api;
 
 /// <summary>
-/// Maps `GET /api/savings` (list) and `PATCH /api/savings/{id}` (update status/owner) — product
-/// spec §4.3 "Create a trackable SavingsOpportunity with status, owner and realized outcome";
+/// Maps `GET /api/savings` (list) and `PATCH /api/savings/{id}` (update status/owner/realized
+/// value) — product spec §4.3 "Create a trackable SavingsOpportunity with status, owner and
+/// realized outcome"; spec Appendix A "PATCH /api/savings/{id} | Status/owner/realized value";
 /// module-map.md "Savings | SavingsOpportunity, RealizedSavings | /api/savings"; story
-/// us-02-savings-opportunity AC-1, task E04/F02/US02/T01 (savings-opportunity). Thin composition
-/// per ADR-002: <see cref="SavingsOpportunityService"/> owns every persistence/validation/audit
+/// us-02-savings-opportunity AC-1/AC-3, task E04/F02/US02/T01 (savings-opportunity) and task
+/// E04/F02/US02/T02 (realized-savings). Thin composition per ADR-002:
+/// <see cref="SavingsOpportunityService"/> owns every persistence/validation/audit
 /// decision; this file only translates HTTP &lt;-&gt; the service call, same shape as
 /// <see cref="RenewalsEndpointExtensions"/>/<see cref="ContractsEndpointExtensions"/>.
 ///
@@ -56,14 +58,16 @@ public static class SavingsEndpointExtensions
     }
 
     /// <summary>
-    /// `PATCH /api/savings/{id}` (AC-1 "updates status/owner..."). 400 for a missing/invalid tenant
-    /// header or route id (same guard shape as every other endpoint in this file/host), 404 when
+    /// `PATCH /api/savings/{id}` (AC-1 "updates status/owner..."; AC-3 "realized value is captured
+    /// and audit-tracked", task E04/F02/US02/T02). 400 for a missing/invalid tenant header or route
+    /// id (same guard shape as every other endpoint in this file/host), 404 when
     /// <see cref="SavingsOpportunityService.NotFoundError"/> comes back (no such opportunity for
     /// this tenant — same <c>Result&lt;T&gt;.Error</c>-sentinel-to-404 convention
     /// <see cref="ContractsEndpointExtensions"/>'s own `PATCH /api/contracts/{id}` handler already
     /// uses for <c>ContractCorrectionService.ContractNotFoundError</c>), 400 with
     /// <see cref="Result{T}.Error"/> for every other validation failure (empty owner, unrecognized
-    /// status, or neither field supplied).
+    /// status, a negative <c>realizedAmount</c>, <c>realizedAmount</c> combined with a
+    /// contradictory explicit <c>status</c>, or none of the three fields supplied).
     /// </summary>
     private static async Task<IResult> PatchSavingsOpportunityAsync(
         string id,
@@ -88,6 +92,7 @@ public static class SavingsEndpointExtensions
             new EntityId(opportunityGuid),
             request.Owner,
             request.Status,
+            request.RealizedAmount,
             cancellationToken).ConfigureAwait(false);
 
         if (result.IsFailure)
@@ -121,5 +126,8 @@ public static class SavingsEndpointExtensions
         owner = result.Owner,
         createdAt = result.CreatedAt,
         updatedAt = result.UpdatedAt,
+        // Task E04/F02/US02/T02 (realized-savings): non-null only on the PATCH response that just
+        // recorded it -- see SavingsOpportunityResult.RealizedAmount's own doc comment.
+        realizedAmount = result.RealizedAmount,
     };
 }

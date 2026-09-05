@@ -93,7 +93,7 @@ migrations, not in Terraform.
 | GET | `/api/renewals/{contractId}/priority` | Explainable priority-score breakdown for one contract (spec §9.2; story us-02-priority-score AC-1/AC-2, task E03/F01/US02/T02); `X-Tenant-Id` header; 404 when the contract does not exist or belongs to another tenant (same rule as `GET /api/contracts/{id}`); response is `{ contractId, totalScore, components: { spendWeight, timeUrgency, benchmarkOpportunity, priceIncreaseRisk, contractRisk } }`, each component `{ score, explanation }` — component weights are configurable, see `Contigo.Renewals.Configuration.PriorityScoreWeightsOptions` below; `priceIncreaseRisk`/`benchmarkOpportunity` use their honest no-data default (minimum / neutral respectively) since no uplift or benchmark-position data is wired to real contracts yet |
 | POST | `/api/renewals/{id}/action` | Updates owner/status/action for one renewal (spec Appendix A; story us-01-renewal-dashboard-api AC-3); `X-Tenant-Id` header; `{id}` is the same `contractId` the GET above returns per row, not a separate stored "renewal" id; body `{ owner, status, action }` — `status` is one of `NotStarted`/`InProgress`/`Completed`; upserts one row (never a second for the same contract) and writes one `IAuditWriter` entry (`renewal.action_updated`); 400 (not 404) for a missing/invalid tenant header or route id, or for an empty `owner`/`action`/unrecognized `status` — see `Contigo.Renewals.Application.RenewalActionService`'s own doc comment for the honest gap this leaves (no check that `{id}` names an existing, tenant-owned contract; `Contigo.Renewals` cannot reference `Contigo.Documents.Contracts` at all) |
 | GET | `/api/savings` | Lists the caller's tenant-scoped `SavingsOpportunity` rows, newest identified first (spec §4.3/§6; module-map.md "Savings \| SavingsOpportunity, RealizedSavings \| /api/savings"; story us-02-savings-opportunity AC-1, task E04/F02/US02/T01); `X-Tenant-Id` header; response `{ items, totalCount }`; no filters yet — see `Contigo.Savings.Application.SavingsOpportunityService.ListAsync`'s own doc comment |
-| PATCH | `/api/savings/{id}` | Updates `owner` and/or `status` (`Identified`/`InProgress`/`Realized`) on one `SavingsOpportunity` (AC-1 "updates status/owner..."); `X-Tenant-Id` header; body `{ owner?, status? }` — a genuine partial update, either or both fields; 404 when `{id}` does not name an opportunity for this tenant, 400 for every other validation failure (empty owner, unrecognized status, or neither field supplied); writes one `IAuditWriter` entry (`savings_opportunity.updated`) per successful call — setting `status` to `Realized` here does **not** yet create an audit-tracked realized-value record, see `Contigo.Savings.Domain.SavingsOpportunityStatus.Realized`'s own doc comment for the gap task E04/F02/US02/T02 (`RealizedSavings`) closes |
+| PATCH | `/api/savings/{id}` | Updates `owner`, `status` (`Identified`/`InProgress`/`Realized`) and/or `realizedAmount` on one `SavingsOpportunity` (AC-1 "updates status/owner..."; AC-3 "realized value is captured and audit-tracked", task E04/F02/US02/T02); `X-Tenant-Id` header; body `{ owner?, status?, realizedAmount? }` — a genuine partial update, any subset of the three fields; 404 when `{id}` does not name an opportunity for this tenant, 400 for every other validation failure (empty owner, unrecognized status, a negative `realizedAmount`, a `realizedAmount` combined with an explicit `status` other than `Realized`, or none of the three fields supplied); writes one `IAuditWriter` entry per successful call — `savings_opportunity.updated`, or `savings_opportunity.realized` instead when `realizedAmount` was supplied (never both). Supplying `realizedAmount` also inserts a new, append-only `Contigo.Savings.Domain.RealizedSavings` row (in the opportunity's own `currency`) and finalizes `status` as `Realized` — either because the caller's own explicit `status` already said so, or automatically when `status` was omitted (see `SavingsOpportunityService.UpdateAsync`'s own doc comment). The response's `realizedAmount` field is non-`null` only on the call that just recorded one — it is not a rolled-up read of this opportunity's full realized-value history, see `SavingsOpportunityResult.RealizedAmount`'s own doc comment |
 
 **Interim auth:** every endpoint above that takes an `X-Tenant-Id` header
 (all except `GET /api/audit`, which already expects a claims principal)
@@ -767,11 +767,29 @@ tenant-scoped module uses (ADR-009), proven by `Contigo.Savings.Tests
 `Contigo.Worker` is not wired to this module yet (no worker job creates opportunities today) — the
 same "wiring lands with the first real caller" gap, not attempted by this task.
 
-Honest gap, deliberately out of this task's own file scope: setting `status` to `Realized` via
-`PATCH /api/savings/{id}` only changes that one column — it does not yet create an audit-tracked
-realized-value record. `Contigo.Savings.Domain.RealizedSavings` (module-map.md's own second named
-entity for this module) is task E04/F02/US02/T02's (realized-savings) deliverable, "Record realized
-value + audit event" (parent story AC-3) — depends on this task's own `savings-opportunity` artifact.
+**Task E04/F02/US02/T02 (realized-savings)** closes the gap the paragraph above used to name:
+`Contigo.Savings.Domain.RealizedSavings` (module-map.md's own second named entity for this module,
+"Record realized value + audit event", parent story AC-3) is this module's second tenant-scoped
+table — one append-only row per captured realized value (never a destructive overwrite, the same
+"never destructively overwrite" spirit `Contigo.Documents.Contracts.Domain.ContractVersion`/
+`CorrectionHistory` already apply to their own history), in the opportunity's own `Currency` (no
+per-row currency — this codebase has no currency-conversion service anywhere). `PATCH
+/api/savings/{id}`'s `realizedAmount` field (see the HTTP surface table above) is the only writer,
+via `SavingsOpportunityService.UpdateAsync`: a non-negative `realizedAmount` always finalizes
+`Status` as `Realized` (either because the caller's own explicit `status` already said so, or
+automatically when `status` was omitted — the two facts are not independent, see
+`SavingsOpportunityStatus.Realized`'s own doc comment) and inserts one new `RealizedSavings` row,
+still exactly one `IAuditWriter` entry per call (`savings_opportunity.realized` takes the place of
+`savings_opportunity.updated` for that call, never both). RLS is wired the same
+`AddRealizedSavingsRowLevelSecurity` migration + `TenantRlsConnectionInterceptor` mechanism as
+every other tenant-scoped table (ADR-009) — proven by `Contigo.Savings.Tests
+.SavingsOpportunityRlsMigrationCheckTests` (dynamic per-table discovery, no test change needed) and
+the new `RealizedSavingsRlsCrossTenantIsolationTests`. Honest gap, deliberately out of this task's
+own file scope: `GET /api/savings`'s list response does not surface any opportunity's realized-value
+history — only the `PATCH` response that just recorded one does (see
+`SavingsOpportunityResult.RealizedAmount`'s own doc comment) — a rolled-up read (e.g. for the
+dashboard's own "savings realized" KPI, spec §4.3) is a follow-up, the same "wiring lands with the
+first real caller" gap this section's other paragraphs already document.
 
 ## Containers and CI
 

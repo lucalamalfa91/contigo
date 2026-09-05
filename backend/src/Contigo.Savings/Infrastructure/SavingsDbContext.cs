@@ -12,14 +12,26 @@ namespace Contigo.Savings.Infrastructure;
 /// <c>Contigo.Renewals.Infrastructure.RenewalsDbContext</c> /
 /// <c>Contigo.Audit.Infrastructure.AuditDbContext</c> already wire them — this context only shapes
 /// the model and exposes the DbSet.
+///
+/// <see cref="RealizedSavingsRecords"/> (task E04/F02/US02/T02, realized-savings) is this module's
+/// second entity, module-map.md's own "Savings | SavingsOpportunity, RealizedSavings" — see that
+/// entity's own doc comment.
 /// </summary>
 public sealed class SavingsDbContext(DbContextOptions<SavingsDbContext> options) : DbContext(options)
 {
     public DbSet<SavingsOpportunity> SavingsOpportunities => Set<SavingsOpportunity>();
 
+    /// <summary>Named <c>RealizedSavingsRecords</c>, not <c>RealizedSavings</c> (which would collide
+    /// with the entity type name itself and read oddly as a set) — mirrors the plural-noun-plus-role
+    /// naming already used elsewhere in this codebase when the bare plural of the type would be
+    /// awkward (e.g. <c>Contigo.Audit.Infrastructure.AuditDbContext.AuditEvents</c> for
+    /// <c>AuditEvent</c>).</summary>
+    public DbSet<RealizedSavings> RealizedSavingsRecords => Set<RealizedSavings>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfiguration(new SavingsOpportunityConfiguration());
+        modelBuilder.ApplyConfiguration(new RealizedSavingsConfiguration());
 
         base.OnModelCreating(modelBuilder);
     }
