@@ -3,6 +3,7 @@ using Contigo.Renewals.Configuration;
 using Contigo.Renewals.Domain;
 using Contigo.Renewals.Tests.TestSupport;
 using Contigo.SharedKernel;
+using Contigo.SharedKernel.Tenancy;
 
 namespace Contigo.Renewals.Tests;
 
@@ -28,7 +29,7 @@ public sealed class RenewalThresholdSchedulerTests
     public RenewalThresholdSchedulerTests()
     {
         _scheduler = new RenewalThresholdScheduler(
-            Clock, new RenewalEngine(Clock), _auditWriter, new ThresholdWindowOptions());
+            Clock, new RenewalEngine(Clock), _auditWriter, new ThresholdWindowOptions(), new TenantContext());
     }
 
     [Fact]
@@ -142,7 +143,8 @@ public sealed class RenewalThresholdSchedulerTests
     public async Task Honours_a_custom_configured_threshold_list()
     {
         var customOptions = new ThresholdWindowOptions { DaysBeforeDeadline = [45] };
-        var scheduler = new RenewalThresholdScheduler(Clock, new RenewalEngine(Clock), _auditWriter, customOptions);
+        var scheduler = new RenewalThresholdScheduler(
+            Clock, new RenewalEngine(Clock), _auditWriter, customOptions, new TenantContext());
         var matching = new ContractRenewalTerms(EntityId.New(), AsOf.AddDays(45), AutoRenewal: true, CancellationNoticeDays: null);
         var nonMatching = new ContractRenewalTerms(EntityId.New(), AsOf.AddDays(90), AutoRenewal: true, CancellationNoticeDays: null);
 

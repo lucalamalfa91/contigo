@@ -33,8 +33,7 @@ backend/
     Contigo.AiGateway/           # IAiGateway + FixtureAiGateway (wired via DI) + LoggingAiGateway decorator — no Foundry SDK yet
     Contigo.Benchmark/           # IBenchmarkService only — fixture adapter is later (R3)
     Contigo.Suppliers.Products/  # scaffold (R1+)
-    Contigo.Renewals/            # deterministic renewal-date/cancellation-deadline engine (task E03/F01/US01/T01) + renewal-opportunity generation (task E03/F01/US01/T02) (R2; live)
-    Contigo.Renewals/            # deterministic renewal-date / cancellation-deadline engine (R2, task E03/F01/US01/T01) + explainable priority score (task E03/F01/US02/T01; live)
+    Contigo.Renewals/            # renewal engine + opportunity + explainable priority score + threshold scheduler + dashboard pipeline + action (R2; live) — see "Renewal Intelligence" below
     Contigo.Savings/             # scaffold (R3)
     Contigo.Quotes/              # scaffold (R4)
     Contigo.Chat/                # Ask Contigo structured-vs-semantic query router (R1, task E02/F04/US01/T01) + deterministic dates/spend query handlers (task E02/F04/US01/T02) + RagAnswerService (task E02/F04/US02/T01) + AbstainGuard no-fabrication guard (task E02/F04/US02/T02); AddChatModule wired into Contigo.Api by this last task
@@ -483,6 +482,21 @@ above describes. The timer loop itself is real and proven end to end
 task-02's scope ("Alert creation + re-compute on correction"), not this
 task's.
 
+**Task E03/F04/US01/T01 (r2-integration) fix:** `RenewalThresholdScheduler
+.EvaluateThresholdsAsync` wrote its `renewal.approaching` audit entry
+without ever opening an `ITenantContext` scope, so
+`TenantRlsConnectionInterceptor` left `app.tenant_id` unset and the Audit
+module's own `AddTenantRowLevelSecurity` `WITH CHECK` policy rejected the
+insert outright — a real threshold crossing would throw instead of being
+recorded. Neither `RenewalThresholdSchedulerTests` (a `RecordingAuditWriter`,
+no database) nor `RenewalThresholdSchedulerHostedServiceTests` (a
+syntactically-valid-but-never-dialled connection string, by design) ever
+exercised a real RLS-enforced connection on this path, so this went
+undetected until r2-integration's own real-Postgres proof
+(`Contigo.IntegrationTests.R2EndToEndTests`) surfaced it. The method now
+opens its own scope before writing, the same convention
+`RenewalActionService.SetActionAsync` already follows.
+
 ## R1 demo smoke test
 
 The automated proof of task E02/F06/US01/T01 (r1-integration) is
@@ -521,6 +535,35 @@ lands `NeedsReview` with zero extracted facts. This smoke path proves the
 *pipeline wiring* end-to-end (every stage runs, links, and is queryable),
 not extraction accuracy; `R1EndToEndTests` proves the persistence/HTTP
 contract against a scripted gateway that returns real, schema-shaped facts.
+
+## R2 demo smoke test
+
+The automated proof of task E03/F04/US01/T01 (r2-integration) is
+`dotnet test` — `Contigo.IntegrationTests.R2EndToEndTests` (AC-1/AC-2: every
+active contract gets a deterministic renewal date/cancellation deadline
+where data exists, an explainable component-scored priority via `GET
+/api/renewals/{id}/priority`, a `renewal.approaching` threshold event that
+is durably recorded — never fabricated for a contract with an unknown end
+date — and a `POST /api/renewals/{id}/action` upsert) and
+`R2CrossTenantIsolationTests` (AC-3, across the whole `GET
+/api/renewals` / `GET /api/renewals/{id}/priority` / `POST
+/api/renewals/{id}/action` surface). Contracts are seeded directly against
+the real, RLS-enforced `DocumentsContractsDbContext` (see
+`R2IntegrationFixture.SeedContractAsync`) rather than through the R1 upload
+path — R2's own leaf artifacts all take already-validated contract data as
+an input, never produce it.
+
+**Honest scope note:** this task's own wave-spec `depends_on` names
+`renewal-alerts` (task E03/F02/US01/T02, "Alert creation + re-compute on
+correction"), but that task has not landed any code as of this task's own
+run. The only "alert" artifact that actually exists is the
+`renewal.approaching` **threshold event** (task E03/F02/US01/T01,
+`threshold-scheduler`, see above) — a durable, queryable audit entry, not a
+persisted, de-duplicated `RenewalAlert` row with recompute-on-correction.
+`R2EndToEndTests` proves exactly the former (parent story AC-2's own literal
+wording, "Threshold events fire") and no more; a persisted alert entity
+with recompute-on-correction remains task E03/F02/US01/T02's own, still-open
+file scope.
 
 ## Containers and CI
 

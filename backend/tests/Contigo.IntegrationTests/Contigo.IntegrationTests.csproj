@@ -33,6 +33,12 @@
          already has, not because compilation would fail without it. -->
     <ProjectReference Include="..\..\src\Contigo.Chat\Contigo.Chat.csproj" />
     <ProjectReference Include="..\..\src\Contigo.AiGateway\Contigo.AiGateway.csproj" />
+    <!-- Task E03/F04/US01/T01 (r2-integration): R2EndToEndTests/R2CrossTenantIsolationTests
+         resolve Contigo.Renewals.Application types (RenewalThresholdScheduler, ContractRenewalTerms,
+         RenewalActionService, RenewalMilestoneKind, ...) directly from the host's own container and
+         construct DTOs by hand — Contigo.Api already references this module transitively, but a
+         test file needs the compile-time type names, not just the transitive runtime assembly. -->
+    <ProjectReference Include="..\..\src\Contigo.Renewals\Contigo.Renewals.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,6 +1,7 @@
 using Contigo.Renewals.Configuration;
 using Contigo.Renewals.Domain;
 using Contigo.SharedKernel;
+using Contigo.SharedKernel.Tenancy;
 
 namespace Contigo.Renewals.Application;
 
@@ -29,9 +30,28 @@ namespace Contigo.Renewals.Application;
 /// returns, so the event is durable and queryable (<c>GET /api/audit</c>) even before a real
 /// consumer exists — the same "the write happens, a caller arrives later" sequencing
 /// <see cref="RenewalEngine"/>'s own doc comment already used for itself.
+///
+/// <para>
+/// Opens its own <see cref="ITenantContext.BeginScope"/> for the run's <c>tenantId</c> before
+/// writing anything (task E03/F04/US01/T01, r2-integration) — the same convention
+/// <see cref="Contigo.Renewals.Application.RenewalActionService.SetActionAsync"/> already follows.
+/// Without it, ADR-009's RLS backstop fails <em>closed</em>: <c>TenantRlsConnectionInterceptor</c>
+/// leaves `app.tenant_id` unset on the connection, and the Audit module's own
+/// `AddTenantRowLevelSecurity` `WITH CHECK` policy then rejects every `renewal.approaching` insert
+/// this method makes — a real threshold crossing would throw instead of being recorded. Neither
+/// <c>Contigo.Renewals.Tests.RenewalThresholdSchedulerTests</c> (a <c>RecordingAuditWriter</c>, no
+/// database) nor <c>Contigo.Worker.Tests.RenewalThresholdSchedulerHostedServiceTests</c> (a
+/// syntactically-valid-but-never-dialled connection string, by its own design) ever exercised a
+/// real, RLS-enforced connection on this path, so this gap went undetected until r2-integration's
+/// own real-Postgres proof (<c>Contigo.IntegrationTests.R2EndToEndTests</c>) surfaced it.
+/// </para>
 /// </summary>
 public sealed class RenewalThresholdScheduler(
-    IClock clock, RenewalEngine renewalEngine, IAuditWriter auditWriter, ThresholdWindowOptions options)
+    IClock clock,
+    RenewalEngine renewalEngine,
+    IAuditWriter auditWriter,
+    ThresholdWindowOptions options,
+    ITenantContext tenantContext)
 {
     /// <summary>Actor recorded on every <see cref="IAuditWriter"/> entry this scheduler writes —
     /// there is no human operator behind a scheduled run.</summary>
@@ -64,6 +84,11 @@ public sealed class RenewalThresholdScheduler(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(contracts);
+
+        // Entry point: open this call's own tenant scope before the audit write below — see the
+        // type doc comment for why (ADR-009's RLS backstop needs an active per-connection tenant
+        // claim on every insert, including this method's own).
+        using var _ = tenantContext.BeginScope(tenantId);
 
         var results = renewalEngine.CalculateMany(contracts);
         var events = results.SelectMany(result => EvaluateResult(tenantId, result)).ToList();

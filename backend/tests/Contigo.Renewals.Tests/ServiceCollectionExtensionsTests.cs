@@ -108,17 +108,6 @@ public sealed class ServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddRenewalsModule_resolves_RenewalOpportunityGenerator_and_PriorityScoreCalculator_with_no_captive_dependency()
-    {
-        var services = new ServiceCollection();
-        // ValidateOnBuild below eagerly validates every descriptor AddRenewalsModule registers —
-        // including RenewalThresholdScheduler's, which needs IAuditWriter/ThresholdWindowOptions'
-        // own IConfiguration dependency — not just the two types this test actually resolves. Same
-        // "supply what ValidateOnBuild needs to walk the whole graph" requirement
-        // AddRenewalsModule_resolves_RenewalEngine_and_RenewalThresholdScheduler_with_no_captive_dependency
-        // already documents.
-        services.AddSingleton<IAuditWriter>(new RecordingAuditWriter());
-        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
     public void AddRenewalsModule_resolves_RenewalOpportunityGenerator_with_no_captive_dependency()
     {
         var services = new ServiceCollection();
@@ -143,6 +132,13 @@ public sealed class ServiceCollectionExtensionsTests
         var services = new ServiceCollection();
         // Same IAuditWriter landmine as the RenewalOpportunityGenerator test above.
         services.AddSingleton<IAuditWriter>(new RecordingAuditWriter());
+        // PriorityScoreWeightsOptions' own bind factory needs IConfiguration (see
+        // AddRenewalsModule_resolves_RenewalEngine_and_RenewalThresholdScheduler_with_no_captive_dependency's
+        // own comment for the identical ThresholdWindowOptions landmine) — PriorityScoreCalculator's
+        // constructor parameter is optional in C#, but the container still resolves the registered
+        // PriorityScoreWeightsOptions singleton for it rather than falling back to that default,
+        // since a registration for the type exists.
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
 
         services.AddRenewalsModule(ConnectionString);
 
@@ -166,7 +162,7 @@ public sealed class ServiceCollectionExtensionsTests
         var services = new ServiceCollection();
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
 
-        services.AddRenewalsModule();
+        services.AddRenewalsModule(ConnectionString);
 
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<PriorityScoreWeightsOptions>();
@@ -197,7 +193,7 @@ public sealed class ServiceCollectionExtensionsTests
             .Build();
         services.AddSingleton<IConfiguration>(configuration);
 
-        services.AddRenewalsModule();
+        services.AddRenewalsModule(ConnectionString);
 
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<PriorityScoreWeightsOptions>();
