@@ -35,7 +35,7 @@ backend/
     Contigo.Suppliers.Products/  # scaffold (R1+)
     Contigo.Renewals/            # renewal engine + opportunity + explainable priority score + threshold scheduler + dashboard pipeline + action (R2; live) — see "Renewal Intelligence" below
     Contigo.Savings/             # price normalization + percentile/target/savings-range calculator (R3; task E04/F02/US01/T01) + persisted, trackable SavingsOpportunity + GET/PATCH /api/savings (task E04/F02/US02/T01) — see "Savings Intelligence" below
-    Contigo.Quotes/              # quote upload + hybrid-OCR-reused, schema-constrained line-item extraction (evidence + confidence; deterministic pricing) + POST /api/quotes (R4; task E05/F01/US01/T01) — see "Quote Check" below
+    Contigo.Quotes/              # quote upload + hybrid-OCR-reused, schema-constrained line-item extraction (evidence + confidence; deterministic pricing) + POST /api/quotes (R4; task E05/F01/US01/T01) + SKU/edition normalization against a per-tenant canonical mapping, unmatched-SKU flagging (task E05/F01/US02/T01) — see "Quote Check" below
     Contigo.Chat/                # Ask Contigo structured-vs-semantic query router (R1, task E02/F04/US01/T01) + deterministic dates/spend query handlers (task E02/F04/US01/T02) + RagAnswerService (task E02/F04/US02/T01) + AbstainGuard no-fabrication guard (task E02/F04/US02/T02); AddChatModule wired into Contigo.Api by this last task
   tests/                         # per-module + architecture + R0 integration
 ```
@@ -95,7 +95,7 @@ migrations, not in Terraform.
 | GET | `/api/savings` | Lists the caller's tenant-scoped `SavingsOpportunity` rows, newest identified first (spec §4.3/§6; module-map.md "Savings \| SavingsOpportunity, RealizedSavings \| /api/savings"; story us-02-savings-opportunity AC-1, task E04/F02/US02/T01; story us-01-savings-kpis AC-2/AC-3, task E04/F03/US01/T02); `X-Tenant-Id` header; response `{ items, totalCount }`, each item also carrying `confidenceLevel` (`Low`/`Medium`/`High`, task E04/F03/US01/T02 — see `SavingsOpportunityResult.ConfidenceLevel`'s own doc comment); no filters yet — see `Contigo.Savings.Application.SavingsOpportunityService.ListAsync`'s own doc comment |
 | PATCH | `/api/savings/{id}` | Updates `owner`, `status` (`Identified`/`InProgress`/`Realized`) and/or `realizedAmount` on one `SavingsOpportunity` (AC-1 "updates status/owner..."; AC-3 "realized value is captured and audit-tracked", task E04/F02/US02/T02); `X-Tenant-Id` header; body `{ owner?, status?, realizedAmount? }` — a genuine partial update, any subset of the three fields; 404 when `{id}` does not name an opportunity for this tenant, 400 for every other validation failure (empty owner, unrecognized status, a negative `realizedAmount`, a `realizedAmount` combined with an explicit `status` other than `Realized`, or none of the three fields supplied); writes one `IAuditWriter` entry per successful call — `savings_opportunity.updated`, or `savings_opportunity.realized` instead when `realizedAmount` was supplied (never both). Supplying `realizedAmount` also inserts a new, append-only `Contigo.Savings.Domain.RealizedSavings` row (in the opportunity's own `currency`) and finalizes `status` as `Realized` — either because the caller's own explicit `status` already said so, or automatically when `status` was omitted (see `SavingsOpportunityService.UpdateAsync`'s own doc comment). The response's `realizedAmount` field is non-`null` only on the call that just recorded one — it is not a rolled-up read of this opportunity's full realized-value history, see `SavingsOpportunityResult.RealizedAmount`'s own doc comment; the response also carries `confidenceLevel` (task E04/F03/US01/T02 — same field the `GET` row above documents, shared `ToResponse` wire-shaping) |
 | PATCH | `/api/savings/{id}` | Updates `owner` and/or `status` (`Identified`/`InProgress`/`Realized`) on one `SavingsOpportunity` (AC-1 "updates status/owner..."); `X-Tenant-Id` header; body `{ owner?, status? }` — a genuine partial update, either or both fields; 404 when `{id}` does not name an opportunity for this tenant, 400 for every other validation failure (empty owner, unrecognized status, or neither field supplied); writes one `IAuditWriter` entry (`savings_opportunity.updated`) per successful call — setting `status` to `Realized` here does **not** yet create an audit-tracked realized-value record, see `Contigo.Savings.Domain.SavingsOpportunityStatus.Realized`'s own doc comment for the gap task E04/F02/US02/T02 (`RealizedSavings`) closes |
-| POST | `/api/quotes` | New Purchase / Quote Check (spec §4.4/§11; module-map.md "Quotes \| Quote, QuoteLine... \| /api/quotes"; story us-01-quote-line-extraction AC-1/AC-2/AC-4, task E05/F01/US01/T01); multipart `file` + `X-Tenant-Id` header, same shape as `POST /api/documents`; synchronously reuses the epic-02 `HybridDocumentParsingService` (native text or the `ocr` gateway role — ADR-017, no 2-page cap) then runs one schema-constrained `extract` call for line items (quantity/SKU/edition/price/discount/term), persisting one `Contigo.Quotes.Domain.QuoteLine` row per item with source span/page/confidence; `unitPrice`/`extendedPrice` are derived deterministically in code when the model reports only `listPrice`/`discountPercent` (AC-3, Appendix C rule 6 — never asked of the model, see `QuoteLineJsonSchema`) — response `{ id, fileName, mimeType, processingStatus, lineItemCount, createdAt }`; a pipeline failure still returns 201 (the upload itself succeeded) with the pre-processing `processingStatus`/`lineItemCount: 0`, never an HTTP error |
+| POST | `/api/quotes` | New Purchase / Quote Check (spec §4.4/§11; module-map.md "Quotes \| Quote, QuoteLine... \| /api/quotes"; story us-01-quote-line-extraction AC-1/AC-2/AC-4, task E05/F01/US01/T01); multipart `file` + `X-Tenant-Id` header, same shape as `POST /api/documents`; synchronously reuses the epic-02 `HybridDocumentParsingService` (native text or the `ocr` gateway role — ADR-017, no 2-page cap) then runs one schema-constrained `extract` call for line items (quantity/SKU/edition/price/discount/term), persisting one `Contigo.Quotes.Domain.QuoteLine` row per item with source span/page/confidence; `unitPrice`/`extendedPrice` are derived deterministically in code when the model reports only `listPrice`/`discountPercent` (AC-3, Appendix C rule 6 — never asked of the model, see `QuoteLineJsonSchema`); every saved line is then run through `Contigo.Quotes.Application.Normalization.SkuNormalizationService` (story us-02-sku-normalization AC-1/AC-2, task E05/F01/US02/T01), setting `QuoteLine.NormalizedSku`/`NormalizedEdition`/`MatchStatus` — response `{ id, fileName, mimeType, processingStatus, lineItemCount, unmatchedSkuCount, createdAt }`; a pipeline failure still returns 201 (the upload itself succeeded) with the pre-processing `processingStatus`/`lineItemCount`/`unmatchedSkuCount: 0`, never an HTTP error |
 | GET | `/api/savings/kpis` | Procurement-homepage KPI row (spec §4.3/§10.1; story us-01-savings-kpis AC-1, task E04/F03/US01/T01); `X-Tenant-Id` header; response `{ annualSpendAnalyzed: [{ currency, amount, contractCount }], contractsAnalyzedCount, savingsIdentified/savingsInProgress/savingsRealized: [{ currency, low, high, count, averageConfidence }], upcomingRenewalsCount }` — every money value is grouped by currency, never summed across currencies (no exchange-rate service exists anywhere in this codebase); `contractsAnalyzedCount` counts contracts whose linked document reached `DocumentProcessingStatus.Completed` (a `Contract` row can exist before that — see `Contigo.Documents.Contracts.Application.PortfolioAnalysisCalculator`'s own doc comment); `savingsRealized` reflects each opportunity's own estimated range, not yet the separate, audit-tracked `RealizedSavings` value (task E04/F02/US02/T02's own gap, see `SavingsOpportunityStatus.Realized`'s doc comment); `upcomingRenewalsCount` is the same auto-renewing-contract count `GET /api/renewals`'s own `totalCount` already reports (same 100-contract-per-tenant cap) — see `Contigo.Api.SavingsKpiEndpointExtensions`'s own comment for why it is not a second, independently-computed number |
 
 **Interim auth:** every endpoint above that takes an `X-Tenant-Id` header
@@ -985,6 +985,44 @@ established for contracts (task E02/F06/US01/T01).
   "Quote upload + line-item extraction"; us-01's own task-02
   ("Line-item normalization + evidence/confidence") is the next task in
   this story.
+
+**Task E05/F01/US02/T01 (sku-normalization)** adds story
+us-02-sku-normalization's own AC-1 ("Normalize SKU/edition to the
+canonical product mapping") and the "show unmatched SKUs" half of AC-2:
+
+- `Contigo.Quotes.Domain.SkuProductMapping` is this module's own,
+  self-contained "canonical product mapping" — a tenant-scoped
+  raw-normalized-SKU → canonical-SKU/edition/product-name table, **not** a
+  reference into `Contigo.Suppliers.Products` (still an empty scaffold, and
+  ADR-002 forbids `Contigo.Quotes` from referencing it or any other domain
+  module's internals at all). `Contigo.Quotes.Application.Normalization
+  .SkuNormalizer.Normalize` is the pure, deterministic text rule (trim,
+  collapse whitespace, uppercase; punctuation is left untouched on purpose
+  — see that type's own doc comment) both sides of the lookup share.
+  `SkuNormalizationService.NormalizeAsync` re-reads a quote's own lines from
+  the database and sets each one's `NormalizedSku`/`NormalizedEdition`/
+  `MatchStatus` (`NotApplicable`/`Unmatched`/`Matched` —
+  `Contigo.Quotes.Domain.SkuMatchStatus`); `Contigo.Api.QuoteExtractionPipeline`
+  calls it right after persisting a quote's freshly-extracted lines, so
+  every upload gets a real match status, not just a later explicit
+  recalculate call.
+- Honest gap, by construction: nothing writes a `SkuProductMapping` row yet
+  (task E05/F01/US02/T02, "Manual product mapping + recalculate trigger",
+  is its intended first writer), so every tenant starts with zero mappings
+  and a line with a present SKU is always `Unmatched` today. This is spec
+  §11.3's own guardrail ("Do not generate a savings target if line-item
+  normalization is unresolved") made concrete rather than a limitation of
+  this task: no benchmark/assessment step for quotes exists yet either for
+  a resolved mapping to unblock.
+- Proved directly by `Contigo.Quotes.Tests.SkuNormalizationServiceTests`
+  (pure normalization, pure per-line matching, and a real-Postgres+RLS
+  persistence/re-run/cross-tenant proof). `POST /api/quotes`' response now
+  also carries `unmatchedSkuCount` (see the HTTP surface table above) —
+  `Contigo.IntegrationTests.QuoteEndToEndTests` still passes unchanged with
+  it present (that test's own fixture quote has no seeded mapping, so it is
+  `1`), but no test yet asserts that field's value over real HTTP
+  specifically; the persistence-level proof above is this task's own
+  Definition of Done.
 
 ## Containers and CI
 

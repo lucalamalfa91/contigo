@@ -70,5 +70,32 @@ public sealed class QuoteLine : TenantScopedEntity
     public int? SourcePage { get; set; }
     public double? Confidence { get; set; }
 
+    /// <summary>
+    /// Canonical, case/whitespace-normalized form of <see cref="Sku"/> (task E05/F01/US02/T01,
+    /// sku-normalization; parent story us-02-sku-normalization AC-1 "Normalize SKU/edition to the
+    /// canonical product mapping"), computed by
+    /// <c>Contigo.Quotes.Application.Normalization.SkuNormalizationService</c> — never set
+    /// directly by extraction. <see langword="null"/> exactly when <see cref="Sku"/> itself is
+    /// null/blank; see <see cref="MatchStatus"/>'s own doc comment for what that implies.
+    /// </summary>
+    public string? NormalizedSku { get; set; }
+
+    /// <summary>Canonical, case/whitespace-normalized form of <see cref="Edition"/> — same
+    /// treatment as <see cref="NormalizedSku"/>, computed alongside it.</summary>
+    public string? NormalizedEdition { get; set; }
+
+    /// <summary>
+    /// Whether <see cref="NormalizedSku"/> resolves to a known
+    /// <see cref="SkuProductMapping"/> for this tenant (task E05/F01/US02/T01, sku-normalization
+    /// AC-1/AC-2). Defaults to <see cref="SkuMatchStatus.Unmatched"/> — the conservative "needs
+    /// attention until normalization actually runs and says otherwise" state, never a silent
+    /// "assume fine" default (Appendix C rule 10) — until
+    /// <c>SkuNormalizationService.NormalizeAsync</c> sets the real value immediately after
+    /// extraction (<c>Contigo.Api.QuoteExtractionPipeline</c>) and again on every future
+    /// recalculate (task E05/F01/US02/T02). See <see cref="SkuMatchStatus"/>'s own doc comment for
+    /// what each value means and the spec §11.3 guardrail this status exists to serve.
+    /// </summary>
+    public SkuMatchStatus MatchStatus { get; set; } = SkuMatchStatus.Unmatched;
+
     public required DateTimeOffset CreatedAt { get; set; }
 }

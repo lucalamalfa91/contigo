@@ -1,5 +1,6 @@
 using Contigo.Quotes.Application;
 using Contigo.Quotes.Application.Extraction;
+using Contigo.Quotes.Application.Normalization;
 using Contigo.SharedKernel;
 using Contigo.SharedKernel.Tenancy;
 using Microsoft.EntityFrameworkCore;
@@ -48,6 +49,8 @@ public static class ServiceCollectionExtensions
         // above) rather than a second, independently-tracked context.
         services.AddScoped<QuoteUploadService>();
         services.AddScoped<QuoteLineExtractionService>();
+        // Task E05/F01/US02/T01 (sku-normalization).
+        services.AddScoped<SkuNormalizationService>();
 
         return services;
     }
