@@ -1,3 +1,4 @@
+using Contigo.Benchmark.Adapters;
 using Contigo.Benchmark.Contracts;
 using Contigo.SharedKernel;
 
@@ -33,20 +34,40 @@ namespace Contigo.Benchmark.Fixtures;
 /// cref="BenchmarkResult.Distribution"/> as <see langword="null"/> instead — falling back to a
 /// weaker, supplier+product-only comparable when one exists (so the caller still sees a real metric
 /// and sample size, just not a trustworthy distribution), or to no comparison dimensions at all when
-/// even that does not exist. Task E04/F01/US02/T02 (fixture-confidence, this story's other task,
-/// next phase) owns refining these confidence/abstain thresholds further; this task's own scope is
-/// the adapter and its dataset.
+/// even that does not exist. Task E04/F01/US02/T02 (fixture-confidence) extends that same abstain
+/// path to a comparable that is <i>dimensionally</i> strong (clears every baseline dimension) but
+/// still <i>statistically</i> weak — see <see cref="MinimumViableSampleSize"/> — so a thin sample
+/// size can never dress itself up as a trustworthy distribution just because it happened to match on
+/// every field.
+///
+/// Task E04/F01/US02/T02 also completes the registry wiring <see cref="IBenchmarkProviderAdapter"/>'s
+/// own doc comment names ("story us-02-fixture-adapter adds the first implementation... expected to
+/// register under <see cref="Configuration.BenchmarkAdapterOptions.DefaultAdapterName"/>"): this
+/// class now implements that seam directly (<see cref="Name"/>) so
+/// <see cref="BenchmarkAdapterRegistry"/> — the actual <see cref="IBenchmarkService"/> a caller
+/// resolves from <see cref="ServiceCollectionExtensions.AddBenchmarkModule"/> — can dispatch to it by
+/// name instead of leaving it registered but unreachable.
 ///
 /// Mirrors <c>Contigo.AiGateway.Fixtures.FixtureAiGateway</c>: a later, council-justified paid
 /// provider adapter swaps in behind the same <see cref="IBenchmarkService"/> seam — domain code
 /// (Renewals, Savings, Quotes; ADR-002 module-map) never notices, since it only ever depends on the
 /// interface (us-01-benchmark-interface AC-2).
 /// </summary>
-public sealed class FixtureBenchmarkAdapter : IBenchmarkService
+public sealed class FixtureBenchmarkAdapter : IBenchmarkService, IBenchmarkProviderAdapter
 {
     /// <summary>Provenance <see cref="BenchmarkResult.Source"/> for every result this adapter
     /// produces — never a named provider, per ADR-001.</summary>
     private const string SourceName = "fixture";
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Equal to <see cref="SourceName"/> — the same "fixture" literal
+    /// <see cref="Configuration.BenchmarkAdapterOptions.DefaultAdapterName"/> already names as the
+    /// expected registration name (task E04/F01/US02/T02), so
+    /// <see cref="BenchmarkAdapterRegistry"/> resolves this adapter with no separate name to keep in
+    /// sync.
+    /// </remarks>
+    public string Name => SourceName;
 
     /// <summary>Honest placeholder <see cref="BenchmarkResult.Metric"/> when not even a weak,
     /// supplier+product comparable exists — there is no fixture data at all to name a unit from
@@ -59,10 +80,30 @@ public sealed class FixtureBenchmarkAdapter : IBenchmarkService
     /// Sample size at or above which this adapter treats a fixture's comparable count as fully
     /// trustworthy (the confidence sample-size factor saturates at 1.0). Below this, confidence
     /// scales down linearly. Spec §10.3's confidence field is "Contigo's own score", not a provider
-    /// one, so this threshold is this adapter's own documented, deliberately simple heuristic; task
-    /// E04/F01/US02/T02 owns refining it further.
+    /// one, so this threshold is this adapter's own documented, deliberately simple heuristic.
     /// </summary>
     private const int FullConfidenceSampleSize = 50;
+
+    /// <summary>
+    /// Minimum sample size a fixture comparable must carry to publish a confident distribution at
+    /// all, even when it clears every required baseline dimension (<see cref="IsBaselineMatch"/>).
+    /// Task E04/F01/US02/T02's own objective ("fixture-confidence": weak-comparable abstain): a
+    /// comparable can be <i>dimensionally</i> strong — matches supplier, product, geography,
+    /// currency, term, quantity tier and purchase-date window — yet still be <i>statistically</i> too
+    /// thin to trust with a precise-looking P25/P50/P75 number (spec §10.4's benchmark-trust rule:
+    /// "a precise-looking number from weak comparables is more dangerous than an explicit
+    /// 'insufficient market data' result"). Below this floor, <see cref="FindStrongMatch"/> treats
+    /// the comparable as not qualifying at all, so <see cref="GetBenchmarkAsync"/> falls back to
+    /// <see cref="FindWeakMatch"/>'s honest insufficient-data provenance instead — the same abstain
+    /// outcome a dimensionally-weak comparable already takes (AC-3), now also reachable from a
+    /// statistically-weak one.
+    ///
+    /// Deliberately below <see cref="FullConfidenceSampleSize"/> (which only ever scales confidence
+    /// down, never abstains) and strictly below the catalog's own thinnest still-confident fixture
+    /// (Snowflake, sample size 18) so that fixture's documented "confident-but-thin" behaviour is
+    /// unchanged by this task.
+    /// </summary>
+    private const int MinimumViableSampleSize = 10;
 
     /// <summary>
     /// How many days a query's <see cref="BenchmarkQuery.PurchaseDate"/> may fall from a fixture
@@ -106,8 +147,11 @@ public sealed class FixtureBenchmarkAdapter : IBenchmarkService
     /// one contract term (Salesforce 12 vs 36 months) for the same supplier+product, so a
     /// test/caller can observe that geography and term actually change the published distribution —
     /// proof this adapter really matches on them rather than keying off supplier name alone (spec
-    /// §10.4). Snowflake's low sample size (18, below <see cref="FullConfidenceSampleSize"/>)
-    /// deliberately demonstrates a confident-but-thin result.
+    /// §10.4). Snowflake's low sample size (18, below <see cref="FullConfidenceSampleSize"/> but at
+    /// or above <see cref="MinimumViableSampleSize"/>) deliberately demonstrates a confident-but-thin
+    /// result. Notion's very low sample size (4, below <see cref="MinimumViableSampleSize"/>)
+    /// deliberately demonstrates task E04/F01/US02/T02's statistical weak-comparable abstain: every
+    /// baseline dimension matches, yet the result must still report insufficient market data (AC-3).
     /// </summary>
     private static readonly IReadOnlyList<Comparable> Catalog =
     [
@@ -145,6 +189,11 @@ public sealed class FixtureBenchmarkAdapter : IBenchmarkService
             Term: "12 months", Metric: "per seat / year", MinQuantity: 1m, MaxQuantity: 2000m,
             P25: 140m, P50: 156m, P75: 180m, SampleSize: 30,
             UpdatedAt: new DateTimeOffset(2026, 4, 10, 0, 0, 0, TimeSpan.Zero)),
+
+        new(Supplier: "Notion", Product: "Enterprise Plan", Sku: null, Geography: "US", Currency: "USD",
+            Term: "12 months", Metric: "per seat / year", MinQuantity: 1m, MaxQuantity: 2000m,
+            P25: 180m, P50: 204m, P75: 228m, SampleSize: 4,
+            UpdatedAt: new DateTimeOffset(2026, 8, 10, 0, 0, 0, TimeSpan.Zero)),
     ];
 
     /// <inheritdoc/>
@@ -161,14 +210,17 @@ public sealed class FixtureBenchmarkAdapter : IBenchmarkService
     }
 
     /// <summary>
-    /// The strongest fixture that clears every required baseline dimension (AC-1/AC-3). When more
-    /// than one clears it — this adapter's own dataset never produces that today, but a future
-    /// addition might — prefers an actual <see cref="BenchmarkQuery.Sku"/> match, then the larger
-    /// sample size, so the answer stays deterministic.
+    /// The strongest fixture that clears every required baseline dimension (AC-1/AC-3) <i>and</i>
+    /// carries at least <see cref="MinimumViableSampleSize"/> comparables — a dimensionally strong
+    /// but statistically thin match (task E04/F01/US02/T02) does not qualify here and instead falls
+    /// through to <see cref="FindWeakMatch"/>'s honest insufficient-data path. When more than one
+    /// comparable clears both bars — this adapter's own dataset never produces that today, but a
+    /// future addition might — prefers an actual <see cref="BenchmarkQuery.Sku"/> match, then the
+    /// larger sample size, so the answer stays deterministic.
     /// </summary>
     private static Comparable? FindStrongMatch(BenchmarkQuery query) =>
         Catalog
-            .Where(c => IsBaselineMatch(c, query))
+            .Where(c => IsBaselineMatch(c, query) && c.SampleSize >= MinimumViableSampleSize)
             .OrderByDescending(c => SkuActuallyMatched(c, query))
             .ThenByDescending(c => c.SampleSize)
             .FirstOrDefault();

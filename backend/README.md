@@ -31,8 +31,7 @@ backend/
     Contigo.Documents.Contracts/ # upload, metadata, staged extraction, portfolio, contract correction + history (live)
     Contigo.Audit/               # append-only audit events (live)
     Contigo.AiGateway/           # IAiGateway + FixtureAiGateway (wired via DI) + LoggingAiGateway decorator — no Foundry SDK yet
-    Contigo.Benchmark/           # IBenchmarkService.GetBenchmarkAsync + normalized Contracts DTOs (T01); BenchmarkAdapterRegistry + IBenchmarkProviderAdapter + AddBenchmarkModule DI wiring (T02) — no concrete adapter registered yet (R3)
-    Contigo.Benchmark/           # IBenchmarkService.GetBenchmarkAsync + normalized Contracts DTOs (task E04/F01/US01/T01) + FixtureBenchmarkAdapter + AddBenchmarkModule (task E04/F01/US02/T01) — no host calls AddBenchmarkModule yet (R3)
+    Contigo.Benchmark/           # IBenchmarkService.GetBenchmarkAsync + normalized Contracts DTOs (E04/F01/US01/T01); BenchmarkAdapterRegistry + AddBenchmarkModule (E04/F01/US01/T02); FixtureBenchmarkAdapter registered as the default IBenchmarkProviderAdapter, incl. statistical weak-comparable abstain (E04/F01/US02/T01+T02) — no host calls AddBenchmarkModule yet (R3)
     Contigo.Suppliers.Products/  # scaffold (R1+)
     Contigo.Renewals/            # renewal engine + opportunity + explainable priority score + threshold scheduler + dashboard pipeline + action (R2; live) — see "Renewal Intelligence" below
     Contigo.Savings/             # price normalization + percentile/target/savings-range calculator (R3; task E04/F02/US01/T01) — see "Savings Intelligence" below
@@ -202,40 +201,54 @@ env var form `Benchmark__Adapter__ActiveAdapter`, default `"fixture"` —
 `BenchmarkAdapterOptions`), the same "config-selected, swap without a code
 change" convention `AiGatewayModelOptions` already uses for ADR-004.
 
-No concrete adapter is registered yet: this task's own wave-spec phase runs
-alongside us-02-fixture-adapter's task (parallel, neither depends on the
-other), so it could not wire that adapter in even if it wanted to. A host that
-calls `AddBenchmarkModule()` today gets a real, resolvable `IBenchmarkService`
-whose `GetBenchmarkAsync` honestly fails every call — never a fabricated
-result (ADR-001) — until a module registers an `IBenchmarkProviderAdapter`
-under the configured name. Only a concrete adapter may ever reference a
-provider SDK; `Contigo.Benchmark`'s own project file carries none today, and
-`Contigo.ArchitectureTests.DependencyDirectionTests
+Task E04/F01/US02/T01 (story us-02-fixture-adapter) added the first concrete
+adapter as a class, but that task's own wave-spec phase ran alongside this
+registry task (parallel, neither depends on the other), so it could not
+register what it had just written — the adapter existed and was directly
+unit-testable, but unreachable through `AddBenchmarkModule()`. Task
+E04/F01/US02/T02 (fixture-confidence) closes that gap: only a concrete
+adapter may ever reference a provider SDK — `Contigo.Benchmark`'s own project
+file still carries none, and `Contigo.ArchitectureTests.DependencyDirectionTests
 .Benchmark_module_must_not_reference_provider_sdks` fails the build if that
-changes without an adapter to justify it.
+changes without an adapter to justify it — and now that adapter is actually
+wired in. A host that calls `AddBenchmarkModule()` today gets a real,
+resolvable `IBenchmarkService` (`BenchmarkAdapterRegistry`) whose default
+configuration dispatches to a genuine, fixture-backed result; an unrecognized
+configured adapter name (for example a `Benchmark:Adapter:ActiveAdapter`
+naming a paid provider that has not been registered) still fails honestly
+rather than fabricating one (ADR-001).
 `Contigo.Benchmark.Fixtures.FixtureBenchmarkAdapter` (task E04/F01/US02/T01,
-us-02-fixture-adapter) is the first `IBenchmarkService` implementation —
-deterministic and provider-free, backed by a hand-curated, in-memory catalog
-of illustrative SaaS supplier/product comparables (never Tropic, Vendr, or
-any paid market API — ADR-001, spec §10.2's "Strategic requirement").
+us-02-fixture-adapter) is that first `IBenchmarkService`/`IBenchmarkProviderAdapter`
+implementation — deterministic and provider-free, backed by a hand-curated,
+in-memory catalog of illustrative SaaS supplier/product comparables (never
+Tropic, Vendr, or any paid market API — ADR-001, spec §10.2's "Strategic
+requirement"). It registers under the name `"fixture"`
+(`Configuration.BenchmarkAdapterOptions.DefaultAdapterName`), so
+`BenchmarkAdapterRegistry` finds it with no separate name to keep in sync.
 `GetBenchmarkAsync` requires a fixture to match on supplier, product,
 geography, currency, contract term, quantity tier and a purchase-date
 refresh window — seven of spec §10.4's eleven named comparison dimensions,
 always more than supplier name alone — plus SKU as an optional,
 confidence-boosting eighth. A fixture that clears every required dimension
-returns P25/P50/P75 with a sample-size-scaled confidence score (`Contigo`'s
-own score, spec §10.3 — saturates at a sample size of 50); anything weaker
-returns the explicit "insufficient market data" outcome (`Distribution:
-null`) instead of a fabricated number (ADR-001; spec §10.4's benchmark-trust
-rule, verbatim: "a precise-looking number from weak comparables is more
-dangerous than an explicit 'insufficient market data' result"), falling
-back to a same-supplier/same-product comparable's metric and sample size
-when one exists so the caller still sees real (if insufficient) provenance.
+*and* carries at least `FixtureBenchmarkAdapter.MinimumViableSampleSize`
+comparables (task E04/F01/US02/T02: 10) returns P25/P50/P75 with a
+sample-size-scaled confidence score (`Contigo`'s own score, spec §10.3 —
+saturates at a sample size of 50); anything weaker — including a fixture that
+matches every dimension but is too statistically thin to trust (task
+E04/F01/US02/T02's own "weak-comparable abstain" objective) — returns the
+explicit "insufficient market data" outcome (`Distribution: null`) instead of
+a fabricated number (ADR-001; spec §10.4's benchmark-trust rule, verbatim: "a
+precise-looking number from weak comparables is more dangerous than an
+explicit 'insufficient market data' result"), falling back to a
+same-supplier/same-product comparable's metric and sample size when one
+exists so the caller still sees real (if insufficient) provenance.
 
 `ServiceCollectionExtensions.AddBenchmarkModule` wires `IBenchmarkService` to
-this adapter, but no host calls it yet — the same "wiring lands with the
-first real caller" gap `Contigo.Savings` (still an empty scaffold) will
-close, and `Contigo.Renewals`'s own
+`BenchmarkAdapterRegistry`, which now dispatches to this adapter by default
+(task E04/F01/US02/T02) — but no host calls `AddBenchmarkModule` yet, the
+same "wiring lands with the first real caller" gap `Contigo.Savings` (price
+normalization exists — task E04/F02/US01/T01 — but no DI registration of its
+own yet) will close, and `Contigo.Renewals`'s own
 `RenewalPriorityInputs.BenchmarkMarketPositionPercent` (see "explainable
 priority score" below) still has no real producer wired to it either.
 

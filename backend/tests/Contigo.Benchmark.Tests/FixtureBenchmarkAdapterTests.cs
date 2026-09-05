@@ -1,3 +1,5 @@
+using Contigo.Benchmark.Adapters;
+using Contigo.Benchmark.Configuration;
 using Contigo.Benchmark.Contracts;
 using Contigo.Benchmark.Fixtures;
 
@@ -6,7 +8,10 @@ namespace Contigo.Benchmark.Tests;
 /// <summary>
 /// Proves task E04/F01/US02/T01's own objective — "Fixture adapter returning P25/P50/P75 +
 /// confidence + provenance" — against <see cref="FixtureBenchmarkAdapter"/>, the first
-/// <see cref="IBenchmarkService"/> implementation (story us-02-fixture-adapter; ADR-001).
+/// <see cref="IBenchmarkService"/> implementation (story us-02-fixture-adapter; ADR-001). Also
+/// proves task E04/F01/US02/T02's own objective ("fixture-confidence": weak-comparable abstain, no
+/// paid API) — the statistical (thin-sample) abstain floor alongside T01's dimensional one, and the
+/// <see cref="IBenchmarkProviderAdapter"/> registration seam this task completes.
 /// </summary>
 public class FixtureBenchmarkAdapterTests
 {
@@ -106,6 +111,34 @@ public class FixtureBenchmarkAdapterTests
     }
 
     [Fact]
+    public async Task Statistically_weak_comparable_still_abstains_even_when_every_baseline_dimension_matches()
+    {
+        // Task E04/F01/US02/T02 objective ("fixture-confidence": weak-comparable abstain). The
+        // Notion fixture clears every one of IsBaselineMatch's seven required dimensions for this
+        // query, yet its sample size (4) is far below MinimumViableSampleSize — dimensionally strong,
+        // statistically weak. AC-3 requires "insufficient market data", not a precise-looking number
+        // just because every field happened to line up.
+        var query = new BenchmarkQuery(
+            Supplier: "Notion", Product: "Enterprise Plan", Sku: null, Geography: "US",
+            Quantity: 100m, Term: "12 months", Currency: "USD", PurchaseDate: StandardPurchaseDate);
+
+        var result = (await _adapter.GetBenchmarkAsync(query)).Value;
+
+        Assert.False(result.HasSufficientData);
+        Assert.Null(result.Distribution);
+
+        // Provenance is still real and honest (the same weak-comparable fallback a dimensionally
+        // weak match uses) — a caller can see *why* this abstained, not just that it did.
+        Assert.Equal("per seat / year", result.Metric);
+        Assert.Equal(4, result.SampleSize);
+        Assert.Equal(2, result.ComparisonDimensions.Count);
+        Assert.Contains(BenchmarkComparisonDimension.Supplier, result.ComparisonDimensions);
+        Assert.Contains(BenchmarkComparisonDimension.Product, result.ComparisonDimensions);
+        Assert.True(result.Confidence < 0.05);
+        Assert.Equal("fixture", result.Source);
+    }
+
+    [Fact]
     public async Task Weak_comparable_with_wrong_geography_yields_insufficient_data_not_a_fabricated_number()
     {
         var query = new BenchmarkQuery("AWS", "EC2 Compute", null, "APAC", 50m, "12 months", "USD", StandardPurchaseDate);
@@ -165,6 +198,19 @@ public class FixtureBenchmarkAdapterTests
         Assert.Empty(result.ComparisonDimensions);
         Assert.Null(result.SampleSize);
         Assert.Equal("fixture", result.Source);
+    }
+
+    [Fact]
+    public void Registers_under_the_same_name_the_registry_and_default_options_expect()
+    {
+        // Task E04/F01/US02/T02: FixtureBenchmarkAdapter now implements IBenchmarkProviderAdapter so
+        // BenchmarkAdapterRegistry can dispatch to it by name; that name must match both this
+        // adapter's own BenchmarkResult.Source literal and BenchmarkAdapterOptions.DefaultAdapterName,
+        // or ServiceCollectionExtensions.AddBenchmarkModule's default wiring would resolve nothing.
+        IBenchmarkProviderAdapter providerAdapter = _adapter;
+
+        Assert.Equal("fixture", providerAdapter.Name);
+        Assert.Equal(BenchmarkAdapterOptions.DefaultAdapterName, providerAdapter.Name);
     }
 
     [Fact]
