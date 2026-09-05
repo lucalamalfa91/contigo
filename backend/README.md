@@ -677,13 +677,47 @@ rule 3 ("never call a benchmark provider directly from renewal, savings or quote
 can never become an accidental provider call from this module — proven by
 `Contigo.Savings.Tests.PriceNormalizationCalculatorTests.Calculator_never_depends_on_the_live_Benchmark_Service_interface`.
 
-Deliberately out of this task's file scope, each a later task's own: confidence + provenance
-propagation into whatever surface displays this result (us-01-price-normalization task-02), a
-persisted, trackable `SavingsOpportunity` with status/owner/realized outcome
-(us-02-savings-opportunity), and any host/worker wiring that calls `PriceNormalizationCalculator`
-against real contracts — the same "wiring lands with the first real caller" sequencing this
-README's other modules already follow (see "Renewal Intelligence" above). `AddSavingsModule`/DI
-registration does not exist yet for the same reason: nothing calls this calculator from a host yet.
+`Contigo.Savings.Application.SavingsProvenanceClassifier` (task E04/F02/US01/T02, us-01-price-
+normalization task-02, the wave-spec's `savings-provenance` artifact) closes AC-3 ("Show confidence
++ provenance on the comparison"): `PriceComparisonResult.Provenance` is a computed property — not a
+constructor argument, so task-01's own tested shape is unchanged — that derives a
+`Contigo.Savings.Application.SavingsProvenance` view from `PriceComparisonResult.Benchmark` on every
+access. It carries a `Contigo.Savings.Domain.SavingsConfidenceLevel` (`Low`/`Medium`/`High`, spec's
+own UI vocabulary for "Benchmark confidence") alongside the raw `[0, 1]` confidence score,
+source/comparison-dimensions/sample-size/updated-at (all echoed unchanged from `BenchmarkResult`),
+and a deterministic one-line `Summary`. `Classify`'s thresholds (`HighConfidenceThreshold` = 0.7,
+`MediumConfidenceThreshold` = 0.4) are this classifier's own documented, adjustable heuristic — not
+a council-locked figure — chosen so `FixtureBenchmarkAdapter`'s own catalog already spans all three
+tiers (full-sample matches are High; Zoom's thinner 30-of-50 sample is Medium; Snowflake's 18-of-50
+sample, and any supplier+product-only weak match, are Low). `Provenance` is available regardless of
+`PriceComparisonResult.Status` — `BenchmarkResult`'s own provenance fields are always populated, so
+a caller can show confidence/provenance even for an insufficient-data or currency-mismatch result,
+never just the `Compared` case.
+
+Deliberately out of this task's file scope, each a later task's own: a persisted, trackable
+`SavingsOpportunity` with status/owner/realized outcome (us-02-savings-opportunity), and any
+host/worker wiring that calls `PriceNormalizationCalculator` against real contracts — the same
+"wiring lands with the first real caller" sequencing this README's other modules already follow
+(see "Renewal Intelligence" above). `AddSavingsModule`/DI registration does not exist yet for the
+same reason: nothing calls this calculator from a host yet.
+
+**Incidental fix, task E04/F02/US01/T02:** `backend/tests/Contigo.Benchmark.Tests/ServiceCollectionExtensionsTests.cs`
+failed to compile (a prior merge had spliced one test method's closing brace together with a second,
+differently-named test's signature line, discarding that second method's body) — fixed to restore
+`dotnet build Contigo.slnx`, since a broken build blocks every task, not just this one. The
+recovered test body is verified against this module's own current source, not guessed; the
+unrecoverable second test is not reinvented. That repair surfaced a separate, still-open
+`Contigo.Benchmark` wiring gap, left exactly as found (not this task's module or file scope):
+`AddBenchmarkModule` registers `FixtureBenchmarkAdapter` directly as `IBenchmarkService` via
+`TryAddSingleton`, but the preceding `TryAddSingleton<IBenchmarkService, BenchmarkAdapterRegistry>`
+call already claims that slot (first registration wins), and `FixtureBenchmarkAdapter` does not
+implement `IBenchmarkProviderAdapter`, so `BenchmarkAdapterRegistry` can never reach it either — a
+container built from `AddBenchmarkModule()` resolves `IBenchmarkService` to an always-adapter-less
+`BenchmarkAdapterRegistry` today, not `FixtureBenchmarkAdapter`, contradicting
+`Resolved_service_fails_honestly_when_no_adapter_is_registered_yet`'s own
+`Assert.IsType<FixtureBenchmarkAdapter>` (that test now fails, honestly, instead of the file
+silently not compiling). Fixing the wiring itself is us-02-fixture-adapter's/the adapter-registry
+task's own module to redesign, not a Savings-module task's file scope.
 
 ## Containers and CI
 

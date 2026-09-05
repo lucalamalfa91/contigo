@@ -53,9 +53,9 @@ namespace Contigo.Savings.Application;
 /// <see cref="Status"/> — <see cref="BenchmarkResult.Confidence"/>,
 /// <see cref="BenchmarkResult.Source"/>, <see cref="BenchmarkResult.ComparisonDimensions"/> and the
 /// rest of the Benchmark Service's own provenance (product spec §10.3) are always reachable from
-/// this result without this calculator re-declaring or duplicating a single one of those fields —
-/// parent story us-01-price-normalization task-02 (confidence + provenance propagation) builds on
-/// this reference rather than this task guessing that task's own output shape.</param>
+/// this result without this calculator re-declaring or duplicating a single one of those fields.
+/// See <see cref="Provenance"/> for task-02's (confidence + provenance propagation) display-ready
+/// projection of this same value.</param>
 /// <param name="Explanation">Human-readable trace of what this calculator computed and why — not
 /// meant to be shown to an end user as-is, but enough for a test (or a developer) to see why a
 /// result has the shape it does without re-deriving it, the same role
@@ -71,4 +71,16 @@ public sealed record PriceComparisonResult(
     decimal? TotalSavingsRangeLow,
     decimal? TotalSavingsRangeHigh,
     BenchmarkResult Benchmark,
-    string Explanation);
+    string Explanation)
+{
+    /// <summary>
+    /// Confidence + provenance "on the comparison" (parent story us-01-price-normalization AC-3,
+    /// task E04/F02/US01/T02, the wave-spec's <c>savings-provenance</c> artifact) —
+    /// <see cref="SavingsProvenanceClassifier.FromBenchmark"/> applied to <see cref="Benchmark"/>.
+    /// Computed fresh on every access, not a stored field: <see cref="Benchmark"/> is this result's
+    /// one and only source of provenance truth, so this property can never drift from it or be
+    /// constructed with a mismatched value. Available regardless of <see cref="Status"/> — see
+    /// <see cref="SavingsProvenance"/>'s own doc comment for why that is always safe.
+    /// </summary>
+    public SavingsProvenance Provenance => SavingsProvenanceClassifier.FromBenchmark(Benchmark);
+}
