@@ -1,6 +1,7 @@
 using Contigo.Benchmark.Configuration;
 using Contigo.Benchmark.Contracts;
 using Microsoft.Extensions.Configuration;
+using Contigo.Benchmark.Fixtures;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Contigo.Benchmark.Tests;
@@ -10,6 +11,10 @@ namespace Contigo.Benchmark.Tests;
 /// <see cref="IBenchmarkService"/> both resolve from a DI container via
 /// <see cref="ServiceCollectionExtensions.AddBenchmarkModule"/>, mirroring
 /// <c>Contigo.AiGateway.Tests.ServiceCollectionExtensionsTests</c>.
+/// Proves task E04/F01/US02/T01's own wiring claim: <see cref="IBenchmarkService"/>'s doc comment
+/// says "story us-02-fixture-adapter adds the first adapter" — this is that registration, mirroring
+/// <c>Contigo.AiGateway.Tests.ServiceCollectionExtensionsTests</c>' identical proof for
+/// <c>AddAiGatewayModule</c>.
 /// </summary>
 public class ServiceCollectionExtensionsTests
 {
@@ -18,6 +23,9 @@ public class ServiceCollectionExtensionsTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+    public void AddBenchmarkModule_resolves_a_fixture_backed_benchmark_service()
+    {
+        var services = new ServiceCollection();
 
         services.AddBenchmarkModule();
 
@@ -70,5 +78,7 @@ public class ServiceCollectionExtensionsTests
             "AWS", "EC2 Compute", null, "US", 100m, "12 months", "USD", new DateOnly(2026, 1, 15)));
 
         Assert.True(result.IsFailure);
+
+        Assert.IsType<FixtureBenchmarkAdapter>(benchmarkService);
     }
 }
