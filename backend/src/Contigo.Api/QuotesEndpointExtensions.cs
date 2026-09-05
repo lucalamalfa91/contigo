@@ -8,11 +8,13 @@ namespace Contigo.Api;
 /// Maps `POST /api/quotes` (product spec Appendix A API table: "Upload/create quote"; parent
 /// story us-01-quote-line-extraction AC-1, task E05/F01/US01/T01, quote-extraction) and
 /// `GET /api/quotes/{id}/assessment` (Appendix A "Quote assessment"; parent story
-/// us-01-market-assessment AC-3, task E05/F02/US01/T01, market-assessment). Thin composition per
+/// us-01-market-assessment AC-3, task E05/F02/US01/T01, market-assessment; AC-2's "recommended
+/// target range + potential saving" half, task E05/F02/US01/T02, target-saving). Thin composition per
 /// ADR-002 — <see cref="QuoteUploadService"/> owns the upload/storage/audit decisions,
 /// <see cref="QuoteExtractionPipeline"/> owns the hybrid-parse/AI-extraction orchestration (see
 /// that type's own doc comment for why it, not a domain module, is the AI Gateway call site), and
-/// <see cref="MarketAssessmentService"/> owns the benchmark-matching/classification decisions; this
+/// <see cref="MarketAssessmentService"/> owns the benchmark-matching/classification/target-saving
+/// decisions; this
 /// file only translates HTTP &lt;-&gt; those calls, the same shape
 /// <see cref="ContractsEndpointExtensions"/>/<see cref="WorkspaceEndpointExtensions"/> already use.
 ///
@@ -158,10 +160,13 @@ public static class QuotesEndpointExtensions
 
     /// <summary>
     /// AC-3 ("<c>GET /api/quotes/{id}/assessment</c> returns the assessment with
-    /// confidence/provenance", task E05/F02/US01/T01, market-assessment): thin HTTP translation over
+    /// confidence/provenance", task E05/F02/US01/T01, market-assessment) plus AC-2's "recommended
+    /// target range + potential saving" half (task E05/F02/US01/T02, target-saving —
+    /// <c>targetSaving</c> below): thin HTTP translation over
     /// <see cref="MarketAssessmentService.AssessAsync"/> — that service owns every matching/
-    /// classification decision (per-line status, market position, confidence/provenance); this
-    /// handler only shapes the wire response. Same interim <c>X-Tenant-Id</c> header placeholder as
+    /// classification/target-saving decision (per-line status, market position,
+    /// confidence/provenance, recommended target/saving); this handler only shapes the wire
+    /// response. Same interim <c>X-Tenant-Id</c> header placeholder as
     /// <see cref="UploadQuoteAsync"/> above (ADR-010 is not in this task's "Architecture decisions
     /// in force" list either).
     /// </summary>
@@ -232,6 +237,23 @@ public static class QuotesEndpointExtensions
                         comparisonDimensions = line.Provenance.ComparisonDimensions.Select(d => d.ToString()),
                         updatedAt = line.Provenance.UpdatedAt,
                         summary = line.Provenance.Summary,
+                    },
+                // Task E05/F02/US01/T02 (target-saving), AC-2's "recommended target range +
+                // potential saving" half: null exactly when TargetSaving itself is (no benchmark
+                // call was made); still populated — with every numeric field null plus a named
+                // reason — when a call was made but returned no usable distribution (spec §11.3's
+                // benchmark-trust rule, see LineTargetSaving's own doc comment).
+                targetSaving = line.TargetSaving is null
+                    ? null
+                    : new
+                    {
+                        recommendedTargetLow = line.TargetSaving.RecommendedTargetLow,
+                        recommendedTargetHigh = line.TargetSaving.RecommendedTargetHigh,
+                        savingsRangeLow = line.TargetSaving.SavingsRangeLow,
+                        savingsRangeHigh = line.TargetSaving.SavingsRangeHigh,
+                        totalSavingsRangeLow = line.TargetSaving.TotalSavingsRangeLow,
+                        totalSavingsRangeHigh = line.TargetSaving.TotalSavingsRangeHigh,
+                        explanation = line.TargetSaving.Explanation,
                     },
                 explanation = line.Explanation,
             }),

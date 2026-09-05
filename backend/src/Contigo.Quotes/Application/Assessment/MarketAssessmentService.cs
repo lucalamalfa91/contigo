@@ -10,7 +10,10 @@ namespace Contigo.Quotes.Application.Assessment;
 /// Implements task E05/F02/US01/T01 (market-assessment; parent story us-01-market-assessment AC-1
 /// "Match normalized line items to the Benchmark Service (multi-dimensional)", AC-2's "flag" half,
 /// AC-3 "<c>GET /api/quotes/{id}/assessment</c> returns the assessment with
-/// confidence/provenance"). The one place in <c>Contigo.Quotes</c> that actually calls
+/// confidence/provenance") and task E05/F02/US01/T02 (target-saving; AC-2's "recommended target
+/// range + potential saving" half — <see cref="LineMarketAssessment.TargetSaving"/> is computed from
+/// the same <c>line.Quantity</c> this service now also passes through per line below). The one place
+/// in <c>Contigo.Quotes</c> that actually calls
 /// <see cref="IBenchmarkService"/> — <c>Contigo.Quotes.Infrastructure.ServiceCollectionExtensions
 /// .AddQuotesModule</c>'s own doc comment named this task as the "later step" that would need to
 /// (it deliberately left <c>AddBenchmarkModule()</c> uncalled until a real caller existed). Calling
@@ -79,6 +82,7 @@ public sealed class MarketAssessmentService(QuotesDbContext dbContext, IBenchmar
                 MarketAssessmentStatus.QuoteDataUnresolved,
                 Position: null,
                 UnitPrice: line.UnitPrice,
+                Quantity: line.Quantity,
                 Benchmark: null,
                 Explanation: queryResult.Error);
         }
@@ -97,6 +101,7 @@ public sealed class MarketAssessmentService(QuotesDbContext dbContext, IBenchmar
                 MarketAssessmentStatus.QuoteDataUnresolved,
                 Position: null,
                 UnitPrice: line.UnitPrice,
+                Quantity: line.Quantity,
                 Benchmark: null,
                 Explanation: benchmarkOutcome.Error);
         }
@@ -109,6 +114,7 @@ public sealed class MarketAssessmentService(QuotesDbContext dbContext, IBenchmar
             classification.Status,
             classification.Position,
             line.UnitPrice,
+            line.Quantity,
             benchmark,
             classification.Explanation);
     }

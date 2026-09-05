@@ -11,13 +11,16 @@ using Testcontainers.PostgreSql;
 namespace Contigo.Quotes.Tests;
 
 /// <summary>
-/// Proves the Definition of Done for task E05/F02/US01/T01 (market-assessment) end to end against a
-/// real, migrated Postgres+RLS database (ADR-009's own "no in-memory provider" posture every other
-/// module persistence test in this solution already takes) and the real
-/// <see cref="FixtureBenchmarkAdapter"/> — never a stub/mock of the Benchmark Service — mirroring
-/// <c>Contigo.Quotes.Tests.SkuNormalizationServiceTests</c>'s own three-layer split (pure core in
-/// <c>MarketAssessmentCalculatorTests</c>/<c>MarketAssessmentQueryBuilderTests</c>, persistence
-/// here).
+/// Proves the Definition of Done for task E05/F02/US01/T01 (market-assessment) — and, since task
+/// E05/F02/US01/T02 (target-saving) extended <see cref="MarketAssessmentService"/>'s own per-line
+/// result with <c>LineMarketAssessment.TargetSaving</c>, the parent story us-01-market-assessment
+/// Definition of Done in full ("`dotnet test` proves assessment + target/saving from fixture
+/// benchmark") — end to end against a real, migrated Postgres+RLS database (ADR-009's own "no
+/// in-memory provider" posture every other module persistence test in this solution already takes)
+/// and the real <see cref="FixtureBenchmarkAdapter"/> — never a stub/mock of the Benchmark Service —
+/// mirroring <c>Contigo.Quotes.Tests.SkuNormalizationServiceTests</c>'s own three-layer split (pure
+/// core in <c>MarketAssessmentCalculatorTests</c>/<c>MarketAssessmentQueryBuilderTests</c>/
+/// <c>TargetSavingCalculatorTests</c>, persistence here).
 ///
 /// All three lines below share one quote from one supplier ("Salesforce"), the same catalog row
 /// <c>Contigo.IntegrationTests.R3EndToEndTests</c> already exercises for the analogous Savings
@@ -173,6 +176,7 @@ public sealed class MarketAssessmentServiceTests : IAsyncDisposable
         Assert.Equal(MarketAssessmentStatus.Assessed, aboveMarket.Status);
         Assert.Equal(MarketPosition.AboveMarket, aboveMarket.Position);
         Assert.Equal(2300m, aboveMarket.UnitPrice);
+        Assert.Equal(100m, aboveMarket.Quantity);
         Assert.NotNull(aboveMarket.Benchmark);
         Assert.True(aboveMarket.Benchmark!.HasSufficientData);
         Assert.Equal(1500m, aboveMarket.Benchmark.Distribution!.P25);
@@ -182,6 +186,16 @@ public sealed class MarketAssessmentServiceTests : IAsyncDisposable
         Assert.Equal(MarketConfidenceLevel.High, aboveMarket.Provenance!.ConfidenceLevel);
         Assert.Equal("fixture", aboveMarket.Provenance.Source);
         Assert.Equal(512, aboveMarket.Provenance.SampleSize);
+        // Task E05/F02/US01/T02 (target-saving), AC-2's "recommended target range + potential
+        // saving" half — same deterministic arithmetic TargetSavingCalculatorTests proves in
+        // isolation, now proven end to end against a real Postgres+RLS database.
+        Assert.NotNull(aboveMarket.TargetSaving);
+        Assert.Equal(1500m, aboveMarket.TargetSaving!.RecommendedTargetLow);
+        Assert.Equal(1800m, aboveMarket.TargetSaving.RecommendedTargetHigh);
+        Assert.Equal(500m, aboveMarket.TargetSaving.SavingsRangeLow);   // 2300 - 1800
+        Assert.Equal(800m, aboveMarket.TargetSaving.SavingsRangeHigh); // 2300 - 1500
+        Assert.Equal(50_000m, aboveMarket.TargetSaving.TotalSavingsRangeLow);  // 500 * 100
+        Assert.Equal(80_000m, aboveMarket.TargetSaving.TotalSavingsRangeHigh); // 800 * 100
 
         var unresolved = Assert.Single(assessment.Lines, l => l.QuoteLineId == unresolvedLineId);
         Assert.Equal(MarketAssessmentStatus.QuoteDataUnresolved, unresolved.Status);
@@ -189,6 +203,10 @@ public sealed class MarketAssessmentServiceTests : IAsyncDisposable
         Assert.Null(unresolved.UnitPrice);
         Assert.Null(unresolved.Benchmark);
         Assert.Null(unresolved.Provenance);
+        // No benchmark call was ever made for this line (no UnitPrice to compare) — TargetSaving is
+        // null the same way Provenance is, even though Quantity itself was recorded.
+        Assert.Equal(100m, unresolved.Quantity);
+        Assert.Null(unresolved.TargetSaving);
 
         var insufficient = Assert.Single(assessment.Lines, l => l.QuoteLineId == insufficientDataLineId);
         Assert.Equal(MarketAssessmentStatus.InsufficientBenchmarkData, insufficient.Status);
@@ -200,6 +218,12 @@ public sealed class MarketAssessmentServiceTests : IAsyncDisposable
         // because the comparison itself abstained.
         Assert.NotNull(insufficient.Provenance);
         Assert.Equal("fixture", insufficient.Provenance!.Source);
+        // Same benchmark-trust rule applies to TargetSaving: still a non-null object (with a named
+        // reason), never a silently-missing value, even though every numeric field is null.
+        Assert.NotNull(insufficient.TargetSaving);
+        Assert.Null(insufficient.TargetSaving!.RecommendedTargetLow);
+        Assert.Null(insufficient.TargetSaving.TotalSavingsRangeLow);
+        Assert.Contains("Appendix C rule 10", insufficient.TargetSaving.Explanation);
     }
 
     [Fact]
