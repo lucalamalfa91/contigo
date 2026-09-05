@@ -35,7 +35,7 @@ backend/
     Contigo.Suppliers.Products/  # scaffold (R1+)
     Contigo.Renewals/            # renewal engine + opportunity + explainable priority score + threshold scheduler + dashboard pipeline + action (R2; live) — see "Renewal Intelligence" below
     Contigo.Savings/             # price normalization + percentile/target/savings-range calculator (R3; task E04/F02/US01/T01) + persisted, trackable SavingsOpportunity + GET/PATCH /api/savings (task E04/F02/US02/T01) — see "Savings Intelligence" below
-    Contigo.Quotes/              # quote upload + hybrid-OCR-reused, schema-constrained line-item extraction (evidence + confidence; deterministic pricing) + POST /api/quotes (R4; task E05/F01/US01/T01) + SKU/edition normalization against a per-tenant canonical mapping, unmatched-SKU flagging (task E05/F01/US02/T01) + benchmark matching/above-in-line-below market assessment + GET /api/quotes/{id}/assessment, AddBenchmarkModule now wired (task E05/F02/US01/T01) + deterministic recommended target range/potential saving on that same endpoint (task E05/F02/US01/T02) — see "Quote Check" / "Market Assessment" below
+    Contigo.Quotes/              # quote upload + hybrid-OCR-reused, schema-constrained line-item extraction (evidence + confidence; deterministic pricing) + POST /api/quotes (R4; task E05/F01/US01/T01) + SKU/edition normalization against a per-tenant canonical mapping, unmatched-SKU flagging (task E05/F01/US02/T01) + benchmark matching/above-in-line-below market assessment + GET /api/quotes/{id}/assessment, AddBenchmarkModule now wired (task E05/F02/US01/T01) + deterministic recommended target range/potential saving on that same endpoint (task E05/F02/US01/T02) + deterministic negotiation strategy (opening target/acceptable range/walk-away threshold + seven canonical levers with rationale, NegotiationStrategyService, no HTTP endpoint yet) (task E05/F03/US01/T01) — see "Quote Check" / "Market Assessment" / "Negotiation Strategy" below
     Contigo.Chat/                # Ask Contigo structured-vs-semantic query router (R1, task E02/F04/US01/T01) + deterministic dates/spend query handlers (task E02/F04/US01/T02) + RagAnswerService (task E02/F04/US02/T01) + AbstainGuard no-fabrication guard (task E02/F04/US02/T02); AddChatModule wired into Contigo.Api by this last task
   tests/                         # per-module + architecture + R0 integration
 ```
@@ -1178,9 +1178,10 @@ resolves `IBenchmarkService` yet").
   mirroring `MarketAssessmentCalculatorTests`'s own shape) and end to end by
   the same `MarketAssessmentServiceTests` fixture above — the parent story
   us-01-market-assessment Definition of Done in full ("`dotnet test` proves
-  assessment + target/saving from fixture benchmark"). Negotiation (`POST
-  /api/negotiations/outcomes`) remains future work no task has picked up
-  yet.
+  assessment + target/saving from fixture benchmark"). Negotiation strategy
+  generation is task E05/F03/US01/T01's own scope — see "Negotiation
+  Strategy" below; outcome capture (`POST /api/negotiations/outcomes`,
+  feature-03's us-02) remains future work no task has picked up yet.
 - **Incidental fix, required for this task's own `dotnet build` to succeed
   at all**: `Contigo.Api.QuoteExtractionPipeline.ProcessAsync` (touched by
   both task E05/F01/US01/T02 and task E05/F01/US02/T01 in parallel
@@ -1197,6 +1198,82 @@ resolves `IBenchmarkService` yet").
   already-landed logic. The `POST /api/quotes` HTTP-surface-table row above
   had the identical duplicate-row shape (two rows, each missing the other's
   fields) — consolidated into the one row above for the same reason.
+
+## Negotiation Strategy — opening target/range/walk-away + levers
+
+Task E05/F03/US01/T01 (negotiation-strategy; parent story
+us-01-negotiation-strategy AC-1 "Generate opening target, acceptable range,
+walk-away threshold, levers, rationale", AC-3 "Arithmetic (target/saving) is
+deterministic; only language is LLM") closes the gap the "Market Assessment"
+section above used to name ("Negotiation ... remains future work no task has
+picked up yet").
+
+- **`Contigo.Quotes.Application.Strategy.NegotiationStrategyCalculator`**
+  is a pure, synchronous calculator (no database/HTTP/LLM call) that turns
+  an already-computed `LineMarketAssessment.TargetSaving` (task
+  E05/F02/US01/T02) into `LineNegotiationStrategy.{OpeningTarget,
+  AcceptableRangeLow/High, WalkAwayThreshold}`: the acceptable range echoes
+  `RecommendedTargetLow/High` verbatim (spec §12.1's "Acceptable target
+  range" row is §11.2's own "Recommended target" row carried forward, not a
+  second computation), opening target steps one range-width below the low
+  end (floored at zero) and walk-away steps one range-width above the high
+  end, clamped to the line's own current `UnitPrice` (never recommend
+  escalating past what is already quoted — the same clamp
+  `TargetSavingCalculator` already applies to `RecommendedTargetHigh`).
+  Never fabricates: no usable target range, or no current `UnitPrice`,
+  returns every numeric field `null` plus an empty lever list and a named
+  reason (Appendix C rule 10) — the same honest-abstain shape
+  `TargetSavingCalculator.Compute` already established.
+- **Levers are always the full, fixed, spec §12.1-named set of seven**
+  (`NegotiationLeverType`: `Volume`, `Term`, `Utilization`, `Alternatives`,
+  `QuarterEnd`, `Bundle`, `PaymentTerms`) — never a variable-length subset —
+  so a caller always sees the complete playbook. `Volume`/`Term`/`Bundle`
+  ground themselves in this line/quote's own recorded data when it exists
+  (`QuoteLine.Quantity`/`Term`, and how many `QuoteLine` rows share this
+  line's own quote); `QuarterEnd` is date-derived (within 14 days of a
+  calendar quarter-end, evaluated as of the caller's own `IClock`-derived
+  "today", never a historical quote date); `Utilization`/`Alternatives`/
+  `PaymentTerms` have no source field anywhere in this module's schema
+  today, so their rationale says so honestly rather than inventing a
+  this-quote-specific fact.
+- **Deterministic language, not yet an AI Gateway `answer`-role call**: AC-3's
+  "only language is LLM" is honoured by keeping every number in the pure
+  calculator above; the per-lever `Rationale` text is V1 deterministic
+  language, the same "`Explanation` is a computed string, never a model
+  call" convention `TargetSavingCalculator`/`MarketAssessmentCalculator`
+  already follow. `Contigo.ArchitectureTests.DependencyDirectionTests`'
+  allowed-reference set for `Contigo.Quotes` is exactly `[SharedKernel,
+  Benchmark]` (see "Dependency direction" below) — unchanged by this task.
+  A future task wiring the `answer` role would do it the same way
+  `Contigo.Api.QuoteExtractionPipeline` already does for the `extract`
+  role: from the composition root, feeding this calculator's own facts in
+  as evidence, never asking the model to invent them.
+  `Contigo.AiGateway.Fixtures.FixtureAiGateway.AnswerAsync` would today only
+  echo those facts back verbatim (no live grounded-generation model exists
+  yet), so deferring that wiring loses no real capability now. Evidence
+  *citations* per lever (AC-2, Appendix C rule 2) are task
+  E05/F03/US01/T02's own, separate scope (strategy-evidence).
+- **`Contigo.Quotes.Application.Strategy.NegotiationStrategyService`**
+  composes on top of `MarketAssessmentService.AssessAsync` (reused, not
+  re-derived) plus one extra `QuoteLine` read (for `Term`/
+  `NormalizedTermMonths`/`Unit`, which `LineMarketAssessment` does not echo)
+  and returns one `LineNegotiationStrategy` per line — the same per-line,
+  no-quote-level-rollup shape `QuoteMarketAssessment` already established,
+  and the same "computed fresh on every call, nothing persisted" posture
+  `MarketAssessmentService` already takes. Not yet wired to an
+  `AddQuotesModule`-registered HTTP endpoint: parent story
+  us-01-negotiation-strategy's own acceptance criteria name no `GET
+  /api/quotes/{id}/...` route (unlike us-01-market-assessment's AC-3), so
+  none was added — `AddQuotesModule` registers the service so a future
+  task/feature-04 (r4-integration) can call it.
+- Proved directly by `Contigo.Quotes.Tests.NegotiationStrategyCalculatorTests`
+  (pure, no database — range/walk-away arithmetic, all seven levers, every
+  honest-abstain branch, determinism) and end to end by
+  `Contigo.Quotes.Tests.NegotiationStrategyServiceTests` against a real
+  Postgres+RLS database and the real `FixtureBenchmarkAdapter`, reusing
+  `MarketAssessmentServiceTests`' own Salesforce/Sales-Cloud-Enterprise
+  fixture comparable (P25/P50/P75 = 1500/1800/2100 per seat/year) so both
+  tests agree on what the numbers mean.
 
 ## Containers and CI
 

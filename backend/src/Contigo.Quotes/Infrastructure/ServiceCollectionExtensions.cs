@@ -3,6 +3,7 @@ using Contigo.Quotes.Application;
 using Contigo.Quotes.Application.Assessment;
 using Contigo.Quotes.Application.Extraction;
 using Contigo.Quotes.Application.Normalization;
+using Contigo.Quotes.Application.Strategy;
 using Contigo.SharedKernel;
 using Contigo.SharedKernel.Tenancy;
 using Microsoft.EntityFrameworkCore;
@@ -79,6 +80,11 @@ public static class ServiceCollectionExtensions
         // Task E05/F02/US01/T01 (market-assessment): shares this request's own QuotesDbContext and
         // resolves the IBenchmarkService registered above.
         services.AddScoped<MarketAssessmentService>();
+        // Task E05/F03/US01/T01 (negotiation-strategy): shares this request's own QuotesDbContext
+        // and composes on top of the MarketAssessmentService registered immediately above (see
+        // NegotiationStrategyService's own doc comment for why it depends on that service rather
+        // than re-deriving the assessment itself).
+        services.AddScoped<NegotiationStrategyService>();
 
         return services;
     }
