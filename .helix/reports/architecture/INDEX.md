@@ -41,3 +41,13 @@ All fourteen required topics from the council-protocol brief are covered by ADR-
 models, CI→Azure auth, promotion, relational store, tenancy/RLS, Key Vault+RAG). ADR-017 closes the
 CQ-008 sub-item "OCR vs native document parse": OCR is in V1, not deferred. No required topic
 remains unaddressed.
+
+## Web delta (wave 6+, appended 2026-09-05)
+
+ADR-001…017 are unchanged. New accepted ADRs from `contigo-web-design`:
+
+| ADR | Topic | Seat | One-line decision |
+| --- | --- | --- | --- |
+| ADR-018 | Web information architecture | ux-ui-designer | Left-rail Day-1 sitemap; Admin vs Procurement; cites `inputs/design/prototypes/ia.md`. |
+| ADR-019 | Web design system | ux-ui-designer | Adopt Claude Design Modernist export verbatim; no forked tokens. |
+| ADR-020 | Web screen inventory | ux-ui-designer | 1:1 §16/§20 → ten screens in `prototypes/screens.md` + `day1-demo.html`. |

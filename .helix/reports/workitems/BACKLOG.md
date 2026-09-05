@@ -27,6 +27,9 @@ Each wave ends with a single-task `us-XX-final-integration` story. R4's integrat
 | epic-03 | renewal-intelligence | R2 | active — decomposed |
 | epic-04 | savings-intelligence | R3 | active — decomposed |
 | epic-05 | quote-check | R4 | active — decomposed |
+| epic-06 | web-foundation | 6 | active — decomposed (web) |
+| epic-07 | web-contract-intelligence | 7 | active — decomposed (web) |
+| epic-08 | web-renewals-savings-quotes | 8 | active — decomposed (web) |
 
 ## ADR → wave coverage
 
@@ -49,11 +52,27 @@ Each wave ends with a single-task `us-XX-final-integration` story. R4's integrat
 | ADR-015 | CI → Azure auth | epic-01 F02/F03 |
 | ADR-016 | Promotion dev→demo | epic-01 F03 |
 | ADR-017 | OCR in V1 | epic-01 F02 (DI endpoint), epic-02 (AI Gateway `ocr` + hybrid parse) |
+| ADR-018 | Web IA | epic-06..08 (left-rail routes, roles) |
+| ADR-019 | Web design system | epic-06..08 (tokens, semantic mapping, states) |
+| ADR-020 | Web screen inventory | epic-06..08 (screens 1–10 ↔ §16/§20) |
 
 ## Non-goals (excluded, ADR-001, spec §1.2)
 
 Full CLM/authoring · e-signature · PO/invoice management · supplier onboarding · full sourcing/RFP · ERP replacement · autonomous supplier comms · complex enterprise approval orchestration · production-only platform (AKS/multi-region/dedicated DB).
 
+## Web delta (epic-06+, wave 6+)
+
+The web pass (`layer: web`, `target_repo: contigo-web`) closes the user-visible
+ladder that E01–E05 decomposed as backend-only. It treats E01–E05 as done and
+adds the browser surface, per ADR-018/019/020 and the Claude Design handoff at
+`inputs/design/prototypes/`.
+
+Master web DAG: `reports/plan/wave-spec.web.yaml`. Web slices: `reports/plan/slices/e06.yaml` … (via `python scripts/cut_web_slices.py`). See `reports/plan/slices/INDEX-web.md` and `MANIFEST-web.yaml`.
+
+The last web story is `us-01-final-integration` (E08/F04): a single task walking
+spec §20 Day-1 in the browser on `demo`, matching `inputs/design/prototypes/day1-demo.html`.
+
 ## Status
 
 Fully decomposed R0–R4. Master DAG: `reports/plan/wave-spec.execution.yaml`. Nightly slices: `reports/plan/slices/`.
+Web delta (wave 6+) decomposed. Web DAG: `reports/plan/wave-spec.web.yaml`. Web slices: `reports/plan/slices/e06.yaml` … .

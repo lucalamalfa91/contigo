@@ -1,0 +1,64 @@
+waveId: wave-v1-web-e06
+status: planned
+phases:
+  - id: 1
+    name: phase-1
+    tasks:
+      - {id: E06/F01/US01/T01, prompt: reports/workitems/epic-06-web-foundation/feature-01-typescript-client-regen/us-01-typescript-client-regen/tasks/task-01-typescript-client-regen.md, produces: [web-api-client-current], depends_on: [], effort: S, layer: web, status: live}
+  - id: 2
+    name: phase-2
+    tasks:
+      - {id: E06/F02/US01/T01, prompt: reports/workitems/epic-06-web-foundation/feature-02-design-system/us-01-design-system-tokens/tasks/task-01-design-system-tokens.md, produces: [web-design-system], depends_on: [], effort: M, layer: web, status: live}
+  - id: 3
+    name: phase-3
+    tasks:
+      - {id: E06/F03/US01/T01, prompt: reports/workitems/epic-06-web-foundation/feature-03-app-shell/us-01-signin-workspace-picker/tasks/task-01-signin-workspace-picker.md, produces: [web-signin-workspace], depends_on: [web-api-client-current], effort: M, layer: web, status: live}
+  - id: 4
+    name: phase-4
+    tasks:
+      - {id: E06/F03/US02/T01, prompt: reports/workitems/epic-06-web-foundation/feature-03-app-shell/us-02-navigation-shell/tasks/task-01-navigation-shell.md, produces: [web-app-shell], depends_on: [web-design-system, web-signin-workspace], effort: M, layer: web, status: live}
+  - id: 5
+    name: phase-5
+    tasks:
+      - {id: E06/F04/US01/T01, prompt: reports/workitems/epic-06-web-foundation/feature-04-workspace-members-ui/us-01-workspace-members-invite/tasks/task-01-workspace-members-invite.md, produces: [web-members-ui], depends_on: [web-app-shell], effort: M, layer: web, status: live}
+  - id: 6
+    name: phase-6
+    tasks:
+      - {id: E06/F05/US01/T01, prompt: reports/workitems/epic-06-web-foundation/feature-05-document-upload-ui/us-01-document-upload/tasks/task-01-document-upload.md, produces: [web-upload-ui], depends_on: [web-app-shell], effort: M, layer: web, status: live}
+  - id: 7
+    name: phase-7
+    tasks:
+      - {id: E06/F05/US02/T01, prompt: reports/workitems/epic-06-web-foundation/feature-05-document-upload-ui/us-02-document-status-readback/tasks/task-01-document-status-readback.md, produces: [web-document-status], depends_on: [web-upload-ui], effort: S, layer: web, status: live}
+  - id: 8
+    name: phase-8
+    tasks:
+      - {id: E07/F01/US01/T01, prompt: reports/workitems/epic-07-web-contract-intelligence/feature-01-portfolio-ui/us-01-portfolio-list-filters/tasks/task-01-portfolio-list-filters.md, produces: [web-portfolio], depends_on: [web-api-client-current, web-app-shell], effort: L, layer: web, status: live}
+  - id: 9
+    name: phase-9
+    tasks:
+      - {id: E07/F02/US01/T01, prompt: reports/workitems/epic-07-web-contract-intelligence/feature-02-contract-360-ui/us-01-contract-360/tasks/task-01-contract-360.md, produces: [web-contract-360], depends_on: [web-portfolio, web-api-client-current], effort: L, layer: web, status: live}
+  - id: 10
+    name: phase-10
+    tasks:
+      - {id: E07/F03/US01/T01, prompt: reports/workitems/epic-07-web-contract-intelligence/feature-03-review-correction-ui/us-01-field-review-correction/tasks/task-01-field-review-correction.md, produces: [web-review-ui], depends_on: [web-contract-360], effort: L, layer: web, status: live}
+  - id: 11
+    name: phase-11
+    tasks:
+      - {id: E07/F04/US01/T01, prompt: reports/workitems/epic-07-web-contract-intelligence/feature-04-ask-contigo-ui/us-01-ask-contigo/tasks/task-01-ask-contigo.md, produces: [web-ask-ui], depends_on: [web-contract-360, web-app-shell], effort: L, layer: web, status: live}
+  - id: 12
+    name: phase-12
+    tasks:
+      - {id: E08/F01/US01/T01, prompt: reports/workitems/epic-08-web-renewals-savings-quotes/feature-01-renewal-pipeline-ui/us-01-renewal-pipeline/tasks/task-01-renewal-pipeline.md, produces: [web-renewal-ui], depends_on: [web-contract-360, web-app-shell], effort: L, layer: web, status: live}
+  - id: 13
+    name: phase-13
+    tasks:
+      - {id: E08/F02/US01/T01, prompt: reports/workitems/epic-08-web-renewals-savings-quotes/feature-02-savings-ui/us-01-savings-home/tasks/task-01-savings-home.md, produces: [web-savings-ui], depends_on: [web-app-shell, web-renewal-ui], effort: M, layer: web, status: live}
+  - id: 14
+    name: phase-14
+    tasks:
+      - {id: E08/F03/US01/T01, prompt: reports/workitems/epic-08-web-renewals-savings-quotes/feature-03-quote-check-ui/us-01-quote-check/tasks/task-01-quote-check.md, produces: [web-quote-ui], depends_on: [web-app-shell], effort: L, layer: web, status: live}
+  - id: 15
+    name: phase-15
+    tasks:
+      - {id: E08/F04/US01/T01, prompt: reports/workitems/epic-08-web-renewals-savings-quotes/feature-04-r4-web-integration/us-01-final-integration/tasks/task-01-final-integration.md, produces: [web-day1-integration], depends_on: [web-renewal-ui, web-savings-ui, web-quote-ui], effort: L, layer: web, status: live}
+forks: []

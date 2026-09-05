@@ -6,3 +6,5 @@
 /node_modules/
 **/__pycache__/
 *.pyc
+/reports/plan/.web-protect-snapshot.json
+/reports/plan/gates/

@@ -1,0 +1,35 @@
+waveId: wave-v1-epic-e06
+status: planned
+# E06 E06. Prior-wave depends_on dropped (producer-completeness).
+# estimated tokens: 6.0M (S/M/L mapped; not a packing cap).
+# Launch: ./run.ps1 -Max -Slice e06 -o execution-fanout
+phases:
+  - id: 1
+    name: phase-1
+    tasks:
+      - {id: E06/F01/US01/T01, prompt: reports/workitems/epic-06-web-foundation/feature-01-typescript-client-regen/us-01-typescript-client-regen/tasks/task-01-typescript-client-regen.md, produces: [web-api-client-current], depends_on: [], effort: S, layer: frontend, status: live}
+  - id: 2
+    name: phase-2
+    tasks:
+      - {id: E06/F02/US01/T01, prompt: reports/workitems/epic-06-web-foundation/feature-02-design-system/us-01-design-system-tokens/tasks/task-01-design-system-tokens.md, produces: [web-design-system], depends_on: [], effort: M, layer: frontend, status: live}
+  - id: 3
+    name: phase-3
+    tasks:
+      - {id: E06/F03/US01/T01, prompt: reports/workitems/epic-06-web-foundation/feature-03-app-shell/us-01-signin-workspace-picker/tasks/task-01-signin-workspace-picker.md, produces: [web-signin-workspace], depends_on: [web-api-client-current], effort: M, layer: frontend, status: live}
+  - id: 4
+    name: phase-4
+    tasks:
+      - {id: E06/F03/US02/T01, prompt: reports/workitems/epic-06-web-foundation/feature-03-app-shell/us-02-navigation-shell/tasks/task-01-navigation-shell.md, produces: [web-app-shell], depends_on: [web-design-system, web-signin-workspace], effort: M, layer: frontend, status: live}
+  - id: 5
+    name: phase-5
+    tasks:
+      - {id: E06/F04/US01/T01, prompt: reports/workitems/epic-06-web-foundation/feature-04-workspace-members-ui/us-01-workspace-members-invite/tasks/task-01-workspace-members-invite.md, produces: [web-members-ui], depends_on: [web-app-shell], effort: M, layer: frontend, status: live}
+  - id: 6
+    name: phase-6
+    tasks:
+      - {id: E06/F05/US01/T01, prompt: reports/workitems/epic-06-web-foundation/feature-05-document-upload-ui/us-01-document-upload/tasks/task-01-document-upload.md, produces: [web-upload-ui], depends_on: [web-app-shell], effort: M, layer: frontend, status: live}
+  - id: 7
+    name: phase-7
+    tasks:
+      - {id: E06/F05/US02/T01, prompt: reports/workitems/epic-06-web-foundation/feature-05-document-upload-ui/us-02-document-status-readback/tasks/task-01-document-status-readback.md, produces: [web-document-status], depends_on: [web-upload-ui], effort: S, layer: frontend, status: live}
+forks: []
