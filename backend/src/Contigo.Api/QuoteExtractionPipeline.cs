@@ -56,6 +56,17 @@ namespace Contigo.Api;
 /// "Normalize unit economics" pipeline step, in the same unit of work as extraction, before the one
 /// shared <c>SaveChangesAsync</c> call below. See that service's own doc comment for why "same unit
 /// of work" (not a separate save) is load-bearing here.
+/// <b>Task E05/F01/US02/T01 (sku-normalization)</b> added the call to
+/// <see cref="SkuNormalizationService.NormalizeAsync"/> below, right after the freshly-extracted
+/// lines are saved: every quote gets a <c>QuoteLine.MatchStatus</c> for real from its first upload
+/// onward, not only once task E05/F01/US02/T02's own "recalculate" endpoint exists. It runs against
+/// already-persisted rows (a second <see cref="QuotesDbContext.SaveChangesAsync"/> call below,
+/// after the one that durably saves the raw extracted lines) rather than the in-memory ones
+/// <see cref="QuoteLineExtractionService.ApplyExtractedLines"/> just added to the change tracker,
+/// deliberately: an EF Core LINQ query re-reads from the database, so it would see none of those
+/// still-unsaved rows yet — querying only after they are actually committed is what makes this
+/// service's own "query the quote's current lines, re-runnable later unchanged" contract (see its
+/// own doc comment) correct both here and from a later, independent recalculate call.
 /// </summary>
 internal sealed class QuoteExtractionPipeline(
     QuotesDbContext dbContext,
@@ -63,6 +74,7 @@ internal sealed class QuoteExtractionPipeline(
     HybridDocumentParsingService parsingService,
     QuoteLineExtractionService lineExtractionService,
     QuoteLineNormalizationService lineNormalizationService,
+    SkuNormalizationService skuNormalizationService,
     ITenantContext tenantContext,
     IClock clock,
     IAuditWriter auditWriter)
@@ -176,11 +188,27 @@ internal sealed class QuoteExtractionPipeline(
         // not an extraction-quality problem — see QuoteLineNormalizationOutcome's own doc comment for
         // who (a future task) actually reads UnresolvedCount to act on it.
         var normalizationOutcome = lineNormalizationService.NormalizeLines(tenantId, quoteId);
+        // Persist the raw extracted lines before normalizing them: SkuNormalizationService queries
+        // QuoteLines back from the database (see its own doc comment), so it must run after they
+        // are actually committed, not while they are still pending Added entries.
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        // Task E05/F01/US02/T01 (sku-normalization, AC-1/AC-2's "show unmatched" half): every line
+        // just saved above gets a NormalizedSku/NormalizedEdition/MatchStatus so spec §11.3's
+        // guardrail ("no target without resolved normalization") has real data from this upload
+        // onward — see QuoteExtractionPipeline's own doc comment for why this runs here, after the
+        // first SaveChangesAsync, rather than against the in-memory lines directly.
+        var normalizationOutcome = await skuNormalizationService
+            .NormalizeAsync(tenantId, quoteId, cancellationToken)
+            .ConfigureAwait(false);
 
         // Human-in-the-loop principle: nothing extracted, something skipped, or any line below the
         // confidence threshold all mean a person should look at this quote before it is trusted,
         // even though the AI Gateway call itself succeeded — mirrors
-        // StagedExtractionService.RunStageAsync's identical decision rule.
+        // StagedExtractionService.RunStageAsync's identical decision rule. Deliberately does not
+        // also factor in unmatched SKUs: that is a product-mapping gap for a person to resolve via
+        // task E05/F01/US02/T02's manual mapping, not an extraction-confidence problem, so it does
+        // not change this job's own Completed/NeedsReview outcome.
         var finalJobStatus = outcome.ExtractedCount == 0 || outcome.SkippedCount > 0 || outcome.AnyLowConfidence
             ? QuoteExtractionJobStatus.NeedsReview
             : QuoteExtractionJobStatus.Completed;
@@ -214,6 +242,7 @@ internal sealed class QuoteExtractionPipeline(
             pages.Count,
             normalizationOutcome.NormalizedCount,
             normalizationOutcome.UnresolvedCount));
+            normalizationOutcome.UnmatchedCount));
     }
 
     /// <summary>Shared terminal-failure path: marks both rows Failed, persists, and returns the
@@ -279,6 +308,8 @@ internal sealed class QuoteExtractionPipeline(
 /// <param name="UnresolvedNormalizationCount">The complement of <paramref name="NormalizedLineItemCount"/>
 /// within <see cref="LineItemCount"/> — spec §11.3's "line-item normalization is unresolved" outcome,
 /// made visible over HTTP as well as in the database.</param>
+/// reply. <see cref="UnmatchedSkuCount"/> added by task E05/F01/US02/T01 (sku-normalization,
+/// AC-2's "show unmatched SKUs" half).</summary>
 internal sealed record QuoteProcessingSummary(
     EntityId QuoteId,
     QuoteProcessingStatus ProcessingStatus,
@@ -287,3 +318,4 @@ internal sealed record QuoteProcessingSummary(
     int PageCount,
     int NormalizedLineItemCount,
     int UnresolvedNormalizationCount);
+    int UnmatchedSkuCount);

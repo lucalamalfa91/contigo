@@ -21,11 +21,16 @@ public sealed class QuotesDbContext(DbContextOptions<QuotesDbContext> options) :
 
     public DbSet<QuoteLine> QuoteLines => Set<QuoteLine>();
 
+    /// <summary>Task E05/F01/US02/T01 (sku-normalization) — see <see cref="SkuProductMapping"/>'s
+    /// own doc comment.</summary>
+    public DbSet<SkuProductMapping> SkuProductMappings => Set<SkuProductMapping>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfiguration(new QuoteConfiguration());
         modelBuilder.ApplyConfiguration(new QuoteExtractionJobConfiguration());
         modelBuilder.ApplyConfiguration(new QuoteLineConfiguration());
+        modelBuilder.ApplyConfiguration(new SkuProductMappingConfiguration());
 
         base.OnModelCreating(modelBuilder);
     }

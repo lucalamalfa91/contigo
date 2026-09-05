@@ -90,6 +90,9 @@ public static class QuotesEndpointExtensions
             ? processingResult.Value.ProcessingStatus
             : uploaded.ProcessingStatus;
         var lineItemCount = processingResult.IsSuccess ? processingResult.Value.LineItemCount : 0;
+        // Task E05/F01/US02/T01 (sku-normalization, AC-2 "Show unmatched SKUs..."): 0 on a pipeline
+        // failure, same honest "nothing ran yet" fallback lineItemCount already uses above.
+        var unmatchedSkuCount = processingResult.IsSuccess ? processingResult.Value.UnmatchedSkuCount : 0;
 
         // Task E05/F01/US01/T02 (quote-normalization): 0/0 on a pipeline failure, same honest
         // fallback as lineItemCount above — normalization never ran if extraction itself did not.
@@ -106,6 +109,7 @@ public static class QuotesEndpointExtensions
             lineItemCount,
             normalizedLineItemCount,
             unresolvedNormalizationCount,
+            unmatchedSkuCount,
             createdAt = uploaded.CreatedAt,
         });
     }

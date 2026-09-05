@@ -3,6 +3,7 @@ using System;
 using Contigo.Quotes.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Contigo.Quotes.Migrations
 {
     [DbContext(typeof(QuotesDbContext))]
-    partial class QuotesDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260905132255_AddSkuProductMapping")]
+    partial class AddSkuProductMapping
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -169,14 +172,6 @@ namespace Contigo.Quotes.Migrations
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("list_price");
 
-                    b.Property<decimal?>("NormalizedAnnualUnitPrice")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("normalized_annual_unit_price");
-
-                    b.Property<int?>("NormalizedTermMonths")
-                        .HasColumnType("integer")
-                        .HasColumnName("normalized_term_months");
                     b.Property<string>("MatchStatus")
                         .IsRequired()
                         .ValueGeneratedOnAdd()

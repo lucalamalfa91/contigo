@@ -56,6 +56,8 @@ public static class ServiceCollectionExtensions
         // (also Scoped, registered above) with QuoteLineExtractionService — see
         // QuoteLineNormalizationService's own doc comment for why that matters.
         services.AddScoped<QuoteLineNormalizationService>();
+        // Task E05/F01/US02/T01 (sku-normalization).
+        services.AddScoped<SkuNormalizationService>();
 
         return services;
     }

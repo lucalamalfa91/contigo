@@ -38,6 +38,20 @@ public sealed class QuoteLineConfiguration : IEntityTypeConfiguration<QuoteLine>
 
         builder.Property(e => e.SourceSpan).HasMaxLength(2000);
 
+        // Task E05/F01/US02/T01 (sku-normalization).
+        builder.Property(e => e.NormalizedSku).HasMaxLength(100);
+        builder.Property(e => e.NormalizedEdition).HasMaxLength(100);
+        // Same enum-as-string convention as QuoteConfiguration's own ProcessingStatus.
+        // Explicit HasDefaultValue: without it, EF's migration scaffolder backfills this new
+        // NOT NULL column on any pre-existing row with "" (the CLR default for the underlying
+        // string-mapped column, not for the enum) — a value SkuMatchStatus's own string converter
+        // cannot parse back. Unmatched is also QuoteLine.MatchStatus's own C#-side default, for the
+        // same "needs attention until normalization actually runs" reasoning.
+        builder.Property(e => e.MatchStatus)
+            .HasConversion<string>()
+            .HasMaxLength(20)
+            .HasDefaultValue(SkuMatchStatus.Unmatched);
+
         builder.HasIndex(e => e.TenantId);
         builder.HasIndex(e => new { e.TenantId, e.QuoteId });
     }
