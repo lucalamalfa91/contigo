@@ -182,6 +182,15 @@ public sealed class NegotiationStrategyServiceTests : IAsyncDisposable
         var aboveMarketBundle = Assert.Single(aboveMarket.Levers, l => l.LeverType == NegotiationLeverType.Bundle);
         Assert.Contains("3", aboveMarketBundle.Rationale); // 3 lines total on this quote
 
+        // Task E05/F03/US01/T02 (strategy-evidence, AC-2): the same end-to-end path also produces
+        // structured evidence, not just prose — proven here against the real, migrated database
+        // round trip (not just the pure-calculator unit tests in NegotiationStrategyCalculatorTests).
+        Assert.Equal("Quote.LineCount", Assert.Single(aboveMarketBundle.Evidence).FieldName);
+        Assert.Equal("3", Assert.Single(aboveMarketBundle.Evidence).Value);
+        var aboveMarketVolume = Assert.Single(aboveMarket.Levers, l => l.LeverType == NegotiationLeverType.Volume);
+        Assert.Contains(aboveMarketVolume.Evidence, e => e.FieldName == "QuoteLine.Quantity" && e.Value == "100");
+        Assert.Contains(aboveMarketVolume.Evidence, e => e.FieldName == "QuoteLine.Unit" && e.Value == "seats");
+
         var clampedWalkAway = Assert.Single(strategy.Lines, l => l.QuoteLineId == clampedWalkAwayLineId);
         Assert.Equal(1500m, clampedWalkAway.AcceptableRangeLow);
         Assert.Equal(1800m, clampedWalkAway.AcceptableRangeHigh);

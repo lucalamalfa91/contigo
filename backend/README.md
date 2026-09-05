@@ -1251,8 +1251,38 @@ picked up yet").
   `Contigo.AiGateway.Fixtures.FixtureAiGateway.AnswerAsync` would today only
   echo those facts back verbatim (no live grounded-generation model exists
   yet), so deferring that wiring loses no real capability now. Evidence
-  *citations* per lever (AC-2, Appendix C rule 2) are task
-  E05/F03/US01/T02's own, separate scope (strategy-evidence).
+  *citations* per lever (AC-2, Appendix C rule 2) were task-01's own,
+  separate, deferred scope (strategy-evidence) — closed below by task
+  E05/F03/US01/T02.
+- **Structured evidence per lever (task E05/F03/US01/T02, strategy-evidence;
+  AC-2 "Rationale cites explicit evidence per lever", Appendix C rule 2
+  "never show a consequential... fact without source evidence and
+  confidence metadata")**: `NegotiationLever` gained an `Evidence` field —
+  `IReadOnlyList<Contigo.Quotes.Application.Strategy.NegotiationLeverEvidence>`,
+  each a `FieldName`/`Value`/`SourceSpan`/`SourcePage`/`Confidence` tuple.
+  Mirrors `Contigo.Documents.Contracts.Domain.ExtractionEvidence`'s own
+  "which field, what value, from where, how confident" addressing scheme,
+  kept as its own `Contigo.Quotes`-local record rather than
+  `Contigo.AiGateway.Contracts.AiCitation`/`AiEvidenceSnippet` (those are
+  document-citation-shaped — `DocumentId`/`Page`/`Section` — for RAG
+  answers over unstructured text, and `Contigo.Quotes`' own
+  allowed-reference set, `[SharedKernel, Benchmark]`, cannot reach
+  `Contigo.AiGateway` anyway). `Volume`/`Term` cite `QuoteLine.Quantity`/
+  `Unit`/`Term` carrying this same line's own extraction `SourceSpan`/
+  `SourcePage`/`Confidence` (fields the AI Gateway `extract` role
+  originally proposed for the row — a `QuoteLine` row is one extraction
+  event covering the whole row); `QuoteLine.NormalizedTermMonths` cites
+  alongside `Term` but with no provenance of its own, since it is derived
+  deterministically from `Term` (Appendix C rule 6), not a second,
+  independently-extracted fact. `Bundle`/`QuarterEnd` cite the sibling-line
+  count / negotiation-timing as-of date — always populated (never empty,
+  unlike `Volume`/`Term`), with no span/page/confidence, since neither is a
+  `QuoteLine` field or a document extraction. `Utilization`/`Alternatives`/
+  `PaymentTerms` stay evidence-empty, the same "no source field exists"
+  reason their `Rationale` already gives (Appendix C rule 10 — never
+  fabricate a citation for a fact that is not actually there). The cited
+  `Value` always renders exactly as `Rationale` itself renders it, so the
+  structured citation and the prose can never silently disagree.
 - **`Contigo.Quotes.Application.Strategy.NegotiationStrategyService`**
   composes on top of `MarketAssessmentService.AssessAsync` (reused, not
   re-derived) plus one extra `QuoteLine` read (for `Term`/
@@ -1273,7 +1303,21 @@ picked up yet").
   Postgres+RLS database and the real `FixtureBenchmarkAdapter`, reusing
   `MarketAssessmentServiceTests`' own Salesforce/Sales-Cloud-Enterprise
   fixture comparable (P25/P50/P75 = 1500/1800/2100 per seat/year) so both
-  tests agree on what the numbers mean.
+  tests agree on what the numbers mean. Task E05/F03/US01/T02
+  (strategy-evidence) extends the same calculator test class with AC-2's
+  own coverage — per-lever evidence content, `SourceSpan`/`SourcePage`/
+  `Confidence` pass-through for `Volume`/`Term`, the no-provenance case for
+  `NormalizedTermMonths`/`Bundle`/`QuarterEnd`, the honest-empty case for
+  `Utilization`/`Alternatives`/`PaymentTerms`, and a citation-vs-`Rationale`
+  cross-check — plus one end-to-end assertion in
+  `NegotiationStrategyServiceTests` proving `Evidence` also comes back
+  populated through the real database round trip, not just the pure
+  calculator. The determinism test itself now asserts each lever's
+  `LeverType`/`Rationale`/`Evidence` as its own sequence rather than via
+  `NegotiationLever`'s own record-generated `Equals`: `Evidence` is an
+  `IReadOnlyList<T>`, which has no structural equality of its own, so two
+  independently-built lever lists that are otherwise identical would
+  compare unequal two levels deep inside a containing record's `Equals`.
 
 ## Containers and CI
 

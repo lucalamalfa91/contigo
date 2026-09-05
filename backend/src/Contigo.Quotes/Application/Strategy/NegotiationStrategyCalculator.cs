@@ -142,17 +142,28 @@ public static class NegotiationStrategyCalculator
     /// <see cref="NegotiationLeverType.PaymentTerms"/>) have no source field anywhere in this module's
     /// schema today, so their rationale honestly says so rather than fabricating a specific this-quote
     /// fact (Appendix C rule 10).
+    ///
+    /// <para>
+    /// Task E05/F03/US01/T02 (strategy-evidence, AC-2): the same four grounded levers also carry a
+    /// non-empty <see cref="NegotiationLever.Evidence"/> — see each lever's own <c>*Evidence</c>
+    /// helper (<see cref="VolumeEvidence"/>, <see cref="TermEvidence"/>,
+    /// <see cref="QuarterEndEvidence"/>, <see cref="BundleEvidence"/>) — while the remaining three
+    /// stay evidence-empty for the identical "no source field exists" reason their rationale
+    /// already gives.
+    /// </para>
     /// </summary>
     private static IReadOnlyList<NegotiationLever> BuildLevers(
         QuoteLine line, int totalLineCountOnQuote, DateOnly asOfDate) =>
         [
-            new NegotiationLever(NegotiationLeverType.Volume, VolumeRationale(line)),
-            new NegotiationLever(NegotiationLeverType.Term, TermRationale(line)),
-            new NegotiationLever(NegotiationLeverType.Utilization, UtilizationRationale()),
-            new NegotiationLever(NegotiationLeverType.Alternatives, AlternativesRationale()),
-            new NegotiationLever(NegotiationLeverType.QuarterEnd, QuarterEndRationale(asOfDate)),
-            new NegotiationLever(NegotiationLeverType.Bundle, BundleRationale(totalLineCountOnQuote)),
-            new NegotiationLever(NegotiationLeverType.PaymentTerms, PaymentTermsRationale()),
+            new NegotiationLever(NegotiationLeverType.Volume, VolumeRationale(line), VolumeEvidence(line)),
+            new NegotiationLever(NegotiationLeverType.Term, TermRationale(line), TermEvidence(line)),
+            new NegotiationLever(NegotiationLeverType.Utilization, UtilizationRationale(), []),
+            new NegotiationLever(NegotiationLeverType.Alternatives, AlternativesRationale(), []),
+            new NegotiationLever(
+                NegotiationLeverType.QuarterEnd, QuarterEndRationale(asOfDate), QuarterEndEvidence(asOfDate)),
+            new NegotiationLever(
+                NegotiationLeverType.Bundle, BundleRationale(totalLineCountOnQuote), BundleEvidence(totalLineCountOnQuote)),
+            new NegotiationLever(NegotiationLeverType.PaymentTerms, PaymentTermsRationale(), []),
         ];
 
     private static string VolumeRationale(QuoteLine line) =>
@@ -160,6 +171,47 @@ public static class NegotiationStrategyCalculator
             ? $"This line orders {Fmt(quantity)}{(string.IsNullOrWhiteSpace(line.Unit) ? string.Empty : " " + line.Unit)} " +
               "— cite the order size to request a volume-tier discount."
             : "No quantity is recorded on this line — volume-based leverage cannot be sized without one.";
+
+    /// <summary>
+    /// Structured evidence for <see cref="VolumeRationale"/> (task E05/F03/US01/T02,
+    /// strategy-evidence; AC-2) — <c>QuoteLine.Quantity</c> (plus <c>QuoteLine.Unit</c>, when
+    /// recorded), each carrying this same line's own extraction <c>SourceSpan</c>/<c>SourcePage</c>/
+    /// <c>Confidence</c> (Appendix C rule 2's "confidence metadata"): both fields are ones the AI
+    /// Gateway `extract` role originally proposed for this line, and a <see cref="QuoteLine"/> row
+    /// is one extraction event covering the whole row (see that type's own doc comment). Empty
+    /// under the identical "no quantity recorded" condition that already makes
+    /// <see cref="VolumeRationale"/> read as ungrounded (Appendix C rule 10 — never cite evidence
+    /// for a fact that is not actually there).
+    /// </summary>
+    private static IReadOnlyList<NegotiationLeverEvidence> VolumeEvidence(QuoteLine line)
+    {
+        if (line.Quantity is not { } quantity || quantity <= 0m)
+        {
+            return [];
+        }
+
+        var evidence = new List<NegotiationLeverEvidence>
+        {
+            new NegotiationLeverEvidence(
+                $"{nameof(QuoteLine)}.{nameof(QuoteLine.Quantity)}",
+                Fmt(quantity),
+                line.SourceSpan,
+                line.SourcePage,
+                line.Confidence),
+        };
+
+        if (!string.IsNullOrWhiteSpace(line.Unit))
+        {
+            evidence.Add(new NegotiationLeverEvidence(
+                $"{nameof(QuoteLine)}.{nameof(QuoteLine.Unit)}",
+                line.Unit,
+                line.SourceSpan,
+                line.SourcePage,
+                line.Confidence));
+        }
+
+        return evidence;
+    }
 
     private static string TermRationale(QuoteLine line) =>
         !string.IsNullOrWhiteSpace(line.Term)
@@ -169,6 +221,48 @@ public static class NegotiationStrategyCalculator
                   : string.Empty) +
               " — a longer commitment is a standard trade for a lower unit rate."
             : "No commitment term is recorded on this line — term-length leverage cannot be sized without one.";
+
+    /// <summary>
+    /// Structured evidence for <see cref="TermRationale"/> (task E05/F03/US01/T02,
+    /// strategy-evidence; AC-2) — <c>QuoteLine.Term</c>, carrying this line's own extraction
+    /// <c>SourceSpan</c>/<c>SourcePage</c>/<c>Confidence</c> (same reasoning as
+    /// <see cref="VolumeEvidence"/>), plus <c>QuoteLine.NormalizedTermMonths</c> when present — with
+    /// no span/page/confidence of its own, because it is not a second, independently-extracted
+    /// fact: <c>Contigo.Quotes.Application.Normalization.QuoteLineNormalizationService</c> derives
+    /// it deterministically from <see cref="QuoteLine.Term"/> in code (Appendix C rule 6), so its
+    /// only real evidence is the <see cref="QuoteLine.Term"/> citation immediately before it. Empty
+    /// under the identical "no term recorded" condition that already makes
+    /// <see cref="TermRationale"/> read as ungrounded.
+    /// </summary>
+    private static IReadOnlyList<NegotiationLeverEvidence> TermEvidence(QuoteLine line)
+    {
+        if (string.IsNullOrWhiteSpace(line.Term))
+        {
+            return [];
+        }
+
+        var evidence = new List<NegotiationLeverEvidence>
+        {
+            new NegotiationLeverEvidence(
+                $"{nameof(QuoteLine)}.{nameof(QuoteLine.Term)}",
+                line.Term,
+                line.SourceSpan,
+                line.SourcePage,
+                line.Confidence),
+        };
+
+        if (line.NormalizedTermMonths is { } months)
+        {
+            evidence.Add(new NegotiationLeverEvidence(
+                $"{nameof(QuoteLine)}.{nameof(QuoteLine.NormalizedTermMonths)}",
+                months.ToString(CultureInfo.InvariantCulture),
+                SourceSpan: null,
+                SourcePage: null,
+                Confidence: null));
+        }
+
+        return evidence;
+    }
 
     private static string UtilizationRationale() =>
         "No usage/utilization data is captured for this line yet — if actual consumption is below " +
@@ -191,12 +285,52 @@ public static class NegotiationStrategyCalculator
               "from the nearest calendar quarter-end — no immediate quarter-end pressure to cite.";
     }
 
+    /// <summary>
+    /// Structured evidence for <see cref="QuarterEndRationale"/> (task E05/F03/US01/T02,
+    /// strategy-evidence; AC-2) — <paramref name="asOfDate"/> itself, the negotiation-timing
+    /// reference date both <see cref="QuarterEndRationale"/> branches name. Always populated, never
+    /// empty like <see cref="VolumeEvidence"/>/<see cref="TermEvidence"/> can be: unlike a
+    /// quote/line field that may or may not have been recorded, <paramref name="asOfDate"/> is
+    /// always known — the caller's own <c>IClock</c>-derived "today" (see this type's own doc
+    /// comment) — never a document extraction, so <c>SourceSpan</c>/<c>SourcePage</c>/
+    /// <c>Confidence</c> do not apply here.
+    /// </summary>
+    private static IReadOnlyList<NegotiationLeverEvidence> QuarterEndEvidence(DateOnly asOfDate) =>
+        [
+            new NegotiationLeverEvidence(
+                $"{nameof(NegotiationStrategyCalculator)}.AsOfDate",
+                asOfDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                SourceSpan: null,
+                SourcePage: null,
+                Confidence: null),
+        ];
+
     private static string BundleRationale(int totalLineCountOnQuote) =>
         totalLineCountOnQuote > 1
             ? $"This quote already bundles {totalLineCountOnQuote.ToString(CultureInfo.InvariantCulture)} " +
               "line items — consolidate them into one ask for combined-volume terms."
             : "No other line items are bundled on this quote — if this supplier sells other " +
               "products/services this tenant already buys, cite them to negotiate a bundle discount.";
+
+    /// <summary>
+    /// Structured evidence for <see cref="BundleRationale"/> (task E05/F03/US01/T02,
+    /// strategy-evidence; AC-2) — <paramref name="totalLineCountOnQuote"/> itself, always populated
+    /// (the sibling-line count is always a known fact, whether it is 1 or many — the same "cite the
+    /// real count either way, honesty over omission" posture <see cref="BundleRationale"/> already
+    /// takes for its own two branches). Not a single <see cref="QuoteLine"/> field, so
+    /// <c>SourceSpan</c>/<c>SourcePage</c>/<c>Confidence</c> do not apply — this is a count over
+    /// already-persisted sibling rows computed by
+    /// <see cref="NegotiationStrategyService.GenerateAsync"/>, not a document extraction.
+    /// </summary>
+    private static IReadOnlyList<NegotiationLeverEvidence> BundleEvidence(int totalLineCountOnQuote) =>
+        [
+            new NegotiationLeverEvidence(
+                "Quote.LineCount",
+                totalLineCountOnQuote.ToString(CultureInfo.InvariantCulture),
+                SourceSpan: null,
+                SourcePage: null,
+                Confidence: null),
+        ];
 
     private static string PaymentTermsRationale() =>
         "No payment-term data is captured for this line yet — offering faster payment (e.g. net-15) " +

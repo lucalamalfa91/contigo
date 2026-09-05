@@ -21,12 +21,20 @@ public sealed class NegotiationStrategyCalculatorTests
     // "no immediate pressure" branch is the one under test unless a case says otherwise.
     private static readonly DateOnly MidQuarterDate = new(2026, 2, 10);
 
+    // Task E05/F03/US01/T02 (strategy-evidence): non-null defaults so a grounded-lever test gets
+    // this line's own extraction provenance to assert against without every call site having to
+    // supply it; the "no fact recorded" tests below explicitly pass null for the fact itself
+    // (quantity/term), which makes VolumeEvidence/TermEvidence return an empty list regardless of
+    // these provenance defaults.
     private static QuoteLine Line(
         decimal? quantity = 100m,
         string? unit = "seats",
         string? term = "12 months",
         int? normalizedTermMonths = 12,
-        decimal? unitPrice = 2300m) =>
+        decimal? unitPrice = 2300m,
+        string? sourceSpan = "Qty 100 seats, 12 month term, USD 2,300/seat/year",
+        int? sourcePage = 3,
+        double? confidence = 0.92) =>
         new()
         {
             TenantId = TenantId.New(),
@@ -37,6 +45,9 @@ public sealed class NegotiationStrategyCalculatorTests
             Term = term,
             NormalizedTermMonths = normalizedTermMonths,
             UnitPrice = unitPrice,
+            SourceSpan = sourceSpan,
+            SourcePage = sourcePage,
+            Confidence = confidence,
             CreatedAt = CreatedAt,
         };
 
@@ -144,6 +155,55 @@ public sealed class NegotiationStrategyCalculatorTests
         Assert.Contains("licenses", volume.Rationale);
     }
 
+    // ----- AC-2: structured evidence per lever (task E05/F03/US01/T02, strategy-evidence) -----
+
+    [Fact]
+    public void Volume_lever_evidence_cites_the_quantity_and_unit_fields_with_this_lines_provenance()
+    {
+        var result = NegotiationStrategyCalculator.Compute(
+            Line(quantity: 250m, unit: "licenses", sourceSpan: "Qty: 250 licenses", sourcePage: 2, confidence: 0.81),
+            totalLineCountOnQuote: 1, TargetSaving(), MidQuarterDate);
+
+        var volume = Assert.Single(result.Levers, l => l.LeverType == NegotiationLeverType.Volume);
+
+        Assert.Collection(
+            volume.Evidence,
+            quantity =>
+            {
+                Assert.Equal("QuoteLine.Quantity", quantity.FieldName);
+                Assert.Equal("250", quantity.Value);
+                Assert.Equal("Qty: 250 licenses", quantity.SourceSpan);
+                Assert.Equal(2, quantity.SourcePage);
+                Assert.Equal(0.81, quantity.Confidence);
+            },
+            unit =>
+            {
+                Assert.Equal("QuoteLine.Unit", unit.FieldName);
+                Assert.Equal("licenses", unit.Value);
+                Assert.Equal("Qty: 250 licenses", unit.SourceSpan);
+                Assert.Equal(2, unit.SourcePage);
+                Assert.Equal(0.81, unit.Confidence);
+            });
+
+        // The citation and the prose can never silently disagree (NegotiationLeverEvidence's own
+        // doc comment) — every cited value is a substring of the Rationale it backs.
+        foreach (var evidence in volume.Evidence)
+        {
+            Assert.Contains(evidence.Value, volume.Rationale);
+        }
+    }
+
+    [Fact]
+    public void Volume_lever_evidence_omits_the_unit_citation_when_no_unit_is_recorded()
+    {
+        var result = NegotiationStrategyCalculator.Compute(
+            Line(quantity: 250m, unit: null), totalLineCountOnQuote: 1, TargetSaving(), MidQuarterDate);
+
+        var volume = Assert.Single(result.Levers, l => l.LeverType == NegotiationLeverType.Volume);
+        var evidence = Assert.Single(volume.Evidence);
+        Assert.Equal("QuoteLine.Quantity", evidence.FieldName);
+    }
+
     [Fact]
     public void Volume_lever_is_honest_when_no_quantity_is_recorded()
     {
@@ -152,6 +212,7 @@ public sealed class NegotiationStrategyCalculatorTests
 
         var volume = Assert.Single(result.Levers, l => l.LeverType == NegotiationLeverType.Volume);
         Assert.Contains("No quantity is recorded", volume.Rationale);
+        Assert.Empty(volume.Evidence);
     }
 
     [Fact]
@@ -165,6 +226,50 @@ public sealed class NegotiationStrategyCalculatorTests
     }
 
     [Fact]
+    public void Term_lever_evidence_cites_the_term_field_with_provenance_and_the_normalized_months_without()
+    {
+        var result = NegotiationStrategyCalculator.Compute(
+            Line(
+                term: "36 months", normalizedTermMonths: 36,
+                sourceSpan: "Term: 36 months", sourcePage: 4, confidence: 0.77),
+            totalLineCountOnQuote: 1, TargetSaving(), MidQuarterDate);
+
+        var term = Assert.Single(result.Levers, l => l.LeverType == NegotiationLeverType.Term);
+
+        Assert.Collection(
+            term.Evidence,
+            rawTerm =>
+            {
+                Assert.Equal("QuoteLine.Term", rawTerm.FieldName);
+                Assert.Equal("36 months", rawTerm.Value);
+                Assert.Equal("Term: 36 months", rawTerm.SourceSpan);
+                Assert.Equal(4, rawTerm.SourcePage);
+                Assert.Equal(0.77, rawTerm.Confidence);
+            },
+            normalizedMonths =>
+            {
+                // Derived deterministically from the Term field above (Appendix C rule 6), not a
+                // second independently-extracted fact — no span/page/confidence of its own.
+                Assert.Equal("QuoteLine.NormalizedTermMonths", normalizedMonths.FieldName);
+                Assert.Equal("36", normalizedMonths.Value);
+                Assert.Null(normalizedMonths.SourceSpan);
+                Assert.Null(normalizedMonths.SourcePage);
+                Assert.Null(normalizedMonths.Confidence);
+            });
+    }
+
+    [Fact]
+    public void Term_lever_evidence_omits_the_normalized_months_citation_when_it_is_absent()
+    {
+        var result = NegotiationStrategyCalculator.Compute(
+            Line(term: "Annual", normalizedTermMonths: null), totalLineCountOnQuote: 1, TargetSaving(), MidQuarterDate);
+
+        var term = Assert.Single(result.Levers, l => l.LeverType == NegotiationLeverType.Term);
+        var evidence = Assert.Single(term.Evidence);
+        Assert.Equal("QuoteLine.Term", evidence.FieldName);
+    }
+
+    [Fact]
     public void Term_lever_is_honest_when_no_term_is_recorded()
     {
         var result = NegotiationStrategyCalculator.Compute(
@@ -172,6 +277,7 @@ public sealed class NegotiationStrategyCalculatorTests
 
         var term = Assert.Single(result.Levers, l => l.LeverType == NegotiationLeverType.Term);
         Assert.Contains("No commitment term is recorded", term.Rationale);
+        Assert.Empty(term.Evidence);
     }
 
     [Fact]
@@ -182,6 +288,15 @@ public sealed class NegotiationStrategyCalculatorTests
 
         var bundle = Assert.Single(result.Levers, l => l.LeverType == NegotiationLeverType.Bundle);
         Assert.Contains("4", bundle.Rationale);
+
+        // AC-2: the sibling-line count is always cited as structured evidence, not just prose —
+        // and it is not a QuoteLine field, so it carries no document span/page/confidence.
+        var evidence = Assert.Single(bundle.Evidence);
+        Assert.Equal("Quote.LineCount", evidence.FieldName);
+        Assert.Equal("4", evidence.Value);
+        Assert.Null(evidence.SourceSpan);
+        Assert.Null(evidence.SourcePage);
+        Assert.Null(evidence.Confidence);
     }
 
     [Fact]
@@ -192,6 +307,12 @@ public sealed class NegotiationStrategyCalculatorTests
 
         var bundle = Assert.Single(result.Levers, l => l.LeverType == NegotiationLeverType.Bundle);
         Assert.Contains("No other line items are bundled", bundle.Rationale);
+
+        // Still cites the real count (1) as evidence — honesty over silently omitting it just
+        // because the count happens to be unfavorable to the lever (Appendix C rule 10).
+        var evidence = Assert.Single(bundle.Evidence);
+        Assert.Equal("Quote.LineCount", evidence.FieldName);
+        Assert.Equal("1", evidence.Value);
     }
 
     [Theory]
@@ -207,6 +328,15 @@ public sealed class NegotiationStrategyCalculatorTests
 
         var quarterEnd = Assert.Single(result.Levers, l => l.LeverType == NegotiationLeverType.QuarterEnd);
         Assert.Equal(expectPressure, quarterEnd.Rationale.Contains("is within", StringComparison.Ordinal));
+
+        // AC-2: the as-of date backing both branches is always cited as evidence — never a
+        // document extraction, so no span/page/confidence.
+        var evidence = Assert.Single(quarterEnd.Evidence);
+        Assert.Equal("NegotiationStrategyCalculator.AsOfDate", evidence.FieldName);
+        Assert.Equal(asOfDateText, evidence.Value);
+        Assert.Null(evidence.SourceSpan);
+        Assert.Null(evidence.SourcePage);
+        Assert.Null(evidence.Confidence);
     }
 
     [Fact]
@@ -215,15 +345,19 @@ public sealed class NegotiationStrategyCalculatorTests
         var result = NegotiationStrategyCalculator.Compute(
             Line(), totalLineCountOnQuote: 1, TargetSaving(), MidQuarterDate);
 
-        Assert.Contains(
-            "No usage/utilization data",
-            Assert.Single(result.Levers, l => l.LeverType == NegotiationLeverType.Utilization).Rationale);
-        Assert.Contains(
-            "No alternative-supplier quote",
-            Assert.Single(result.Levers, l => l.LeverType == NegotiationLeverType.Alternatives).Rationale);
-        Assert.Contains(
-            "No payment-term data",
-            Assert.Single(result.Levers, l => l.LeverType == NegotiationLeverType.PaymentTerms).Rationale);
+        var utilization = Assert.Single(result.Levers, l => l.LeverType == NegotiationLeverType.Utilization);
+        var alternatives = Assert.Single(result.Levers, l => l.LeverType == NegotiationLeverType.Alternatives);
+        var paymentTerms = Assert.Single(result.Levers, l => l.LeverType == NegotiationLeverType.PaymentTerms);
+
+        Assert.Contains("No usage/utilization data", utilization.Rationale);
+        Assert.Contains("No alternative-supplier quote", alternatives.Rationale);
+        Assert.Contains("No payment-term data", paymentTerms.Rationale);
+
+        // AC-2 / Appendix C rule 10: no source field exists for any of these three today, so their
+        // evidence stays honestly empty rather than fabricating a citation.
+        Assert.Empty(utilization.Evidence);
+        Assert.Empty(alternatives.Evidence);
+        Assert.Empty(paymentTerms.Evidence);
     }
 
     // ----- Honest abstain: no usable target range / no current price (Appendix C rule 10) -----
@@ -292,9 +426,21 @@ public sealed class NegotiationStrategyCalculatorTests
         Assert.Equal(first.AcceptableRangeHigh, second.AcceptableRangeHigh);
         Assert.Equal(first.WalkAwayThreshold, second.WalkAwayThreshold);
         Assert.Equal(first.Explanation, second.Explanation);
-        // Compared as sequences (not via the outer record's own Equals): IReadOnlyList<T> has no
-        // structural equality of its own, so two independently-built lists of equal, record-typed
-        // NegotiationLever elements compare correctly only when asserted directly like this.
-        Assert.Equal(first.Levers, second.Levers);
+        // Asserted field-by-field, not via NegotiationLever's own (record-generated) Equals:
+        // Evidence is declared as IReadOnlyList<NegotiationLeverEvidence>, an interface with no
+        // structural equality of its own, so two independently-built NegotiationLever instances
+        // that are otherwise identical would compare unequal if compared as a single sequence two
+        // levels deep (Levers[i].Evidence's own two List<T> instances are always reference-distinct
+        // across two separate Compute calls). Comparing each field's own sequence directly sidesteps
+        // that gap: LeverType/Rationale are plain enums/strings, and NegotiationLeverEvidence's own
+        // fields are all directly-equatable primitives, so a per-lever Evidence sequence compares
+        // correctly on its own.
+        Assert.Equal(first.Levers.Select(l => l.LeverType), second.Levers.Select(l => l.LeverType));
+        Assert.Equal(first.Levers.Select(l => l.Rationale), second.Levers.Select(l => l.Rationale));
+        Assert.Equal(first.Levers.Count, second.Levers.Count);
+        for (var i = 0; i < first.Levers.Count; i++)
+        {
+            Assert.Equal(first.Levers[i].Evidence, second.Levers[i].Evidence);
+        }
     }
 }
