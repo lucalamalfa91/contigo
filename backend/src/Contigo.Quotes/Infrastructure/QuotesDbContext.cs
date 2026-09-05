@@ -25,12 +25,17 @@ public sealed class QuotesDbContext(DbContextOptions<QuotesDbContext> options) :
     /// own doc comment.</summary>
     public DbSet<SkuProductMapping> SkuProductMappings => Set<SkuProductMapping>();
 
+    /// <summary>Task E05/F03/US02/T01 (negotiation-outcome) — see <see cref="NegotiationOutcome"/>'s
+    /// own doc comment.</summary>
+    public DbSet<NegotiationOutcome> NegotiationOutcomes => Set<NegotiationOutcome>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfiguration(new QuoteConfiguration());
         modelBuilder.ApplyConfiguration(new QuoteExtractionJobConfiguration());
         modelBuilder.ApplyConfiguration(new QuoteLineConfiguration());
         modelBuilder.ApplyConfiguration(new SkuProductMappingConfiguration());
+        modelBuilder.ApplyConfiguration(new NegotiationOutcomeConfiguration());
 
         base.OnModelCreating(modelBuilder);
     }

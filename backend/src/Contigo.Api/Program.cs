@@ -323,6 +323,14 @@ app.MapChatEndpoints();
 // endpoint and orchestration respectively.
 app.MapQuotesEndpoints();
 
+// Task E05/F03/US02/T01 (negotiation-outcome, parent story us-02-outcome-capture AC-1): POST
+// /api/negotiations/outcomes — records the final negotiated outcome (original/target/final/
+// saving/discount/duration/levers) as permissioned proprietary learning data (spec §12.2/§12.3).
+// See NegotiationsEndpointExtensions/NegotiationOutcomeService for the endpoint and
+// validation/persistence/audit decisions respectively. Shares Contigo.Quotes's own QuotesDbContext
+// (already registered by AddQuotesModule above) — no new connection string.
+app.MapNegotiationsEndpoints();
+
 app.Run();
 
 // Exposes the top-level-statement entry point to WebApplicationFactory<Program> in the

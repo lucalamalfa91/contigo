@@ -35,7 +35,7 @@ backend/
     Contigo.Suppliers.Products/  # scaffold (R1+)
     Contigo.Renewals/            # renewal engine + opportunity + explainable priority score + threshold scheduler + dashboard pipeline + action (R2; live) — see "Renewal Intelligence" below
     Contigo.Savings/             # price normalization + percentile/target/savings-range calculator (R3; task E04/F02/US01/T01) + persisted, trackable SavingsOpportunity + GET/PATCH /api/savings (task E04/F02/US02/T01) — see "Savings Intelligence" below
-    Contigo.Quotes/              # quote upload + hybrid-OCR-reused, schema-constrained line-item extraction (evidence + confidence; deterministic pricing) + POST /api/quotes (R4; task E05/F01/US01/T01) + SKU/edition normalization against a per-tenant canonical mapping, unmatched-SKU flagging (task E05/F01/US02/T01) + benchmark matching/above-in-line-below market assessment + GET /api/quotes/{id}/assessment, AddBenchmarkModule now wired (task E05/F02/US01/T01) + deterministic recommended target range/potential saving on that same endpoint (task E05/F02/US01/T02) + deterministic negotiation strategy (opening target/acceptable range/walk-away threshold + seven canonical levers with rationale, NegotiationStrategyService, no HTTP endpoint yet) (task E05/F03/US01/T01) — see "Quote Check" / "Market Assessment" / "Negotiation Strategy" below
+    Contigo.Quotes/              # quote upload + hybrid-OCR-reused, schema-constrained line-item extraction (evidence + confidence; deterministic pricing) + POST /api/quotes (R4; task E05/F01/US01/T01) + SKU/edition normalization against a per-tenant canonical mapping, unmatched-SKU flagging (task E05/F01/US02/T01) + benchmark matching/above-in-line-below market assessment + GET /api/quotes/{id}/assessment, AddBenchmarkModule now wired (task E05/F02/US01/T01) + deterministic recommended target range/potential saving on that same endpoint (task E05/F02/US01/T02) + deterministic negotiation strategy (opening target/acceptable range/walk-away threshold + seven canonical levers with rationale, NegotiationStrategyService, no HTTP endpoint yet) (task E05/F03/US01/T01) + NegotiationOutcome capture (original/target/final/deterministic saving+discount/duration/levers used) + POST /api/negotiations/outcomes, append-only/audit-tracked (task E05/F03/US02/T01) — see "Quote Check" / "Market Assessment" / "Negotiation Strategy" / "Negotiation Outcome" below
     Contigo.Chat/                # Ask Contigo structured-vs-semantic query router (R1, task E02/F04/US01/T01) + deterministic dates/spend query handlers (task E02/F04/US01/T02) + RagAnswerService (task E02/F04/US02/T01) + AbstainGuard no-fabrication guard (task E02/F04/US02/T02); AddChatModule wired into Contigo.Api by this last task
   tests/                         # per-module + architecture + R0 integration
 ```
@@ -1274,6 +1274,75 @@ picked up yet").
   `MarketAssessmentServiceTests`' own Salesforce/Sales-Cloud-Enterprise
   fixture comparable (P25/P50/P75 = 1500/1800/2100 per seat/year) so both
   tests agree on what the numbers mean.
+
+## Negotiation Outcome — capture + append-only + audit
+
+Task E05/F03/US02/T01 (negotiation-outcome; parent story
+us-02-outcome-capture AC-1 "records original/target/final/saving/discount/
+duration/levers", AC-3 "Outcome is versioned + audit-tracked") closes spec
+§12.2 ("Negotiation outcome capture") — the "Negotiation Strategy" section
+above recommends a target; this is where what actually happened gets
+recorded as permissioned proprietary learning data (spec §12.3's data
+flywheel).
+
+- **`POST /api/negotiations/outcomes`** (module-map.md "Quotes | ... |
+  /api/quotes, /api/negotiations/outcomes"; `X-Tenant-Id` header; plain
+  JSON body, unlike `POST /api/quotes`'s multipart upload) —
+  `{ quoteId, originalQuoteTotal, targetPrice?, finalPrice,
+  negotiationDurationDays, leversUsed: [<NegotiationLeverType name>, ...] }`.
+  404 (`Contigo.Quotes.Application.Outcome.NegotiationOutcomeService
+  .QuoteNotFoundError`) when `quoteId` does not name a quote for this
+  tenant; 400 for every validation failure (non-positive
+  `originalQuoteTotal`/`finalPrice`, a negative `targetPrice`, a negative
+  `negotiationDurationDays`, an empty or unrecognized `leversUsed`).
+  Response `{ id, quoteId, originalQuoteTotal, targetPrice, finalPrice,
+  realizedSaving, discountPercent, negotiationDurationDays, leversUsed,
+  capturedAt }`.
+- **`Contigo.Quotes.Application.Outcome.NegotiationOutcomeCalculator`** is a
+  pure, synchronous calculator (no database/HTTP/LLM call, Appendix C rule
+  6) — `realizedSaving = originalQuoteTotal - finalPrice`,
+  `discountPercent = realizedSaving / originalQuoteTotal * 100`. Never
+  clamped at zero: a `finalPrice` above `originalQuoteTotal` is an honest
+  negative saving, not a fabricated floor (Appendix C rule 10). Reproduces
+  spec §12.2's own worked example exactly (520k / 435k -> 85k saved,
+  ~16.3%).
+- **`targetPrice` is nullable** — echoes `LineNegotiationStrategy
+  .OpeningTarget`'s own nullability for the identical reason (no usable
+  target range was ever available, e.g. insufficient benchmark data):
+  outcome capture is never blocked on a fact this module honestly never
+  had (Appendix C rule 9 "from day one").
+- **`leversUsed` reuses `NegotiationStrategyCalculator`'s own closed
+  `NegotiationLeverType` vocabulary** (seven canonical levers), not free
+  text — parsed case-insensitively from the wire string list by
+  `NegotiationOutcomeService.CaptureAsync` itself (this codebase has no
+  global `JsonStringEnumConverter`; every enum-accepting endpoint parses
+  its own wire strings, e.g. `SavingsOpportunityPatchRequest.Status`), so
+  which levers actually work stays a queryable, aggregable dimension for
+  spec §12.3's "better recommendation" loop, not prose a later task would
+  have to re-parse. At least one entry is required.
+- **"Versioned" (AC-3) means append-only, never a `PATCH`/update** — spec
+  Appendix A names only `POST` for this resource.
+  `NegotiationOutcomeService.CaptureAsync` only ever `Add`s a new
+  `Contigo.Quotes.Domain.NegotiationOutcome` row; a second capture for the
+  same `quoteId` (a renegotiation, or a correction to an earlier capture)
+  is simply another row, ordered by `capturedAt` — the same "never
+  destructively overwrite" convention (Appendix C rule 5)
+  `Contigo.Savings.Domain.RealizedSavings` already establishes for the
+  identical App C #5/#9 pairing on a sibling "capture a final,
+  consequential figure" entity.
+- **Audit-tracked (AC-3)**: writes one `IAuditWriter` entry
+  (`negotiation_outcome.captured`) per successful capture, still inside
+  the same call's tenant scope — same placement as `QuoteUploadService
+  .UploadAsync`'s own "persist -> audit" write.
+- Proved directly by `Contigo.Quotes.Tests.NegotiationOutcomeCalculatorTests`
+  (pure, no database — the spec §12.2 worked example, the negative-saving
+  honesty case, determinism) and end to end by
+  `Contigo.Quotes.Tests.NegotiationOutcomeServiceTests` against a real
+  Postgres+RLS database (persistence, the audit entry, the "second capture
+  does not overwrite the first" append-only proof, quote-not-found/
+  cross-tenant/every validation failure) plus
+  `Contigo.Api.Tests.NegotiationsEndpointTests` for the host-level
+  tenant-header guard clause.
 
 ## Containers and CI
 
