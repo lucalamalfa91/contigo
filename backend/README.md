@@ -31,7 +31,7 @@ backend/
     Contigo.Documents.Contracts/ # upload, metadata, staged extraction, portfolio, contract correction + history (live)
     Contigo.Audit/               # append-only audit events (live)
     Contigo.AiGateway/           # IAiGateway + FixtureAiGateway (wired via DI) + LoggingAiGateway decorator — no Foundry SDK yet
-    Contigo.Benchmark/           # IBenchmarkService only — fixture adapter is later (R3)
+    Contigo.Benchmark/           # IBenchmarkService.GetBenchmarkAsync + normalized Contracts DTOs (task E04/F01/US01/T01) — no adapter/DI registration yet (R3)
     Contigo.Suppliers.Products/  # scaffold (R1+)
     Contigo.Renewals/            # renewal engine + opportunity + explainable priority score + threshold scheduler + dashboard pipeline + action (R2; live) — see "Renewal Intelligence" below
     Contigo.Savings/             # scaffold (R3)
@@ -407,9 +407,11 @@ midpoint (`PriorityScoreCalculator.NeutralComponentScore`, 10 under the spec
 default) specifically, because parent story AC-3 names that exact rule —
 `"Benchmark-opportunity component reads the R3 benchmark only when available
 (else neutral)"`. Today that is *always* the neutral case:
-`Contigo.Benchmark.IBenchmarkService` is still an R0 placeholder with no
-query operations, so `RenewalPriorityInputs.BenchmarkMarketPositionPercent`
-has no real producer yet — the same "caller supplies it however it likes
+`Contigo.Benchmark.IBenchmarkService` now defines the normalized
+`GetBenchmarkAsync` contract (task E04/F01/US01/T01), but no adapter is
+registered behind it yet (that is task E04/F01/US01/T02 plus
+us-02-fixture-adapter), so `RenewalPriorityInputs.BenchmarkMarketPositionPercent`
+still has no real producer — the same "caller supplies it however it likes
 today, a real mapping lands later" gap `ContractRenewalTerms` already
 documents for this module. Every tier boundary (spend, uplift %,
 benchmark %) and the time-urgency tiers (aligned to spec §9.1's own
