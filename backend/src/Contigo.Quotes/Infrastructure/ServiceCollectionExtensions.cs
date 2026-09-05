@@ -3,6 +3,7 @@ using Contigo.Quotes.Application;
 using Contigo.Quotes.Application.Assessment;
 using Contigo.Quotes.Application.Extraction;
 using Contigo.Quotes.Application.Normalization;
+using Contigo.Quotes.Application.Outcome;
 using Contigo.Quotes.Application.Strategy;
 using Contigo.SharedKernel;
 using Contigo.SharedKernel.Tenancy;
@@ -85,6 +86,11 @@ public static class ServiceCollectionExtensions
         // NegotiationStrategyService's own doc comment for why it depends on that service rather
         // than re-deriving the assessment itself).
         services.AddScoped<NegotiationStrategyService>();
+        // Task E05/F03/US02/T01 (negotiation-outcome): shares this request's own QuotesDbContext;
+        // like QuoteUploadService above, also resolves IAuditWriter, so any host calling this method
+        // must also call Contigo.Audit's AddAuditModule (already true of every host that reaches this
+        // far — see this method's own doc comment).
+        services.AddScoped<NegotiationOutcomeService>();
 
         return services;
     }
